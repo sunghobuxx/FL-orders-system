@@ -1,0 +1,36 @@
+name: Auto Dispatch (02:30 KST)
+
+on:
+  schedule:
+    # 17:30 UTC = 02:30 KST
+    - cron: '30 17 * * *'
+  workflow_dispatch:
+    inputs:
+      businessDate:
+        description: 'Business date (YYYY-MM-DD). Defaults to today KST.'
+        required: false
+        default: ''
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger auto-dispatch
+        run: |
+          DATE="${{ github.event.inputs.businessDate }}"
+          if [ -z "$DATE" ]; then
+            DATE=$(TZ=Asia/Seoul date +%Y-%m-%d)
+          fi
+          echo "Dispatching for business date: $DATE"
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+            https://order.fruitlife.shop/api/admin/orders/auto-dispatch \
+            -H "Content-Type: application/json" \
+            -d "{\"businessDate\":\"$DATE\"}")
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | head -1)
+          echo "Response: $BODY"
+          echo "HTTP Status: $HTTP_CODE"
+          if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -ge 300 ]; then
+            echo "Dispatch failed with HTTP $HTTP_CODE"
+            exit 1
+          fi

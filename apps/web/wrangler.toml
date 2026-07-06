@@ -1,0 +1,5 @@
+name = "fruitlife"
+pages_build_output_dir = ".vercel/output/static"
+
+[build]
+command = "cd apps/web && npm run build:cf"
