@@ -3,6 +3,8 @@ export const runtime = 'edge'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { createAdminClient } from '@/lib/supabase/admin'
+import AdminSettlementShell from '@/app/admin/settlement/AdminSettlementShell'
+import { PaymentForm } from './PaymentForm'
 
 interface Props {
   params: Promise<{ id: string }>
@@ -25,65 +27,90 @@ export default async function AdminFinanceDetailPage({ params }: Props) {
 
   const { data: receivables } = await db
     .from('receivables')
-    .select('id, balance, due_date, status, statement_id')
+    .select('id, balance, status, due_date')
     .eq('restaurant_id', restaurantId)
-    .in('status', ['unpaid', 'partial', 'overdue'])
-    .order('due_date', { ascending: true })
+    .order('due_date')
 
-  const fmt = (n: number) => n.toLocaleString('ko-KR') + '원'
-  const total = (receivables ?? []).reduce((s, r) => s + Number(r.balance), 0)
+  const totalBalance = (receivables ?? []).reduce((s, r) => s + Number(r.balance), 0)
 
-  const STATUS_LABEL: Record<string, string> = { unpaid: '미납', partial: '부분납', overdue: '연체' }
-  const STATUS_COLOR: Record<string, string> = {
-    unpaid: 'bg-red-100 text-red-700',
-    partial: 'bg-yellow-100 text-yellow-700',
-    overdue: 'bg-red-200 text-red-800',
-  }
+  // 결제 내역
+  const receivableIds = (receivables ?? []).map(r => r.id)
+  const { data: payments } = receivableIds.length > 0
+    ? await db
+        .from('payments')
+        .select('id, amount, method, direction, paid_at')
+        .in('target_id', receivableIds)
+        .eq('target_type', 'receivable')
+        .order('paid_at', { ascending: false })
+        .limit(50)
+    : { data: [] }
+
+  const fmt = (n: number) => `${n.toLocaleString()}원`
 
   return (
-    <div className="p-6 max-w-3xl space-y-5">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <a href="/admin/finance" className="text-sm text-gray-400 hover:text-gray-700">← 미수금 현황</a>
-          <h1 className="text-lg font-bold text-gray-900">{restaurantName}</h1>
-        </div>
-        <div className="text-sm font-bold text-red-600">{fmt(total)}</div>
-      </div>
+    <AdminSettlementShell>
+      <div className="space-y-4 max-w-3xl">
+        <Link href="/admin/finance" className="text-sm text-gray-400 hover:text-gray-600">
+          ← 목록
+        </Link>
 
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        {(receivables ?? []).length === 0 ? (
-          <p className="px-5 py-12 text-sm text-gray-400 text-center">미수금 내역이 없습니다</p>
-        ) : (
-          <>
-            <div className="grid grid-cols-[1fr_auto_auto_auto] gap-3 px-5 py-3 bg-gray-50 border-b border-gray-200 text-xs font-semibold text-gray-500">
-              <span>만기일</span>
-              <span className="text-right">잔액</span>
-              <span className="text-center">상태</span>
-              <span></span>
-            </div>
+        {/* 헤더 */}
+        <div className="bg-white rounded-xl border border-gray-200 px-5 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-2 text-sm">
+            <span className="text-gray-500">업체명:</span>
+            <span className="bg-gray-100 px-3 py-1.5 rounded font-semibold text-gray-800">
+              {restaurantName}
+            </span>
+          </div>
+          <div className="flex items-center gap-2 text-sm">
+            <span className="text-gray-500">총미수금:</span>
+            <span className={`px-3 py-1.5 rounded font-semibold ${totalBalance > 0 ? 'bg-red-50 text-red-600' : 'bg-gray-100 text-gray-700'}`}>
+              {fmt(totalBalance)}
+            </span>
+          </div>
+        </div>
+
+        {/* 입금액 */}
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="px-5 py-3 bg-gray-50 border-b border-gray-200 text-xs font-semibold text-gray-500">
+            ① 입금액:
+          </div>
+          <div className="px-5 py-4">
+            <PaymentForm restaurantId={restaurantId} totalBalance={totalBalance} />
+          </div>
+        </div>
+
+        {/* 결제내역 */}
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="grid grid-cols-[1fr_auto_auto] gap-3 px-5 py-3 bg-gray-50 border-b border-gray-200 text-xs font-semibold text-gray-500">
+            <span>결제내역</span>
+            <span className="w-16 text-center">방법</span>
+            <span className="w-28 text-right">금액</span>
+          </div>
+          {(payments ?? []).length === 0 ? (
+            <div className="py-10 text-center text-sm text-gray-400">결제 내역이 없습니다</div>
+          ) : (
             <div className="divide-y divide-gray-100">
-              {(receivables ?? []).map(r => (
-                <div key={r.id} className="grid grid-cols-[1fr_auto_auto_auto] gap-3 items-center px-5 py-3">
-                  <span className="text-sm text-gray-700">{r.due_date}</span>
-                  <span className="text-sm font-bold text-red-500 text-right">{fmt(Number(r.balance))}</span>
-                  <span className={`text-xs font-semibold px-2.5 py-1 rounded-full text-center ${STATUS_COLOR[r.status ?? 'unpaid'] ?? ''}`}>
-                    {STATUS_LABEL[r.status ?? 'unpaid'] ?? r.status}
-                  </span>
-                  {r.statement_id ? (
-                    <Link href={`/admin/settlement/restaurant/${restaurantId}/${r.statement_id}`} className="text-xs text-brand-600 hover:underline">
-                      명세서
-                    </Link>
-                  ) : <span />}
-                </div>
-              ))}
+              {(payments ?? []).map(p => {
+                const isCard = p.method === 'card'
+                return (
+                  <div key={p.id} className="grid grid-cols-[1fr_auto_auto] gap-3 items-center px-5 py-3">
+                    <span className="text-sm text-gray-700 bg-gray-100 px-3 py-1.5 rounded">
+                      {new Date(p.paid_at).toLocaleDateString('ko-KR', { month: '2-digit', day: '2-digit' })}
+                    </span>
+                    <span className={`w-16 text-center text-xs font-semibold px-2 py-1.5 rounded ${isCard ? 'bg-blue-50 text-blue-600' : 'bg-green-50 text-green-600'}`}>
+                      {isCard ? '카드' : '입금'}
+                    </span>
+                    <span className="w-28 text-right text-sm font-semibold text-gray-800 bg-gray-100 px-3 py-1.5 rounded">
+                      {p.direction === 'inbound' ? '' : '-'}{fmt(Number(p.amount))}
+                    </span>
+                  </div>
+                )
+              })}
             </div>
-            <div className="flex items-center justify-between px-5 py-3 bg-gray-50 border-t border-gray-200">
-              <span className="text-sm font-bold text-gray-700">합계</span>
-              <span className="text-sm font-bold text-red-600">{fmt(total)}</span>
-            </div>
-          </>
-        )}
+          )}
+        </div>
       </div>
-    </div>
+    </AdminSettlementShell>
   )
 }

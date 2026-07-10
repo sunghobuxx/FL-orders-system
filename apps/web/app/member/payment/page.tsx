@@ -1,10 +1,21 @@
 export const runtime = 'edge'
 
 import { redirect } from 'next/navigation'
-import Link from 'next/link'
 import { getSessionUser } from '@/lib/supabase/server'
+import TossWidget from './TossWidget'
 
-export default async function MemberPaymentPage() {
+const TOSS_CLIENT_KEY = 'test_ck_placeholder'
+const tossEnabled = !TOSS_CLIENT_KEY.includes('placeholder')
+
+export default async function MemberPaymentPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ amount?: string; orderName?: string; refId?: string; refType?: string }>
+}) {
+  const { amount: amountParam, orderName: orderNameParam } = await searchParams
+  const amount = Number(amountParam)
+  if (!amount || amount <= 0) redirect('/member/settlement')
+
   const { user, supabase } = await getSessionUser()
   if (!user) redirect('/login')
 
@@ -13,44 +24,63 @@ export default async function MemberPaymentPage() {
   const orgData = membership?.organizations
   const org = (Array.isArray(orgData) ? orgData[0] : orgData) as { id: string; name: string } | undefined
 
-  if (!org) redirect('/member/dashboard')
-
-  const { data: receivable } = await supabase
-    .from('receivables')
-    .select('balance')
-    .eq('organization_id', org.id)
-    .maybeSingle()
-
-  const balance = receivable?.balance ?? 0
-  const fmt = (n: number) => n.toLocaleString('ko-KR') + '원'
+  const customerKey = org?.id ?? user.id
+  const customerName = org?.name ?? user.email ?? '고객'
+  const orderName = orderNameParam ?? 'FruitLife 정산'
+  const orderId = `FL-${Date.now()}-${(org?.id ?? user.id).replace(/-/g, '').slice(0, 8)}`
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4 max-w-2xl mx-auto space-y-4">
-      <div className="flex items-center gap-3 py-2">
-        <Link href="/member/dashboard" className="text-gray-400 hover:text-gray-600">
-          ←
-        </Link>
-        <h1 className="text-lg font-bold text-gray-900">결제</h1>
-      </div>
-
-      <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-3">
-        <div className="flex items-center justify-between">
-          <span className="text-sm text-gray-500">미수금</span>
-          <span className={`text-xl font-bold ${balance > 0 ? 'text-red-600' : 'text-green-600'}`}>
-            {fmt(balance)}
-          </span>
+    <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-start pt-10 px-4">
+      <div className="w-full max-w-md space-y-4">
+        <div className="bg-white rounded-xl border border-gray-200 px-5 py-4">
+          <div className="flex justify-between items-center">
+            <span className="text-sm text-gray-500">{customerName}</span>
+            <span className="text-lg font-bold text-gray-900">{amount.toLocaleString()}원</span>
+          </div>
+          <p className="text-xs text-gray-400 mt-1">{orderName}</p>
         </div>
-        {balance <= 0 && (
-          <p className="text-sm text-green-600 text-center py-4">미수금이 없습니다 ✓</p>
+
+        {tossEnabled ? (
+          <div className="bg-white rounded-xl border border-gray-200 p-5">
+            <TossWidget
+              clientKey={TOSS_CLIENT_KEY}
+              customerKey={customerKey}
+              amount={amount}
+              orderId={orderId}
+              orderName={orderName}
+              customerName={customerName}
+            />
+          </div>
+        ) : (
+          <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
+            <p className="text-sm text-gray-600">아래 계좌로 입금해 주세요.</p>
+            <div className="rounded-lg bg-gray-50 border border-gray-200 px-4 py-4 space-y-1.5">
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-gray-500">은행</span>
+                <span className="text-sm font-semibold text-gray-900">NH농협은행</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-gray-500">계좌번호</span>
+                <span className="text-base font-bold text-gray-900 tracking-wide">3021748809181</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-gray-500">예금주</span>
+                <span className="text-sm font-semibold text-gray-900">차숙희</span>
+              </div>
+            </div>
+            <div className="flex justify-between items-center rounded-lg bg-brand-50 border border-brand-200 px-4 py-3">
+              <span className="text-sm text-gray-600">입금 금액</span>
+              <span className="text-lg font-bold text-brand-700">{amount.toLocaleString()}원</span>
+            </div>
+            <a
+              href="/member/settlement"
+              className="block w-full text-center rounded-lg border border-gray-300 px-4 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+            >
+              확인
+            </a>
+          </div>
         )}
       </div>
-
-      {balance > 0 && (
-        <div className="bg-brand-50 rounded-xl border border-brand-200 p-5 text-center space-y-2">
-          <p className="text-sm text-brand-700 font-medium">결제 문의</p>
-          <p className="text-sm text-gray-600">담당자에게 연락하여 결제해 주세요.</p>
-        </div>
-      )}
     </div>
   )
 }
