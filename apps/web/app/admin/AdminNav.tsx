@@ -40,13 +40,13 @@ export default function AdminNav() {
   }
 
   return (
-    <nav className="w-[200px] shrink-0 bg-gray-900 flex flex-col h-screen sticky top-0 overflow-hidden">
+    <nav className="hidden lg:flex w-[200px] shrink-0 bg-gray-900 flex-col h-screen sticky top-0 overflow-hidden">
       {/* Logo */}
       <div className="px-4 py-4 border-b border-gray-800 flex items-center gap-2.5">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/logo.png" alt="FruitLife" width={28} height={28} className="rounded object-contain" />
+        <img src="/logo.png" alt="FRUIT LIFE" width={32} height={32} className="rounded object-contain brightness-0 invert" />
         <div>
-          <p className="text-sm font-bold text-white leading-none tracking-wide">FruitLife</p>
+          <p className="text-base font-bold text-white leading-none tracking-widest">FRUIT LIFE</p>
           <p className="text-xs text-gray-400 leading-none mt-1">관리자</p>
         </div>
       </div>

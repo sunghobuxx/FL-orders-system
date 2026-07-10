@@ -2,6 +2,7 @@ export const runtime = 'edge'
 
 import Link from 'next/link'
 import { getSessionUser } from '@/lib/supabase/server'
+import CategoryFilter from './CategoryFilter'
 
 const CATEGORY_LABEL: Record<string, string> = {
   vegetable: '채소',
@@ -14,7 +15,12 @@ const CATEGORY_LABEL: Record<string, string> = {
   etc: '기타',
 }
 
-export default async function AdminProductsPage() {
+interface Props {
+  searchParams: Promise<{ category?: string }>
+}
+
+export default async function AdminProductsPage({ searchParams }: Props) {
+  const { category: categoryParam } = await searchParams
   const { supabase: db } = await getSessionUser()
 
   const { data: products } = await db
@@ -23,20 +29,35 @@ export default async function AdminProductsPage() {
     .order('category')
     .order('standard_name')
 
+  const all = products ?? []
+
+  const categoryCounts = all.reduce<Record<string, number>>((acc, p) => {
+    const cat = p.category ?? 'etc'
+    acc[cat] = (acc[cat] ?? 0) + 1
+    return acc
+  }, {})
+
+  const filtered = categoryParam ? all.filter(p => p.category === categoryParam) : all
+  const activeCategory = categoryParam ?? null
+
   return (
     <div className="p-6">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-4">
         <div>
           <h1 className="text-xl font-bold text-gray-900">품목 마스터</h1>
-          <p className="text-sm text-gray-400 mt-0.5">전체 {(products ?? []).length}개</p>
+          <p className="text-sm text-gray-400 mt-0.5">
+            {activeCategory ? `${CATEGORY_LABEL[activeCategory] ?? activeCategory} ${filtered.length}개` : `전체 ${all.length}개`}
+          </p>
         </div>
         <Link
           href="/admin/products/new"
-          className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700"
+          className="rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-700 transition-colors"
         >
           + 품목 등록
         </Link>
       </div>
+
+      <CategoryFilter categoryCounts={categoryCounts} total={all.length} activeCategory={activeCategory} />
 
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <table className="w-full text-sm">
@@ -51,12 +72,12 @@ export default async function AdminProductsPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {(products ?? []).map(p => (
+            {filtered.map(p => (
               <tr key={p.id} className="hover:bg-gray-50">
                 <td className="px-4 py-3 font-medium text-gray-900">
                   <div className="flex items-center gap-2">
                     {p.image_path && (
-                      /* eslint-disable-next-line @next/next/no-img-element */
+                      // eslint-disable-next-line @next/next/no-img-element
                       <img src={p.image_path} alt={p.standard_name} className="w-8 h-8 rounded object-cover" />
                     )}
                     {p.standard_name}
@@ -85,10 +106,10 @@ export default async function AdminProductsPage() {
                 </td>
               </tr>
             ))}
-            {(products ?? []).length === 0 && (
+            {filtered.length === 0 && (
               <tr>
                 <td colSpan={6} className="px-4 py-12 text-center text-gray-400 text-sm">
-                  등록된 품목이 없습니다. 품목을 등록해주세요.
+                  {activeCategory ? `${CATEGORY_LABEL[activeCategory] ?? activeCategory} 카테고리 품목이 없습니다.` : '등록된 품목이 없습니다.'}
                 </td>
               </tr>
             )}

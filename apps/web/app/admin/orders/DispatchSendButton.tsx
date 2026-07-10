@@ -51,9 +51,9 @@ export default function DispatchSendButton({
         type="button"
         onClick={handleSend}
         disabled={sending}
-        className="text-xs px-3 py-1.5 rounded-lg bg-brand-600 text-white hover:bg-brand-700 disabled:opacity-50 font-semibold"
+        className="text-sm px-4 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 font-semibold whitespace-nowrap"
       >
-        {sending ? '발송 중...' : '발송'}
+        {sending ? '발송 중...' : '발주 발송'}
       </button>
     </div>
   )

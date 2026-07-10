@@ -61,3 +61,16 @@ export async function PUT(req: NextRequest, context: { params: Promise<{ id: str
     return NextResponse.json({ error: '요청 처리 중 오류가 발생했습니다' }, { status: 500 })
   }
 }
+
+export async function DELETE(_req: NextRequest, context: { params: Promise<{ id: string }> }) {
+  try {
+    const { id: supplierId } = await context.params
+    const { supabase: db } = await getSessionUser()
+    const { error } = await db.from('suppliers').update({ status: 'inactive' }).eq('id', supplierId)
+    if (error) return NextResponse.json({ error: '삭제 실패' }, { status: 500 })
+    return NextResponse.json({ success: true })
+  } catch (e) {
+    console.error('[DELETE /api/admin/suppliers/[id]] unexpected', e)
+    return NextResponse.json({ error: '요청 처리 중 오류가 발생했습니다' }, { status: 500 })
+  }
+}

@@ -8,6 +8,7 @@ import DeleteProductButton from './DeleteProductButton'
 import AddSupplierProductForm from './AddSupplierProductForm'
 import DeleteSupplierProductButton from './DeleteSupplierProductButton'
 import PriceSnapshotForm from './PriceSnapshotForm'
+import OrgPriceSection from './OrgPriceSection'
 
 interface Props {
   params: Promise<{ id: string }>
@@ -21,6 +22,8 @@ export default async function AdminProductEditPage({ params }: Props) {
     { data: product },
     { data: supplierProductsRaw },
     { data: allSuppliers },
+    { data: orgPriceRows },
+    { data: allOrgRows },
   ] = await Promise.all([
     db.from('products')
       .select('id, standard_name, category, default_unit, sku, taxable_flag, is_kg_based, is_fixed_price, status, allowed_units, image_path')
@@ -33,6 +36,14 @@ export default async function AdminProductEditPage({ params }: Props) {
     db.from('suppliers')
       .select('id, organizations(name)')
       .eq('status', 'active'),
+    db.from('org_product_prices')
+      .select('organization_id, unit_price, organizations(name)')
+      .eq('product_id', id),
+    db.from('organizations')
+      .select('id, name')
+      .eq('organization_type', 'restaurant')
+      .eq('status', 'active')
+      .order('name'),
   ])
 
   if (!product) notFound()
@@ -55,6 +66,18 @@ export default async function AdminProductEditPage({ params }: Props) {
         .in('supplier_product_id', spIds)
         .order('effective_from', { ascending: false })
     : { data: [] }
+
+  type OrgPriceRow = { organization_id: string; unit_price: number; organizations: { name: string } | null }
+  const orgPrices = (orgPriceRows ?? []).map((r) => {
+    const row = r as unknown as OrgPriceRow
+    return {
+      organization_id: row.organization_id,
+      orgName: row.organizations?.name ?? row.organization_id,
+      unit_price: Number(row.unit_price),
+    }
+  })
+  type OrgRow = { id: string; name: string }
+  const allOrgs = (allOrgRows ?? []).map((o: OrgRow) => ({ id: o.id, name: o.name }))
 
   type SupRow = { id: string; organizations: { name: string } | null }
   const suppliersForSelect = ((allSuppliers ?? []) as unknown as SupRow[]).map(s => ({
@@ -134,6 +157,13 @@ export default async function AdminProductEditPage({ params }: Props) {
           <p className="text-xs text-gray-400 mt-1">등록된 활성 공급처가 없습니다.</p>
         )}
       </div>
+
+      {/* 업체별 고정단가 */}
+      <OrgPriceSection
+        productId={product.id}
+        orgPrices={orgPrices}
+        allOrgs={allOrgs}
+      />
     </div>
   )
 }

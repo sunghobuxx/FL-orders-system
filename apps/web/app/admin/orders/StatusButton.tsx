@@ -3,10 +3,10 @@
 import { useRouter } from 'next/navigation'
 import { useTransition } from 'react'
 
-const NEXT_STATUS: Record<string, { label: string; next: string }> = {
-  submitted:  { label: '→ 알림톡 발송', next: 'validated' },
-  validated:  { label: '→ 배송중',      next: 'ordered' },
-  ordered:    { label: '→ 배송완료',    next: 'dispatched' },
+const NEXT_STATUS: Record<string, { label: string; next: string; className: string }> = {
+  submitted: { label: '→ 알림톡 발송', next: 'validated', className: 'bg-green-600 text-white hover:bg-green-700' },
+  validated: { label: '→ 배송중',      next: 'ordered',   className: 'bg-gray-200 text-gray-700 hover:bg-gray-300' },
+  ordered:   { label: '→ 배송완료',    next: 'dispatched', className: 'bg-gray-200 text-gray-700 hover:bg-gray-300' },
 }
 
 export default function StatusButton({ batchId, currentStatus }: { batchId: string; currentStatus: string }) {
@@ -27,7 +27,7 @@ export default function StatusButton({ batchId, currentStatus }: { batchId: stri
         })
         router.refresh()
       })}
-      className="text-xs px-2.5 py-1 rounded bg-gray-200 text-gray-700 hover:bg-gray-300 disabled:opacity-50 whitespace-nowrap font-medium"
+      className={`text-xs px-2.5 py-1 rounded disabled:opacity-50 whitespace-nowrap font-medium ${config.className}`}
     >
       {isPending ? '...' : config.label}
     </button>

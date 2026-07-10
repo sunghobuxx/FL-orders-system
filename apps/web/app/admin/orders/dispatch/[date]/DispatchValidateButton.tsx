@@ -3,7 +3,7 @@
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 
-export default function DispatchValidateButton({ businessDate }: { businessDate: string }) {
+export default function DispatchValidateButton({ businessDate, fullWidth }: { businessDate: string; fullWidth?: boolean }) {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
 
@@ -31,7 +31,7 @@ export default function DispatchValidateButton({ businessDate }: { businessDate:
       type="button"
       onClick={handleClick}
       disabled={loading}
-      className="text-sm px-4 py-2 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700 disabled:opacity-50"
+      className={`text-sm px-4 py-3 rounded-xl bg-blue-600 text-white font-semibold hover:bg-blue-700 disabled:opacity-50${fullWidth ? ' w-full' : ''}`}
     >
       {loading ? '처리 중...' : '발주 확정 (품목 삭제·수량 변경 활성화)'}
     </button>

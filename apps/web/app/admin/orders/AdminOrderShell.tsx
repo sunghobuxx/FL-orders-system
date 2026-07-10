@@ -46,15 +46,15 @@ export default function AdminOrderShell({ children, date }: { children: ReactNod
 
   return (
     <div className="flex min-h-[calc(100vh-3rem)]">
-      <nav className="w-36 shrink-0 border-r border-gray-200 bg-white">
+      <nav className="w-36 shrink-0 border-r border-gray-200 bg-white p-2 flex flex-col gap-1">
         {TABS.map(tab => (
           <Link
             key={tab.label}
             href={tab.href}
-            className={`block px-4 py-3.5 text-sm font-semibold transition-colors ${
+            className={`block px-3 py-3 text-sm font-semibold rounded-lg transition-colors ${
               tab.isActive
                 ? 'bg-gray-900 text-white'
-                : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
             }`}
           >
             {tab.label}

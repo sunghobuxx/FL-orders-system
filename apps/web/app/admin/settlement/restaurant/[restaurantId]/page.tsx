@@ -3,9 +3,21 @@ export const runtime = 'edge'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { createAdminClient } from '@/lib/supabase/admin'
+import AdminSettlementShell from '../../AdminSettlementShell'
+import RecordPaymentButton from '@/app/admin/finance/RecordPaymentButton'
 
 interface Props {
   params: Promise<{ restaurantId: string }>
+}
+
+function getPeriodLabel(period: { period_type: string; start_date: string } | null): string {
+  if (!period) return '-'
+  const [, monthStr, dayStr] = period.start_date.split('-')
+  const month = Number(monthStr)
+  const week = Math.ceil(Number(dayStr) / 7)
+  return period.period_type === 'weekly'
+    ? `${month}월 ${week}주/${month}월`
+    : `${month}월`
 }
 
 export default async function AdminSettlementRestaurantPage({ params }: Props) {
@@ -25,60 +37,93 @@ export default async function AdminSettlementRestaurantPage({ params }: Props) {
 
   const { data: statements } = await db
     .from('sales_statements')
-    .select('id, period_start, period_end, total_amount, paid_amount, status')
+    .select('id, total_amount, outstanding_amount, settlement_periods(period_type, start_date, end_date, status)')
     .eq('restaurant_id', restaurantId)
-    .order('period_start', { ascending: false })
-    .limit(24)
+    .order('created_at', { ascending: false })
+    .limit(20)
 
-  const fmt = (n: number) => n.toLocaleString('ko-KR') + '원'
-
-  const STATUS_LABEL: Record<string, string> = { paid: '완납', partial: '부분납', unpaid: '미납', overdue: '연체' }
-  const STATUS_COLOR: Record<string, string> = {
-    paid: 'bg-green-100 text-green-700',
-    partial: 'bg-yellow-100 text-yellow-700',
-    unpaid: 'bg-red-100 text-red-700',
-    overdue: 'bg-red-200 text-red-800',
+  type Period = { period_type: string; start_date: string; end_date: string; status: string }
+  type Stmt = {
+    id: string
+    total_amount: number | null
+    outstanding_amount: number | null
+    settlement_periods: Period | null
   }
 
-  return (
-    <div className="p-6 max-w-3xl space-y-5">
-      <div className="flex items-center gap-3">
-        <a href="/admin/settlement/history" className="text-sm text-gray-400 hover:text-gray-700">← 정산 내역</a>
-        <h1 className="text-lg font-bold text-gray-900">{restaurantName} 정산 내역</h1>
-      </div>
+  const stmts = (statements ?? []) as unknown as Stmt[]
+  const totalOutstanding = stmts.reduce((s, st) => s + Number(st.outstanding_amount ?? 0), 0)
 
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        {(statements ?? []).length === 0 ? (
-          <p className="px-5 py-12 text-sm text-gray-400 text-center">정산 내역이 없습니다</p>
-        ) : (
-          <>
-            <div className="grid grid-cols-[1fr_1fr_auto_auto_auto] gap-3 px-5 py-3 bg-gray-50 border-b border-gray-200 text-xs font-semibold text-gray-500">
-              <span>정산 기간</span>
-              <span className="text-right">청구금액</span>
-              <span className="text-right">납부금액</span>
-              <span className="text-center">상태</span>
-              <span></span>
-            </div>
-            <div className="divide-y divide-gray-100">
-              {(statements ?? []).map(stmt => (
-                <div key={stmt.id} className="grid grid-cols-[1fr_1fr_auto_auto_auto] gap-3 items-center px-5 py-3">
-                  <span className="text-sm text-gray-700">
-                    {stmt.period_start} ~ {stmt.period_end}
-                  </span>
-                  <span className="text-sm font-medium text-gray-900 text-right">{fmt(Number(stmt.total_amount))}</span>
-                  <span className="text-sm text-gray-600 text-right">{fmt(Number(stmt.paid_amount ?? 0))}</span>
-                  <span className={`text-xs font-semibold px-2.5 py-1 rounded-full text-center ${STATUS_COLOR[stmt.status ?? 'unpaid'] ?? 'bg-gray-100 text-gray-500'}`}>
-                    {STATUS_LABEL[stmt.status ?? 'unpaid'] ?? stmt.status}
-                  </span>
-                  <Link href={`/admin/settlement/restaurant/${restaurantId}/${stmt.id}`} className="text-xs text-brand-600 hover:underline">
-                    상세
+  const todayStr = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10)
+  const fmt = (n: number) => `${n.toLocaleString('ko-KR')}원`
+
+  return (
+    <AdminSettlementShell>
+      <div className="space-y-4 max-w-3xl">
+        {/* 헤더 */}
+        <div className="flex items-center justify-between bg-white rounded-xl border border-gray-200 px-5 py-4">
+          <div className="flex items-center gap-2 text-sm">
+            <span className="text-gray-500">업체명:</span>
+            <span className="bg-gray-100 px-4 py-1.5 rounded font-semibold text-gray-800">{restaurantName}</span>
+          </div>
+          <div className="flex items-center gap-2 text-sm">
+            <span className="text-gray-400">날짜:</span>
+            <span className="bg-gray-100 px-4 py-1.5 rounded text-gray-400">{todayStr} (당일)</span>
+          </div>
+        </div>
+
+        {/* 정산 목록 */}
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="divide-y divide-gray-100">
+            {stmts.map(stmt => {
+              const period = stmt.settlement_periods
+              const outstanding = Number(stmt.outstanding_amount ?? 0)
+              const total = Number(stmt.total_amount ?? 0)
+              const isInProgress = period?.status === 'open' && outstanding === 0 && total > 0
+              const label = getPeriodLabel(period)
+
+              return (
+                <div key={stmt.id} className="flex items-center justify-between px-5 py-4">
+                  <Link
+                    href={`/admin/settlement/restaurant/${restaurantId}/${stmt.id}`}
+                    className="flex-1 text-sm text-brand-600 bg-gray-100 px-4 py-2 rounded-lg font-medium hover:bg-gray-200 transition-colors mr-4"
+                  >
+                    {label}
                   </Link>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <div className="text-right">
+                      <p className="text-xs text-gray-400">총금액:</p>
+                      <p className="text-sm font-semibold text-gray-800 bg-gray-100 px-3 py-1 rounded min-w-24 text-right">
+                        {fmt(total)}
+                      </p>
+                    </div>
+                    {isInProgress ? (
+                      <span className="w-16 text-center text-xs font-semibold text-gray-400 bg-gray-100 px-2 py-1.5 rounded">
+                        진행중
+                      </span>
+                    ) : (
+                      <RecordPaymentButton
+                        restaurantId={restaurantId}
+                        restaurantName={restaurantName}
+                      />
+                    )}
+                  </div>
                 </div>
-              ))}
+              )
+            })}
+          </div>
+
+          {/* 총미수금액 */}
+          <div className="flex items-center justify-between px-5 py-4 bg-gray-50 border-t border-gray-200">
+            <span className="text-sm font-semibold text-gray-700">총미수금액:</span>
+            <div className="flex items-center gap-3">
+              <span className={`text-sm font-bold px-4 py-1.5 rounded min-w-28 text-right ${totalOutstanding > 0 ? 'bg-red-50 text-red-600' : 'bg-gray-100 text-gray-800'}`}>
+                {fmt(totalOutstanding)}
+              </span>
+              <RecordPaymentButton restaurantId={restaurantId} restaurantName={restaurantName} />
             </div>
-          </>
-        )}
+          </div>
+        </div>
       </div>
-    </div>
+    </AdminSettlementShell>
   )
 }

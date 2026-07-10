@@ -1,0 +1,22 @@
+name: Push Notification Sender
+
+on:
+  schedule:
+    # 매분 실행 — KST 스케줄 시간과 일치할 때 발송
+    - cron: '* * * * *'
+  workflow_dispatch:
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send push notifications
+        run: |
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+            https://order.fruitlife.shop/api/admin/push/send \
+            -H "Authorization: Bearer ${{ secrets.PUSH_CRON_SECRET }}" \
+            -H "Content-Type: application/json")
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | head -1)
+          echo "Response: $BODY"
+          echo "HTTP: $HTTP_CODE"

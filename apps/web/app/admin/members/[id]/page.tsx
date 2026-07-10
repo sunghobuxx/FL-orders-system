@@ -2,7 +2,7 @@ export const runtime = 'edge'
 
 import { notFound } from 'next/navigation'
 
-import { getSessionUser } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 
 import AdminMembersShell from '../AdminMembersShell'
 import DeleteMemberButton from '../DeleteMemberButton'
@@ -19,7 +19,7 @@ export default async function MemberDetailPage({ params, searchParams }: Props) 
   const { id } = await params
   const { mode } = await searchParams
   const isEdit = mode === 'edit'
-  const { supabase: db } = await getSessionUser()
+  const db = createAdminClient()
 
   const [{ data: org }, { data: contacts }, { data: rest }, { data: supplier }] = await Promise.all([
     db.from('organizations').select('id, name, organization_type, status').eq('id', id).single(),

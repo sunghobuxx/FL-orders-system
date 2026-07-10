@@ -93,7 +93,7 @@ export default async function OrderHistoryPage({ searchParams }: Props) {
                     <span className="text-sm text-center text-gray-700 bg-gray-100 px-3 py-1.5 rounded">
                       {fmt(totalAmount)}
                     </span>
-                    <span className={`text-xs text-center font-semibold px-3 py-1.5 rounded ${STATUS_COLOR[latestStatus] ?? 'bg-gray-100 text-gray-600'}`}>
+                    <span className={`text-xs text-center font-semibold px-2.5 py-1 rounded-full ${STATUS_COLOR[latestStatus] ?? 'bg-gray-100 text-gray-600'}`}>
                       {STATUS_LABEL[latestStatus] ?? latestStatus}
                     </span>
                   </div>

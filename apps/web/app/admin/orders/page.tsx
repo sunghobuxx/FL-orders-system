@@ -67,7 +67,7 @@ export default async function AdminOrdersPage({ searchParams }: Props) {
             발주 없음
           </div>
         ) : (
-          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden divide-y divide-gray-100">
+          <div className="space-y-3">
             {(batches ?? []).map(batch => {
               const restRaw = batch.restaurants as unknown as { organizations: { name: string } | null } | null
               const orgName = restRaw?.organizations?.name ?? '알 수 없음'
@@ -76,31 +76,30 @@ export default async function AdminOrdersPage({ searchParams }: Props) {
                 ?.reduce((sum, o) => sum + o.order_items.length, 0) ?? 0
               const timeStr = fmtKstTime(batch.submitted_at as string | null)
               return (
-                <div key={batch.id} className="px-5 py-3.5 space-y-2">
-                  {/* 업체명 + 품목수 + 상태 */}
-                  <div className="flex items-center gap-3 flex-wrap">
+                <div key={batch.id} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                  {/* 상단: 업체명 + 품목수 */}
+                  <div className="flex items-center justify-between px-5 py-3 bg-gray-50 border-b border-gray-100">
                     <Link
                       href={`/admin/orders/${batch.id}`}
-                      className="text-sm font-medium text-gray-900 bg-gray-100 px-3 py-1.5 rounded hover:bg-gray-200 transition-colors"
+                      className="text-sm font-semibold text-gray-900 hover:text-brand-600 transition-colors"
                     >
                       {orgName}
                     </Link>
-                    <span className="text-xs font-semibold text-gray-600 bg-gray-100 px-2.5 py-1 rounded">
-                      {itemCount}개
-                    </span>
-                    <div className="ml-auto flex items-center gap-2">
-                      <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${STATUS_COLOR[batch.status] ?? 'bg-gray-100 text-gray-600'}`}>
-                        {STATUS_LABEL[batch.status] ?? batch.status}
-                      </span>
-                      <StatusButton batchId={batch.id} currentStatus={batch.status} />
-                    </div>
+                    <span className="text-sm text-gray-500">{itemCount}개</span>
                   </div>
-                  {/* 타임스탬프 */}
-                  {timeStr && (
-                    <p className="text-xs text-gray-400">{timeStr}</p>
-                  )}
-                  {/* 날짜변경 / 삭제 */}
-                  <BatchControls batchId={batch.id} />
+                  {/* 하단: 타임스탬프 + 상태 + 액션 */}
+                  <div className="px-5 py-3 space-y-2">
+                    <div className="flex items-center gap-3">
+                      {timeStr && <span className="text-xs text-gray-400">{timeStr}</span>}
+                      <div className="ml-auto flex items-center gap-2">
+                        <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${STATUS_COLOR[batch.status] ?? 'bg-gray-100 text-gray-600'}`}>
+                          {STATUS_LABEL[batch.status] ?? batch.status}
+                        </span>
+                        <StatusButton batchId={batch.id} currentStatus={batch.status} />
+                      </div>
+                    </div>
+                    <BatchControls batchId={batch.id} />
+                  </div>
                 </div>
               )
             })}

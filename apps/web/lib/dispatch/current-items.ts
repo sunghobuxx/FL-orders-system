@@ -25,14 +25,19 @@ async function resolveSupplierMaps(adminDb: any, items: DispatchOrderItem[]) {
   const productIds = [...new Set(items.map(i => i.product_id).filter(Boolean))]
   const supplierProductIds = [...new Set(items.map(i => i.supplier_product_id).filter(Boolean) as string[])]
 
-  const { data: productSupplierRows } = productIds.length
-    ? await adminDb
-        .from('supplier_products')
-        .select('id, product_id, supplier_id, updated_at')
-        .in('product_id', productIds)
-        .eq('status', 'active')
-        .order('updated_at', { ascending: false })
-    : { data: [] }
+  const [{ data: productSupplierRows }, { data: supplierProductRows }] = await Promise.all([
+    productIds.length
+      ? adminDb
+          .from('supplier_products')
+          .select('id, product_id, supplier_id, updated_at')
+          .in('product_id', productIds)
+          .eq('status', 'active')
+          .order('updated_at', { ascending: false })
+      : Promise.resolve({ data: [] }),
+    supplierProductIds.length
+      ? adminDb.from('supplier_products').select('id, supplier_id').in('id', supplierProductIds)
+      : Promise.resolve({ data: [] }),
+  ])
 
   const productToSupplier: Record<string, string> = {}
   for (const row of productSupplierRows ?? []) {
@@ -40,13 +45,6 @@ async function resolveSupplierMaps(adminDb: any, items: DispatchOrderItem[]) {
       productToSupplier[row.product_id] = row.supplier_id
     }
   }
-
-  const { data: supplierProductRows } = supplierProductIds.length
-    ? await adminDb
-        .from('supplier_products')
-        .select('id, supplier_id')
-        .in('id', supplierProductIds)
-    : { data: [] }
 
   const supplierProductToSupplier = Object.fromEntries(
     (supplierProductRows ?? []).map((row: { id: string; supplier_id: string }) => [row.id, row.supplier_id]),
@@ -77,15 +75,15 @@ export async function getCurrentDispatchGroups(
     return { batches: [], grouped: {}, unmappedProducts: [] as string[] }
   }
 
-  // 레스토랑 → 업체명 맵
+  // 레스토랑 → 업체명 맵 + 주문 목록을 병렬로 조회
   const restaurantIds = [...new Set((batches ?? []).map((b: { restaurant_id: string }) => b.restaurant_id).filter(Boolean) as string[])]
   const orderToRestaurantName: Record<string, string> = {}
 
   if (restaurantIds.length) {
-    const { data: rRows } = await adminDb
-      .from('restaurants')
-      .select('id, organization_id')
-      .in('id', restaurantIds)
+    const [{ data: rRows }, { data: orderRows }] = await Promise.all([
+      adminDb.from('restaurants').select('id, organization_id').in('id', restaurantIds),
+      adminDb.from('orders').select('id, batch_id').in('batch_id', batchIds),
+    ])
 
     const orgIds = [...new Set((rRows ?? []).map((r: { organization_id: string }) => r.organization_id).filter(Boolean) as string[])]
     const { data: orgRows } = orgIds.length
@@ -101,11 +99,6 @@ export async function getCurrentDispatchGroups(
     const batchRestaurantMap: Record<string, string> = Object.fromEntries(
       (batches ?? []).map((b: { id: string; restaurant_id: string }) => [b.id, restaurantNameMap[b.restaurant_id] ?? ''])
     )
-
-    const { data: orderRows } = await adminDb
-      .from('orders')
-      .select('id, batch_id')
-      .in('batch_id', batchIds)
 
     for (const o of orderRows ?? []) {
       orderToRestaurantName[o.id] = batchRestaurantMap[o.batch_id] ?? ''
@@ -138,7 +131,7 @@ export async function getCurrentDispatchGroups(
 
   const { productToSupplier, supplierProductToSupplier } = await resolveSupplierMaps(adminDb, items)
   const grouped: Record<string, DispatchOrderItem[]> = {}
-  const unmapped = new Set<string>()
+  const unmappedMap = new Map<string, DispatchLine>()
 
   for (const item of items) {
     const supplierId = item.supplier_product_id
@@ -146,7 +139,15 @@ export async function getCurrentDispatchGroups(
       : productToSupplier[item.product_id]
 
     if (!supplierId) {
-      unmapped.add(item.products?.standard_name ?? item.product_id)
+      const name = item.products?.standard_name ?? item.product_id
+      const key = `${item.product_id}:${item.unit}`
+      const qty = Number(item.qty)
+      const existing = unmappedMap.get(key)
+      if (existing) {
+        existing.qty += qty
+      } else {
+        unmappedMap.set(key, { name, qty, unit: item.unit, byRestaurant: [] })
+      }
       continue
     }
 
@@ -172,7 +173,7 @@ export async function getCurrentDispatchGroups(
     }
   }
 
-  return { batches: batches ?? [], grouped, inactiveGrouped, unmappedProducts: [...unmapped] }
+  return { batches: batches ?? [], grouped, inactiveGrouped, unmappedItems: [...unmappedMap.values()] }
 }
 
 export async function syncDispatchJobItems(
