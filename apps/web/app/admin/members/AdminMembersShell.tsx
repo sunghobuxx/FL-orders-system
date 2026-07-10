@@ -1,39 +1,25 @@
 'use client'
 
-import Link from 'next/link'
-import { usePathname } from 'next/navigation'
 import type { ReactNode } from 'react'
 
-const TABS = [
-  { href: '/admin/members', label: '회원 목록', exact: true },
-  { href: '/admin/members/new', label: '신규 등록' },
-]
-
 export default function AdminMembersShell({ children }: { children: ReactNode }) {
-  const pathname = usePathname()
-
   return (
-    <div className="p-6 space-y-4">
-      <h1 className="text-xl font-bold text-gray-900">회원 관리</h1>
-      <div className="flex gap-1 border-b border-gray-200">
-        {TABS.map(tab => {
-          const isActive = tab.exact ? pathname === tab.href : pathname.startsWith(tab.href)
-          return (
-            <Link
-              key={tab.href}
-              href={tab.href}
-              className={`px-4 py-2 text-sm font-semibold rounded-t-lg -mb-px transition-colors ${
-                isActive
-                  ? 'bg-white text-brand-700 border border-b-white border-gray-200'
-                  : 'text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              {tab.label}
-            </Link>
-          )
-        })}
+    <div className="flex flex-col min-h-full">
+      <div className="md:hidden flex items-center gap-2 px-3 py-2 bg-white border-b border-gray-200">
+        <span className="px-4 py-1.5 rounded-lg text-sm font-medium border bg-gray-800 text-white border-gray-800">
+          회원정보
+        </span>
       </div>
-      {children}
+      <div className="flex flex-1 min-h-0">
+        <aside className="hidden md:flex w-36 shrink-0 border-r border-gray-200 flex-col gap-2 p-3 pt-4">
+          <div className="block text-center px-2 py-2.5 rounded-lg text-sm font-medium border bg-gray-800 text-white border-gray-800">
+            회원정보
+          </div>
+        </aside>
+        <div className="flex-1 min-w-0 p-4 md:p-5">
+          {children}
+        </div>
+      </div>
     </div>
   )
 }
