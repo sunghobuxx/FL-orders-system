@@ -2,126 +2,272 @@ export const runtime = 'edge'
 
 import Link from 'next/link'
 import { createAdminClient } from '@/lib/supabase/admin'
+import AdminSettlementShell from '@/app/admin/settlement/AdminSettlementShell'
 import { getKstToday } from '@/lib/date-kst'
 
 interface Props {
-  searchParams: Promise<{ month?: string }>
+  searchParams: Promise<{ from?: string; to?: string; view?: string }>
 }
 
 export default async function AdminPurchasePage({ searchParams }: Props) {
-  const { month: monthParam } = await searchParams
+  const { from: fromParam, to: toParam, view: viewParam } = await searchParams
+  const view = viewParam === 'product' ? 'product' : 'supplier'
+
   const today = getKstToday()
-  const currentMonth = monthParam ?? today.slice(0, 7)
-  const [year, month] = currentMonth.split('-').map(Number)
-  const from = `${currentMonth}-01`
-  const lastDay = new Date(year, month, 0).getDate()
-  const to = `${currentMonth}-${String(lastDay).padStart(2, '0')}`
+  const currentMonth = today.slice(0, 7)
+  const from = fromParam ?? `${currentMonth}-01`
+  const to = toParam ?? today
 
   const db = createAdminClient()
 
-  // dispatch_jobs with job_items for the month (매입 기준)
-  const { data: jobs } = await db
-    .from('dispatch_jobs')
-    .select('id, supplier_id, business_date, status, suppliers(organizations(name)), dispatch_job_items(id, qty, unit, dispatch_job_items_products:products(standard_name))')
+  // Get order_batches in date range
+  const { data: batches } = await db
+    .from('order_batches')
+    .select('id')
     .gte('business_date', from)
     .lte('business_date', to)
-    .eq('status', 'sent')
-    .order('business_date', { ascending: false })
+    .in('status', ['submitted', 'validated', 'ordered', 'dispatched', 'completed'])
 
-  type JobRow = {
-    id: string
-    supplier_id: string
-    business_date: string
-    status: string
-    suppliers: { organizations: { name: string } | null } | null
-    dispatch_job_items: { id: string; qty: number; unit: string; dispatch_job_items_products: { standard_name: string } | null }[]
+  const batchIds = (batches ?? []).map(b => b.id)
+  let orderItems: {
+    product_id: string
+    qty: number
+    unit: string
+    unit_price_snapshot: number
+    products: { standard_name: string; is_fixed_price: boolean } | null
+  }[] = []
+
+  if (batchIds.length > 0) {
+    const { data } = await db
+      .from('order_items')
+      .select('product_id, qty, unit, unit_price_snapshot, products(standard_name, is_fixed_price), orders!inner(batch_id)')
+      .in('orders.batch_id', batchIds)
+    orderItems = (data ?? []) as unknown as typeof orderItems
   }
-  const rows = (jobs ?? []) as unknown as JobRow[]
 
-  // 공급처별 집계
-  const bySupplier = new Map<string, { name: string; days: Set<string>; itemCount: number }>()
-  for (const job of rows) {
-    const name = job.suppliers?.organizations?.name ?? '알 수 없음'
-    const existing = bySupplier.get(job.supplier_id)
-    if (existing) {
-      existing.days.add(job.business_date)
-      existing.itemCount += job.dispatch_job_items.length
-    } else {
-      bySupplier.set(job.supplier_id, { name, days: new Set([job.business_date]), itemCount: job.dispatch_job_items.length })
+  // Map product_id → supplier_id (latest active)
+  const productIds = [...new Set(orderItems.map(i => i.product_id))]
+  const productToSupplier = new Map<string, string>()
+  if (productIds.length > 0) {
+    const { data: spRows } = await db
+      .from('supplier_products')
+      .select('product_id, supplier_id, updated_at')
+      .in('product_id', productIds)
+      .eq('status', 'active')
+      .order('updated_at', { ascending: false })
+    for (const sp of spRows ?? []) {
+      if (!productToSupplier.has(sp.product_id)) {
+        productToSupplier.set(sp.product_id, sp.supplier_id)
+      }
     }
   }
 
-  const prevMonth = new Date(year, month - 2, 1).toISOString().slice(0, 7)
-  const nextMonth = new Date(year, month, 1).toISOString().slice(0, 7)
+  // Aggregate by supplier
+  const bySupplier = new Map<string, { supplierId: string; supplierName: string; totalAmount: number; fixedAmount: number; variableAmount: number }>()
+  for (const item of orderItems) {
+    const prod = item.products
+    if (!prod) continue
+    const supplierId = productToSupplier.get(item.product_id)
+    if (!supplierId) continue
+    const amount = Number(item.qty) * Number(item.unit_price_snapshot)
+    if (!bySupplier.has(supplierId)) {
+      bySupplier.set(supplierId, { supplierId, supplierName: '', totalAmount: 0, fixedAmount: 0, variableAmount: 0 })
+    }
+    const entry = bySupplier.get(supplierId)
+    if (!entry) continue
+    entry.totalAmount += amount
+    if (prod.is_fixed_price) entry.fixedAmount += amount
+    else entry.variableAmount += amount
+  }
+
+  // Fetch supplier names
+  const supplierIds = [...bySupplier.keys()]
+  if (supplierIds.length > 0) {
+    const { data: suppliers } = await db
+      .from('suppliers')
+      .select('id, organizations(name)')
+      .in('id', supplierIds)
+    for (const s of suppliers ?? []) {
+      const entry = bySupplier.get(s.id)
+      if (entry) entry.supplierName = (s.organizations as unknown as { name: string } | null)?.name ?? '-'
+    }
+  }
+  const supplierList = [...bySupplier.values()].sort((a, b) => b.totalAmount - a.totalAmount)
+
+  // Aggregate by product
+  const byProduct = new Map<string, { productId: string; productName: string; unit: string; totalQty: number; totalAmount: number }>()
+  for (const item of orderItems) {
+    const prod = item.products
+    if (!prod) continue
+    const amount = Number(item.qty) * Number(item.unit_price_snapshot)
+    if (!byProduct.has(item.product_id)) {
+      byProduct.set(item.product_id, { productId: item.product_id, productName: prod.standard_name, unit: item.unit, totalQty: 0, totalAmount: 0 })
+    }
+    const entry = byProduct.get(item.product_id)
+    if (!entry) continue
+    entry.totalQty += Number(item.qty)
+    entry.totalAmount += amount
+  }
+  const productList = [...byProduct.values()].sort((a, b) => b.totalAmount - a.totalAmount)
+
+  const grandTotal = view === 'supplier'
+    ? supplierList.reduce((s, r) => s + r.totalAmount, 0)
+    : productList.reduce((s, r) => s + r.totalAmount, 0)
+
+  const fmt = (n: number) => `${Math.round(n).toLocaleString()}원`
+  const baseUrl = `/admin/purchase?from=${from}&to=${to}`
 
   return (
-    <div className="p-6 max-w-3xl space-y-5">
-      <div className="flex items-center gap-3">
-        <h1 className="text-lg font-bold text-gray-900">매입 정산</h1>
-        <a href={`?month=${prevMonth}`} className="px-3 py-1.5 bg-gray-100 rounded text-gray-500 hover:bg-gray-200 text-sm">←</a>
-        <span className="font-semibold text-gray-700">{year}년 {month}월</span>
-        <a href={`?month=${nextMonth}`} className="px-3 py-1.5 bg-gray-100 rounded text-gray-500 hover:bg-gray-200 text-sm">→</a>
-      </div>
+    <AdminSettlementShell>
+      <div className="space-y-4 max-w-3xl">
+        {/* Date range selector */}
+        <div className="bg-white rounded-xl border border-gray-200 px-5 py-4">
+          <form className="flex items-center gap-3 flex-wrap">
+            <input type="hidden" name="view" value={view} />
+            <span className="text-sm text-gray-500 shrink-0">기간:</span>
+            <input
+              type="date"
+              name="from"
+              defaultValue={from}
+              className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+            />
+            <span className="text-sm text-gray-400">~</span>
+            <input
+              type="date"
+              name="to"
+              defaultValue={to}
+              max={today}
+              className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+            />
+            <button
+              type="submit"
+              className="rounded-lg bg-brand-600 text-white px-4 py-1.5 text-sm font-semibold hover:bg-brand-700"
+            >
+              조회
+            </button>
+            <div className="flex gap-1 ml-auto">
+              <Link
+                href={`${baseUrl}&view=${view}`}
+                className="text-xs px-2.5 py-1 rounded border border-gray-300 text-gray-600 hover:bg-gray-50"
+              >
+                이번달
+              </Link>
+            </div>
+          </form>
+        </div>
 
-      {/* 공급처별 요약 */}
-      <div>
-        <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">공급처별 발주 현황</h2>
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-          {bySupplier.size === 0 ? (
-            <p className="px-5 py-8 text-sm text-gray-400 text-center">이번 달 발주 내역이 없습니다.</p>
+        {/* View tabs */}
+        <div className="flex gap-1 text-xs">
+          <Link
+            href={`${baseUrl}&view=supplier`}
+            className={`px-4 py-2 rounded-lg border font-semibold transition-colors ${
+              view === 'supplier' ? 'bg-gray-800 text-white border-gray-800' : 'text-gray-600 border-gray-300 hover:bg-gray-50'
+            }`}
+          >
+            업체별
+          </Link>
+          <Link
+            href={`${baseUrl}&view=product`}
+            className={`px-4 py-2 rounded-lg border font-semibold transition-colors ${
+              view === 'product' ? 'bg-gray-800 text-white border-gray-800' : 'text-gray-600 border-gray-300 hover:bg-gray-50'
+            }`}
+          >
+            품목별
+          </Link>
+        </div>
+
+        {/* Total banner */}
+        {grandTotal > 0 && (
+          <div className="flex items-center justify-between bg-gray-900 text-white rounded-xl px-5 py-3">
+            <span className="text-sm font-semibold">{from} ~ {to}</span>
+            <span className="text-lg font-bold">{fmt(grandTotal)}</span>
+          </div>
+        )}
+
+        {/* Supplier view */}
+        {view === 'supplier' && (
+          supplierList.length === 0 ? (
+            <div className="bg-white rounded-xl border border-gray-200 py-14 text-center text-sm text-gray-400">
+              해당 기간 매입 내역이 없습니다
+            </div>
           ) : (
-            <>
-              <div className="grid grid-cols-[1fr_auto_auto_auto] gap-3 px-5 py-3 bg-gray-50 border-b border-gray-200 text-xs font-semibold text-gray-500">
-                <span>공급처명</span>
-                <span className="text-center">발주일수</span>
-                <span className="text-center">총 품목수</span>
-                <span></span>
+            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+              <div className="grid grid-cols-[2fr_1fr_1fr_1fr] gap-3 px-5 py-3 bg-gray-50 border-b text-xs font-semibold text-gray-500">
+                <span>공급처</span>
+                <span className="text-right">고정단가</span>
+                <span className="text-right">변동단가</span>
+                <span className="text-right">합계</span>
               </div>
               <div className="divide-y divide-gray-100">
-                {[...bySupplier.entries()].map(([supplierId, info]) => (
-                  <div key={supplierId} className="grid grid-cols-[1fr_auto_auto_auto] gap-3 items-center px-5 py-3.5">
-                    <span className="text-sm font-medium text-gray-900">{info.name}</span>
-                    <span className="text-sm text-center text-gray-600">{info.days.size}일</span>
-                    <span className="text-sm text-center text-gray-600">{info.itemCount}건</span>
-                    <Link href={`/admin/purchase/supplier/${supplierId}`} className="text-xs text-brand-600 hover:underline">
-                      상세
-                    </Link>
+                {supplierList.map(r => (
+                  <Link
+                    key={r.supplierId}
+                    href={`/admin/purchase/supplier/${r.supplierId}?from=${from}&to=${to}`}
+                    className="grid grid-cols-[2fr_1fr_1fr_1fr] gap-3 items-center px-5 py-3 hover:bg-gray-50 transition-colors"
+                  >
+                    <span className="text-sm font-semibold text-brand-600 bg-gray-100 px-3 py-1.5 rounded">
+                      {r.supplierName}
+                    </span>
+                    <span className="text-sm text-right text-gray-600 bg-gray-50 px-2 py-1.5 rounded">
+                      {r.fixedAmount > 0 ? fmt(r.fixedAmount) : '-'}
+                    </span>
+                    <span className="text-sm text-right text-gray-600 bg-gray-50 px-2 py-1.5 rounded">
+                      {r.variableAmount > 0 ? fmt(r.variableAmount) : '-'}
+                    </span>
+                    <span className="text-sm text-right font-bold text-gray-900 bg-gray-100 px-3 py-1.5 rounded">
+                      {fmt(r.totalAmount)}
+                    </span>
+                  </Link>
+                ))}
+              </div>
+              <div className="grid grid-cols-[2fr_1fr_1fr_1fr] gap-3 px-5 py-3 bg-gray-50 border-t text-xs font-semibold">
+                <span className="text-gray-600">합계</span>
+                <span className="text-right text-gray-600">
+                  {fmt(supplierList.reduce((s, r) => s + r.fixedAmount, 0))}
+                </span>
+                <span className="text-right text-gray-600">
+                  {fmt(supplierList.reduce((s, r) => s + r.variableAmount, 0))}
+                </span>
+                <span className="text-right text-gray-900 font-bold">{fmt(grandTotal)}</span>
+              </div>
+            </div>
+          )
+        )}
+
+        {/* Product view */}
+        {view === 'product' && (
+          productList.length === 0 ? (
+            <div className="bg-white rounded-xl border border-gray-200 py-14 text-center text-sm text-gray-400">
+              해당 기간 매입 품목이 없습니다
+            </div>
+          ) : (
+            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+              <div className="grid grid-cols-[2fr_1fr_1fr] gap-3 px-5 py-3 bg-gray-50 border-b text-xs font-semibold text-gray-500">
+                <span>품목</span>
+                <span className="text-center">총수량</span>
+                <span className="text-right">금액</span>
+              </div>
+              <div className="divide-y divide-gray-100">
+                {productList.map(r => (
+                  <div key={r.productId} className="grid grid-cols-[2fr_1fr_1fr] gap-3 items-center px-5 py-3">
+                    <span className="text-sm text-gray-800 bg-gray-100 px-3 py-1.5 rounded">{r.productName}</span>
+                    <span className="text-sm text-center text-gray-700 bg-gray-100 px-2 py-1.5 rounded">
+                      {r.totalQty % 1 === 0 ? r.totalQty : r.totalQty.toFixed(1)} {r.unit}
+                    </span>
+                    <span className="text-sm text-right font-semibold text-gray-900 bg-gray-100 px-3 py-1.5 rounded">
+                      {fmt(r.totalAmount)}
+                    </span>
                   </div>
                 ))}
               </div>
-            </>
-          )}
-        </div>
-      </div>
-
-      {/* 일별 발주 */}
-      <div>
-        <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">일별 발주 내역</h2>
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-          {rows.length === 0 ? (
-            <p className="px-5 py-8 text-sm text-gray-400 text-center">발주 내역이 없습니다.</p>
-          ) : (
-            <div className="divide-y divide-gray-100">
-              {[...new Set(rows.map(r => r.business_date))].map(date => {
-                const dayJobs = rows.filter(r => r.business_date === date)
-                return (
-                  <div key={date} className="flex items-center justify-between px-5 py-3.5">
-                    <div>
-                      <Link href={`/admin/purchase/${date}`} className="text-sm font-medium text-brand-600 hover:underline">
-                        {date}
-                      </Link>
-                      <span className="text-xs text-gray-400 ml-2">{dayJobs.length}개 공급처</span>
-                    </div>
-                    <Link href={`/admin/purchase/${date}`} className="text-xs text-gray-400 hover:text-gray-600">
-                      상세 →
-                    </Link>
-                  </div>
-                )
-              })}
+              <div className="flex justify-between items-center px-5 py-3 bg-gray-50 border-t text-xs font-semibold">
+                <span className="text-gray-600">합계</span>
+                <span className="text-gray-900 font-bold">{fmt(grandTotal)}</span>
+              </div>
             </div>
-          )}
-        </div>
+          )
+        )}
       </div>
-    </div>
+    </AdminSettlementShell>
   )
 }

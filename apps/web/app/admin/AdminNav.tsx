@@ -16,7 +16,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/admin/suppliers', label: '공급처 관리' },
   { type: 'section', label: '정산' },
   { href: '/admin/settlement/specs', label: '당일명세서' },
-  { href: '/admin/settlement/history', label: '주/월 정산' },
+  { href: '/admin/settlement', label: '주/월 정산' },
   { href: '/admin/finance', label: '입/출금(미수금)' },
   { href: '/admin/purchase', label: '매입 정산' },
   { href: '/admin/sales', label: '전체 매출관리' },
