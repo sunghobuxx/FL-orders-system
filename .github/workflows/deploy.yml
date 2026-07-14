@@ -48,8 +48,9 @@ jobs:
           import os, shutil
 
           next_static = '.vercel/output/static/_next/static'
+          worker_dir = '.vercel/output/static/_worker.js'
 
-          # Find all files in [bracket] directories
+          # Find all files in [bracket] directories under _next/static
           bracket_chunks = []
           for root, dirs, files in os.walk(next_static):
               for f in files:
@@ -61,9 +62,7 @@ jobs:
           if not bracket_chunks:
               print('No bracket-path files found - skipping')
           else:
-              print(f'Found {len(bracket_chunks)} bracket-path files:')
-              for _, rel in bracket_chunks:
-                  print(f'  {rel}')
+              print(f'Found {len(bracket_chunks)} bracket-path files')
 
               # Step 1: Copy to debracketized paths
               for src, rel in bracket_chunks:
@@ -73,31 +72,58 @@ jobs:
                   shutil.copy2(src, dst)
                   print(f'Copied: {rel} -> {new_rel}')
 
-              # Step 2: Patch manifest JS/JSON files to reference debracketized paths
+              # Step 2: Patch JS/JSON files in BOTH _next/static AND _worker.js
+              # _worker.js contains RSC chunk registrations that reference [bracket] paths
+              # Browser uses these URLs; CDN has poisoned text/plain for old bracket hashes
+              # Replacing [bracket] with bracket-less path means browser requests unpoisoned URL
               patched_files = 0
-              for root, dirs, files in os.walk(next_static):
-                  for f in files:
-                      if not (f.endswith('.js') or f.endswith('.json')):
-                          continue
-                      full = os.path.join(root, f)
-                      rel_full = os.path.relpath(full, next_static).replace(os.sep, '/')
-                      if '[' in rel_full:
-                          continue  # skip bracket files themselves
-                      try:
-                          content = open(full, encoding='utf-8').read()
-                      except Exception:
-                          continue
-                      new_content = content
-                      for _, chunk_rel in bracket_chunks:
-                          debracketed = chunk_rel.replace('[', '').replace(']', '')
-                          if chunk_rel in new_content:
-                              new_content = new_content.replace(chunk_rel, debracketed)
-                      if new_content != content:
-                          open(full, 'w', encoding='utf-8').write(new_content)
-                          patched_files += 1
-                          print(f'Patched manifest: {rel_full}')
+              search_dirs = [next_static, worker_dir]
+              for search_dir in search_dirs:
+                  if not os.path.isdir(search_dir):
+                      continue
+                  for root, dirs, files in os.walk(search_dir):
+                      for f in files:
+                          if not (f.endswith('.js') or f.endswith('.json')):
+                              continue
+                          full = os.path.join(root, f)
+                          rel_full = os.path.relpath(full, search_dir).replace(os.sep, '/')
+                          if '[' in rel_full:
+                              continue  # skip bracket files themselves
+                          try:
+                              content = open(full, encoding='utf-8').read()
+                          except Exception:
+                              continue
+                          new_content = content
+                          for _, chunk_rel in bracket_chunks:
+                              # chunk_rel = "chunks/app/.../[x]/page-hash.js"
+                              debracketed = chunk_rel.replace('[', '').replace(']', '')
+                              # Try all path formats used in manifests and Worker RSC payloads:
+                              # 1. Relative to _next/static/: chunks/app/.../[x]/page-hash.js
+                              if chunk_rel in new_content:
+                                  new_content = new_content.replace(chunk_rel, debracketed)
+                              # 2. With static/ prefix (used in _buildManifest.js and RSC payloads)
+                              s = 'static/' + chunk_rel
+                              sd = 'static/' + debracketed
+                              if s in new_content:
+                                  new_content = new_content.replace(s, sd)
+                              # 3. After chunks/ prefix (webpack chunk ID map format)
+                              if chunk_rel.startswith('chunks/'):
+                                  after = chunk_rel[len('chunks/'):]
+                                  after_d = debracketed[len('chunks/'):]
+                                  if after in new_content:
+                                      new_content = new_content.replace(after, after_d)
+                                  # 4. Without .js (chunk ID entries without extension)
+                                  if after.endswith('.js'):
+                                      no_ext = after[:-3]
+                                      no_ext_d = after_d[:-3]
+                                      if no_ext in new_content:
+                                          new_content = new_content.replace(no_ext, no_ext_d)
+                          if new_content != content:
+                              open(full, 'w', encoding='utf-8').write(new_content)
+                              patched_files += 1
+                              print(f'Patched: {os.path.basename(search_dir)}/{rel_full}')
 
-              print(f'Done: copied {len(bracket_chunks)} bracket files, patched {patched_files} manifests')
+              print(f'Done: copied {len(bracket_chunks)} bracket files, patched {patched_files} files')
           PYEOF
 
       - name: Fix worker index.js (next-on-pages bug - root / mapped to favicon)
