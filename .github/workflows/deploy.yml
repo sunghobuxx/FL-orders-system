@@ -41,6 +41,65 @@ jobs:
           VERCEL: ''
         run: pnpm dlx @cloudflare/next-on-pages@1.13.16
 
+      - name: Fix bracket-path static chunks (CF Pages cannot serve [bracket] directories)
+        working-directory: apps/web
+        run: |
+          python3 << 'PYEOF'
+          import os, shutil
+
+          next_static = '.vercel/output/static/_next/static'
+
+          # Find all files in [bracket] directories
+          bracket_chunks = []
+          for root, dirs, files in os.walk(next_static):
+              for f in files:
+                  full = os.path.join(root, f)
+                  rel = os.path.relpath(full, next_static).replace(os.sep, '/')
+                  if '[' in rel or ']' in rel:
+                      bracket_chunks.append((full, rel))
+
+          if not bracket_chunks:
+              print('No bracket-path files found - skipping')
+          else:
+              print(f'Found {len(bracket_chunks)} bracket-path files:')
+              for _, rel in bracket_chunks:
+                  print(f'  {rel}')
+
+              # Step 1: Copy to debracketized paths
+              for src, rel in bracket_chunks:
+                  new_rel = rel.replace('[', '').replace(']', '')
+                  dst = os.path.join(next_static, new_rel)
+                  os.makedirs(os.path.dirname(dst), exist_ok=True)
+                  shutil.copy2(src, dst)
+                  print(f'Copied: {rel} -> {new_rel}')
+
+              # Step 2: Patch manifest JS/JSON files to reference debracketized paths
+              patched_files = 0
+              for root, dirs, files in os.walk(next_static):
+                  for f in files:
+                      if not (f.endswith('.js') or f.endswith('.json')):
+                          continue
+                      full = os.path.join(root, f)
+                      rel_full = os.path.relpath(full, next_static).replace(os.sep, '/')
+                      if '[' in rel_full:
+                          continue  # skip bracket files themselves
+                      try:
+                          content = open(full, encoding='utf-8').read()
+                      except Exception:
+                          continue
+                      new_content = content
+                      for _, chunk_rel in bracket_chunks:
+                          debracketed = chunk_rel.replace('[', '').replace(']', '')
+                          if chunk_rel in new_content:
+                              new_content = new_content.replace(chunk_rel, debracketed)
+                      if new_content != content:
+                          open(full, 'w', encoding='utf-8').write(new_content)
+                          patched_files += 1
+                          print(f'Patched manifest: {rel_full}')
+
+              print(f'Done: copied {len(bracket_chunks)} bracket files, patched {patched_files} manifests')
+          PYEOF
+
       - name: Fix worker index.js (next-on-pages bug - root / mapped to favicon)
         working-directory: apps/web
         run: |
