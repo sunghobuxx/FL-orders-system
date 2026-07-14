@@ -41,10 +41,6 @@ jobs:
           VERCEL: ''
         run: pnpm dlx @cloudflare/next-on-pages@1.13.16
 
-      - name: Remove _routes.json (worker handles all routes by default)
-        working-directory: apps/web
-        run: rm -f .vercel/output/static/_routes.json
-
       - name: Fix worker index.js (next-on-pages bug - root / mapped to favicon)
         working-directory: apps/web
         run: |
