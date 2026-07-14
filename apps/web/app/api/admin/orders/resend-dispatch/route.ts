@@ -68,11 +68,9 @@ export async function POST(req: NextRequest) {
 
     await adminDb.from('dispatch_messages').insert({
       dispatch_job_id: jobId,
-      phone: contact.phone,
-      message: messageLines,
       status: result.success ? 'sent' : 'failed',
-      external_id: result.externalId ?? null,
-      error: result.error ?? null,
+      external_message_id: result.externalId ?? null,
+      error_message: result.error ?? null,
       sent_at: new Date().toISOString(),
     })
 
