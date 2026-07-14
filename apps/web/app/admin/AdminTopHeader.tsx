@@ -1,14 +1,4 @@
-'use client'
-
-import { createClient } from '@/lib/supabase/client'
-
 export default function AdminTopHeader() {
-  async function handleLogout() {
-    const supabase = createClient()
-    await supabase.auth.signOut()
-    window.location.href = '/login'
-  }
-
   return (
     <header className="sticky top-0 z-50 h-14 bg-gray-900 border-b border-gray-800 flex items-center justify-between px-4 shrink-0">
       <div className="flex items-center gap-2.5">
@@ -17,13 +7,12 @@ export default function AdminTopHeader() {
         <span className="text-sm font-bold text-white tracking-widest">FRUIT LIFE</span>
         <span className="text-xs text-gray-500 hidden sm:block">관리자</span>
       </div>
-      <button
-        type="button"
-        onClick={handleLogout}
+      <a
+        href="/api/auth/signout"
         className="text-xs text-gray-400 hover:text-white px-3 py-1.5 hover:bg-gray-800 rounded transition-colors"
       >
         로그아웃
-      </button>
+      </a>
     </header>
   )
 }

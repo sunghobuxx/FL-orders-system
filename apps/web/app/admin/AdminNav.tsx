@@ -2,7 +2,6 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
 
 type NavSection = { type: 'section'; label: string }
 type NavLink = { href: string; label: string; exact?: boolean }
@@ -31,11 +30,6 @@ const NAV_ITEMS: NavItem[] = [
 
 export default function AdminNav() {
   const pathname = usePathname()
-  async function handleLogout() {
-    const supabase = createClient()
-    await supabase.auth.signOut()
-    window.location.href = '/login'
-  }
 
   return (
     <nav className="hidden lg:flex w-[200px] shrink-0 bg-gray-900 flex-col h-screen sticky top-0 overflow-hidden">
@@ -82,13 +76,12 @@ export default function AdminNav() {
 
       {/* Logout */}
       <div className="p-3 border-t border-gray-800">
-        <button
-          type="button"
-          onClick={handleLogout}
-          className="w-full text-left px-4 py-2.5 text-sm text-gray-500 hover:text-white hover:bg-gray-800 rounded transition-colors"
+        <a
+          href="/api/auth/signout"
+          className="block w-full text-left px-4 py-2.5 text-sm text-gray-500 hover:text-white hover:bg-gray-800 rounded transition-colors"
         >
           로그아웃
-        </button>
+        </a>
       </div>
     </nav>
   )
