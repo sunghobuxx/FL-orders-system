@@ -41,18 +41,9 @@ jobs:
           VERCEL: ''
         run: pnpm dlx @cloudflare/next-on-pages@1.13.16
 
-      - name: Fix _routes.json (add explicit root path)
+      - name: Remove _routes.json (worker handles all routes by default)
         working-directory: apps/web
-        run: |
-          python3 -c "
-          import json
-          path = '.vercel/output/static/_routes.json'
-          r = json.load(open(path))
-          if '/' not in r['include']:
-              r['include'] = ['/'] + r['include']
-          json.dump(r, open(path, 'w'), separators=(',',':'))
-          print('_routes.json:', json.dumps(r))
-          "
+        run: rm -f .vercel/output/static/_routes.json
 
       - name: Deploy to Cloudflare Pages
         working-directory: apps/web
