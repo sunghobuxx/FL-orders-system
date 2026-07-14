@@ -40,6 +40,7 @@ export async function POST(req: Request) {
           supplier_id: supplierId,
           business_date: businessDate,
           status: 'pending',
+          idempotency_key: `${supplierId}_${businessDate}`,
         })
       }
     }

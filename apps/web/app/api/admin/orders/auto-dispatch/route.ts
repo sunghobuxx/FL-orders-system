@@ -79,7 +79,12 @@ export async function POST(req: NextRequest) {
       if (!job) {
         const { data: newJob } = await adminDb
           .from('dispatch_jobs')
-          .insert({ supplier_id: supplierId, business_date: businessDate, status: 'pending' })
+          .insert({
+            supplier_id: supplierId,
+            business_date: businessDate,
+            status: 'pending',
+            idempotency_key: `${supplierId}_${businessDate}`,
+          })
           .select('id, status')
           .single()
         if (!newJob) continue
