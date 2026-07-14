@@ -3,8 +3,6 @@
 import { useRouter } from 'next/navigation'
 import { useTransition, useState } from 'react'
 
-import { deleteOrgProductPrice, upsertOrgProductPrice } from '../actions'
-
 type OrgPrice = { organization_id: string; orgName: string; unit_price: number }
 type OrgOption = { id: string; name: string }
 
@@ -29,8 +27,13 @@ export default function OrgPriceSection({ productId, orgPrices, allOrgs }: Props
     const price = Number(inputPrice)
     if (!selectedOrgId || !price || price <= 0) return
     startTransition(async () => {
-      const result = await upsertOrgProductPrice(productId, selectedOrgId, price)
-      if (!result.success) { alert(result.error ?? '저장 실패'); return }
+      const res = await fetch('/api/admin/products/org-prices', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ productId, organizationId: selectedOrgId, unitPrice: price }),
+      })
+      const data = await res.json() as { error?: string }
+      if (!res.ok) { alert(data.error ?? '저장 실패'); return }
       setSelectedOrgId('')
       setInputPrice('')
       router.refresh()
@@ -41,8 +44,13 @@ export default function OrgPriceSection({ productId, orgPrices, allOrgs }: Props
     const price = Number(editPrice)
     if (!price || price <= 0) return
     startTransition(async () => {
-      const result = await upsertOrgProductPrice(productId, orgId, price)
-      if (!result.success) { alert(result.error ?? '수정 실패'); return }
+      const res = await fetch('/api/admin/products/org-prices', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ productId, organizationId: orgId, unitPrice: price }),
+      })
+      const data = await res.json() as { error?: string }
+      if (!res.ok) { alert(data.error ?? '수정 실패'); return }
       setEditingOrgId(null)
       setEditPrice('')
       router.refresh()
@@ -52,8 +60,13 @@ export default function OrgPriceSection({ productId, orgPrices, allOrgs }: Props
   function handleDelete(orgId: string, orgName: string) {
     if (!confirm(`${orgName}의 고정단가를 삭제하시겠습니까?`)) return
     startTransition(async () => {
-      const result = await deleteOrgProductPrice(productId, orgId)
-      if (!result.success) { alert(result.error ?? '삭제 실패'); return }
+      const res = await fetch('/api/admin/products/org-prices', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ productId, organizationId: orgId }),
+      })
+      const data = await res.json() as { error?: string }
+      if (!res.ok) { alert(data.error ?? '삭제 실패'); return }
       router.refresh()
     })
   }
