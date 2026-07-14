@@ -45,6 +45,25 @@ jobs:
         working-directory: apps/web
         run: rm -f .vercel/output/static/_routes.json
 
+      - name: Fix worker index.js (next-on-pages bug - root / mapped to favicon)
+        working-directory: apps/web
+        run: |
+          python3 << 'PYEOF'
+          import re
+          path = '.vercel/output/static/_worker.js/index.js'
+          content = open(path).read()
+          WRONG = '"/":{type:"override",path:"/favicon.ico",headers:{"content-type":"image/x-icon"}}'
+          RIGHT = '"/":{type:"function",entrypoint:"__next-on-pages-dist__/functions/index.func.js"}'
+          if WRONG in content:
+              open(path, 'w').write(content.replace(WRONG, RIGHT))
+              print('SUCCESS: patched / route to index.func.js')
+          else:
+              print('WARNING: pattern not found - checking worker content...')
+              import re
+              m = re.search(r'"/":\{[^}]+\}', content)
+              if m: print('Current / mapping:', m.group())
+          PYEOF
+
       - name: Deploy to Cloudflare Pages
         working-directory: apps/web
         env:
