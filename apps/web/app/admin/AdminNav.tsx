@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname, useRouter } from 'next/navigation'
+import { usePathname } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
 type NavSection = { type: 'section'; label: string }
@@ -31,12 +31,10 @@ const NAV_ITEMS: NavItem[] = [
 
 export default function AdminNav() {
   const pathname = usePathname()
-  const router = useRouter()
-
   async function handleLogout() {
     const supabase = createClient()
     await supabase.auth.signOut()
-    router.push('/login')
+    window.location.href = '/login'
   }
 
   return (

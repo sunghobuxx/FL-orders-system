@@ -3,11 +3,10 @@
 export const runtime = 'edge'
 
 import { useState } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
 export default function LoginPage() {
-  const router = useRouter()
   const searchParams = useSearchParams()
   const errorParam = searchParams.get('error')
 
@@ -42,8 +41,7 @@ export default function LoginPage() {
              (org as { organization_type: string } | null)?.organization_type === 'operator'
     })
 
-    router.push(isAdmin ? '/admin/dashboard' : '/member/dashboard')
-    router.refresh()
+    window.location.href = isAdmin ? '/admin/dashboard' : '/member/dashboard'
   }
 
   return (
