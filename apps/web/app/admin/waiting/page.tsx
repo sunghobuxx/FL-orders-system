@@ -3,6 +3,7 @@ export const runtime = 'edge'
 import Link from 'next/link'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@supabase/supabase-js'
+import WaitingCalendar from './WaitingCalendar'
 
 const WAITING_URL = 'https://atzmpmnuibsrkkvpwsfy.supabase.co'
 const WAITING_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF0em1wbW51aWJzcmtrdnB3c2Z5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIwNTgxMzYsImV4cCI6MjA5NzYzNDEzNn0.OtlpMz5GMONGPVbGFcpzqDZQtMGsl8niWdeZI5sAB5w'
@@ -16,8 +17,13 @@ export default async function AdminWaitingPage({ searchParams }: Props) {
   const today = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().split('T')[0]
   const date = dateParam ?? today
 
-  const prevDate = (() => { const d = new Date(date); d.setDate(d.getDate() - 1); return d.toISOString().split('T')[0] })()
-  const nextDate = (() => { const d = new Date(date); d.setDate(d.getDate() + 1); return d.toISOString().split('T')[0] })()
+  const [sy, sm] = date.split('-').map(Number)
+  const monthStr = `${sy}-${String(sm).padStart(2, '0')}`
+  const monthStart = `${monthStr}-01`
+  const lastDay = new Date(sy, sm, 0).getDate()
+  const monthEnd = `${monthStr}-${String(lastDay).padStart(2, '0')}`
+  const monthStartISO = new Date(`${monthStart}T00:00:00+09:00`).toISOString()
+  const monthEndISO = new Date(`${monthEnd}T23:59:59.999+09:00`).toISOString()
 
   const db = createAdminClient()
   const { data: restaurants } = await db
@@ -29,7 +35,22 @@ export default async function AdminWaitingPage({ searchParams }: Props) {
   type RestRow = { id: string; waiting_enabled: boolean | null; organizations: { name: string } | null }
   const restRows = (restaurants ?? []) as unknown as RestRow[]
 
-  const waitingDb = createClient(WAITING_URL, WAITING_ANON)
+  const waitingDb = createClient(WAITING_URL, WAITING_ANON, { auth: { autoRefreshToken: false, persistSession: false } })
+
+  // 이번 달 전체 대기 데이터 (캘린더용)
+  const { data: monthEntries } = await waitingDb
+    .from('waiting_entries')
+    .select('created_at')
+    .gte('created_at', monthStartISO)
+    .lte('created_at', monthEndISO)
+
+  const dailyCounts: Record<string, number> = {}
+  for (const e of (monthEntries ?? []) as { created_at: string }[]) {
+    const kstDate = new Date(new Date(e.created_at).getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10)
+    dailyCounts[kstDate] = (dailyCounts[kstDate] ?? 0) + 1
+  }
+
+  // 선택 날짜 업체별 카운트
   const dateStart = new Date(`${date}T00:00:00+09:00`).toISOString()
   const dateEnd = new Date(`${date}T23:59:59.999+09:00`).toISOString()
 
@@ -48,20 +69,8 @@ export default async function AdminWaitingPage({ searchParams }: Props) {
     <div className="p-6 max-w-3xl space-y-4">
       <h1 className="text-lg font-bold text-gray-900">웨이팅 현황</h1>
 
-      {/* 날짜 네비게이션 */}
-      <div className="bg-white rounded-xl border border-gray-200 flex items-center justify-between px-4 py-3">
-        <Link href={`/admin/waiting?date=${prevDate}`} className="p-1 rounded hover:bg-gray-100 text-gray-400 text-lg leading-none">←</Link>
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-semibold text-gray-700">{date}</span>
-          {date === today
-            ? <span className="text-xs text-brand-600 font-medium">오늘</span>
-            : <Link href="/admin/waiting" className="text-xs text-brand-600 font-medium">오늘</Link>
-          }
-        </div>
-        <Link href={`/admin/waiting?date=${nextDate}`} className="p-1 rounded hover:bg-gray-100 text-gray-400 text-lg leading-none">→</Link>
-      </div>
+      <WaitingCalendar selectedDate={date} today={today} dailyCounts={dailyCounts} />
 
-      {/* 업체 목록 */}
       <div className="space-y-2">
         {restRows.map(r => {
           const count = countMap.get(r.id) ?? 0

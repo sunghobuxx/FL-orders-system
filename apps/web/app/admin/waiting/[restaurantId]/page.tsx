@@ -3,6 +3,7 @@ export const runtime = 'edge'
 import Link from 'next/link'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@supabase/supabase-js'
+import WaitingDatePicker from '../WaitingDatePicker'
 
 const WAITING_URL = 'https://atzmpmnuibsrkkvpwsfy.supabase.co'
 const WAITING_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF0em1wbW51aWJzcmtrdnB3c2Z5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIwNTgxMzYsImV4cCI6MjA5NzYzNDEzNn0.OtlpMz5GMONGPVbGFcpzqDZQtMGsl8niWdeZI5sAB5w'
@@ -13,6 +14,7 @@ const STATUS_MAP: Record<string, { label: string; cls: string }> = {
   called:   { label: '호출됨',  cls: 'bg-orange-100 text-orange-600' },
   '호출됨': { label: '호출됨',  cls: 'bg-orange-100 text-orange-600' },
   entered:  { label: '입장완료', cls: 'bg-gray-100 text-gray-500' },
+  seated:   { label: '입장완료', cls: 'bg-gray-100 text-gray-500' },
   '입장완료':{ label: '입장완료', cls: 'bg-gray-100 text-gray-500' },
 }
 
@@ -33,8 +35,7 @@ export default async function AdminWaitingDetailPage({ params, searchParams }: P
   const today = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().split('T')[0]
   const date = dateParam ?? today
 
-  const prevDate = (() => { const d = new Date(date); d.setDate(d.getDate() - 1); return d.toISOString().split('T')[0] })()
-  const nextDate = (() => { const d = new Date(date); d.setDate(d.getDate() + 1); return d.toISOString().split('T')[0] })()
+
 
   const db = createAdminClient()
   const { data: rest } = await db
@@ -45,7 +46,7 @@ export default async function AdminWaitingDetailPage({ params, searchParams }: P
   type R = { id: string; organizations: { name: string } | null }
   const orgName = ((rest as unknown as R | null)?.organizations?.name) ?? '알 수 없음'
 
-  const waitingDb = createClient(WAITING_URL, WAITING_ANON)
+  const waitingDb = createClient(WAITING_URL, WAITING_ANON, { auth: { autoRefreshToken: false, persistSession: false } })
   const dateStart = new Date(`${date}T00:00:00+09:00`).toISOString()
   const dateEnd = new Date(`${date}T23:59:59.999+09:00`).toISOString()
 
@@ -57,22 +58,22 @@ export default async function AdminWaitingDetailPage({ params, searchParams }: P
     status: string | null
     created_at: string
     called_at: string | null
-    entered_at: string | null
+    seated_at: string | null
   }
 
   const { data: rawEntries } = await waitingDb
     .from('waiting_entries')
-    .select('id, name, phone, party_size, status, created_at, called_at, entered_at')
+    .select('id, name, phone, party_size, status, created_at, called_at, seated_at')
     .eq('restaurant_id', restaurantId)
     .gte('created_at', dateStart)
     .lte('created_at', dateEnd)
     .order('created_at')
 
-  const entries = (rawEntries ?? []) as Entry[]
+const entries = (rawEntries ?? []) as Entry[]
 
   const waitingCount = entries.filter(e => e.status === 'waiting' || e.status === '대기중' || !e.status).length
   const calledCount  = entries.filter(e => e.status === 'called'  || e.status === '호출됨').length
-  const enteredCount = entries.filter(e => e.status === 'entered' || e.status === '입장완료').length
+  const enteredCount = entries.filter(e => e.status === 'entered' || e.status === 'seated' || e.status === '입장완료').length
 
   return (
     <div className="p-6 max-w-3xl space-y-4">
@@ -83,11 +84,7 @@ export default async function AdminWaitingDetailPage({ params, searchParams }: P
       </div>
 
       {/* 날짜 네비게이션 */}
-      <div className="bg-white rounded-xl border border-gray-200 flex items-center justify-between px-4 py-3">
-        <Link href={`/admin/waiting/${restaurantId}?date=${prevDate}`} className="p-1 rounded hover:bg-gray-100 text-gray-400 text-lg leading-none">←</Link>
-        <span className="text-sm font-semibold text-gray-700">{date}</span>
-        <Link href={`/admin/waiting/${restaurantId}?date=${nextDate}`} className="p-1 rounded hover:bg-gray-100 text-gray-400 text-lg leading-none">→</Link>
-      </div>
+      <WaitingDatePicker restaurantId={restaurantId} currentDate={date} today={today} />
 
       {/* 통계 */}
       <div className="grid grid-cols-3 gap-3">
@@ -118,7 +115,7 @@ export default async function AdminWaitingDetailPage({ params, searchParams }: P
             const times = [
               `접수 ${kstTime(entry.created_at)}`,
               entry.called_at  ? `호출 ${kstTime(entry.called_at)}`  : null,
-              entry.entered_at ? `입장 ${kstTime(entry.entered_at)}` : null,
+              entry.seated_at ? `입장 ${kstTime(entry.seated_at)}` : null,
             ].filter(Boolean).join(' · ')
             return (
               <div key={entry.id} className="bg-white rounded-xl border border-gray-200 flex items-center justify-between px-5 py-4">

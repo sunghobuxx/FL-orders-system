@@ -87,6 +87,14 @@ export default async function MemberDetailPage({ params, searchParams }: Props) 
             {!isSupplier && memberEmail && (
               <ImpersonateButton orgId={id} memberEmail={memberEmail} />
             )}
+            {isSupplier && supplier && (
+              <a
+                href={`/admin/suppliers/${supplier.id}`}
+                className="rounded-lg border border-purple-200 text-purple-700 px-4 py-2 text-sm font-semibold hover:bg-purple-50"
+              >
+                공급처 관리
+              </a>
+            )}
             <DeleteMemberButton orgId={id} orgName={org.name} />
           </div>
         </div>

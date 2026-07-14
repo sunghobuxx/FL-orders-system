@@ -3,13 +3,33 @@ export const runtime = 'edge'
 import React from 'react'
 import Link from 'next/link'
 
-import { getSessionUser } from '@/lib/supabase/server'
 import { getKstToday, getKstDateOffset } from '@/lib/date-kst'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { getSessionUser } from '@/lib/supabase/server'
 
 export default async function AdminDashboardPage() {
-  const { supabase: db, user } = await getSessionUser()
+  const db = createAdminClient()
   const today = getKstToday()
   const tomorrow = getKstDateOffset(1)
+
+  // 매니저 담당 업체 필터
+  const { user } = await getSessionUser()
+  let managerRestaurantIds: string[] | null = null
+  if (user) {
+    const { data: membership } = await db
+      .from('memberships').select('role').eq('user_id', user.id).maybeSingle()
+    if (membership?.role === 'manager') {
+      const { data: assigned } = await db
+        .from('manager_restaurants').select('restaurant_id').eq('user_id', user.id)
+      managerRestaurantIds = (assigned ?? []).map((a: { restaurant_id: string }) => a.restaurant_id)
+    }
+  }
+  const DUMMY_ID = '00000000-0000-0000-0000-000000000000'
+  const filterIds = managerRestaurantIds !== null
+    ? (managerRestaurantIds.length > 0 ? managerRestaurantIds : [DUMMY_ID])
+    : null
+
+  const BATCH_SELECT = 'id, status, submitted_at, business_date, restaurants(organizations(name))'
 
   const [
     { data: allBatchesRaw },
@@ -20,18 +40,22 @@ export default async function AdminDashboardPage() {
     { data: inquiries },
   ] = await Promise.all([
     // 오늘 + 내일 주문내역 통합 조회 (business_date 기준)
-    db.from('order_batches')
-      .select('id, status, submitted_at, business_date, restaurants(organizations(name))')
-      .in('business_date', [today, tomorrow])
-      .order('business_date', { ascending: true })
-      .order('submitted_at', { ascending: false }),
+    (() => {
+      const q = db.from('order_batches').select(BATCH_SELECT)
+        .in('business_date', [today, tomorrow])
+        .order('business_date', { ascending: true })
+        .order('submitted_at', { ascending: false })
+      return filterIds ? q.in('restaurant_id', filterIds) : q
+    })(),
 
     // 배송완료/완료 되지 않은 과거 발주 (배송중 미진입)
-    db.from('order_batches')
-      .select('id, status, submitted_at, business_date, restaurants(organizations(name))')
-      .lt('business_date', today)
-      .not('status', 'in', '("dispatched","completed")')
-      .order('business_date', { ascending: false }),
+    (() => {
+      const q = db.from('order_batches').select(BATCH_SELECT)
+        .lt('business_date', today)
+        .not('status', 'in', '("dispatched","completed")')
+        .order('business_date', { ascending: false })
+      return filterIds ? q.in('restaurant_id', filterIds) : q
+    })(),
 
     // 오늘 + 내일 발주내역 (농산물)
     db.from('dispatch_jobs')
@@ -70,16 +94,7 @@ export default async function AdminDashboardPage() {
     .sort((a, b) => b.localeCompare(a))
 
   const allDispatches = allDispatchesRaw ?? []
-  const todayDispatches = allDispatches.filter(j => (j as unknown as { business_date: string }).business_date === today)
   const displayDispatches = allDispatches
-
-  // 오늘 사이클 완료 여부 (표시 레이블용)
-  const DONE_BATCH_STATUSES = ['dispatched', 'completed']
-  const todayBatchHasActive = todayBatches.some(b => !DONE_BATCH_STATUSES.includes(b.status))
-  const todayDispatchHasActive = todayDispatches.some(j => j.status !== 'sent')
-  const todayCycleActive = todayBatchHasActive || todayDispatchHasActive || todayBatches.length === 0
-  const showingNextCycle = false  // 항상 오늘+내일 함께 표시하므로 미사용
-  const displayDate = today
 
   // 품목수 계산을 위한 배치별 item count (오늘+내일+미처리 과거)
   const batchIds = [...displayBatches, ...pendingPastBatches].map(b => b.id)

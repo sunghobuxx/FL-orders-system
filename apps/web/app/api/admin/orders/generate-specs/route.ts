@@ -132,15 +132,9 @@ export async function POST(req: Request) {
       const productIds = [...new Set(items.map((i: { product_id: string }) => i.product_id))]
       const { priceMap, orgOverrides } = await buildPriceMapByProduct(adminDb, productIds, businessDate, organizationId)
 
-      const { data: products } = await adminDb
-        .from('products').select('id, taxable_flag').in('id', productIds)
-      const taxMap = Object.fromEntries((products ?? []).map((p: { id: string; taxable_flag: boolean }) => [p.id, p.taxable_flag]))
-
       const specLines = items.map((item: { id: string; product_id: string; qty: number; unit: string }) => {
         const unitPrice = priceMap[item.product_id] ?? 0
-        const taxable = taxMap[item.product_id] ?? false
-        const lineAmount = Number(item.qty) * unitPrice
-        const vatAmount = taxable ? Math.round(lineAmount * 0.1) : 0
+        const vatAmount = 0
         return {
           order_item_id: item.id,
           product_id: item.product_id,

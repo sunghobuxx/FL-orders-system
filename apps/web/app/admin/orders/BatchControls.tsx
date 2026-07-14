@@ -7,7 +7,8 @@ export default function BatchControls({ batchId }: { batchId: string }) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [showDateChange, setShowDateChange] = useState(false)
-  const [newDate, setNewDate] = useState('')
+  const todayKst = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10)
+  const [newDate, setNewDate] = useState(todayKst)
 
   function handleDelete() {
     if (!confirm('이 발주를 삭제하시겠습니까?\n되돌릴 수 없습니다.')) return

@@ -2,6 +2,7 @@ export const runtime = 'edge'
 
 import Link from 'next/link'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { getSessionUser } from '@/lib/supabase/server'
 import AdminOrderShell from './AdminOrderShell'
 import OrderActionButtons from './OrderActionButtons'
 import StatusButton from './StatusButton'
@@ -19,12 +20,45 @@ export default async function AdminOrdersPage({ searchParams }: Props) {
 
   const adminDb = createAdminClient()
 
-  const { data: batches } = await adminDb
+  // 현재 로그인 유저의 역할 + 담당 업체 확인
+  const { user } = await getSessionUser()
+  let assignedRestaurantIds: string[] | null = null
+  if (user) {
+    const { data: membership } = await adminDb
+      .from('memberships')
+      .select('role')
+      .eq('user_id', user.id)
+      .maybeSingle()
+    if (membership?.role === 'manager') {
+      const { data: assigned } = await adminDb
+        .from('manager_restaurants')
+        .select('restaurant_id')
+        .eq('user_id', user.id)
+      if (assigned && assigned.length > 0) {
+        assignedRestaurantIds = (assigned as { restaurant_id: string }[]).map(a => a.restaurant_id)
+      } else {
+        assignedRestaurantIds = []
+      }
+    }
+  }
+
+  let query = adminDb
     .from('order_batches')
     .select('id, status, business_date, submitted_at, restaurants(organizations(name)), orders(order_items(id))')
     .eq('business_date', targetDate)
     .neq('status', 'completed')
     .order('submitted_at', { ascending: false })
+
+  if (assignedRestaurantIds !== null) {
+    if (assignedRestaurantIds.length === 0) {
+      // 담당 업체 없으면 빈 결과
+      query = query.in('restaurant_id', ['00000000-0000-0000-0000-000000000000'])
+    } else {
+      query = query.in('restaurant_id', assignedRestaurantIds)
+    }
+  }
+
+  const { data: batches } = await query
 
   const STATUS_LABEL: Record<string, string> = {
     open: '작성 중', submitted: '당일발주', validated: '알림톡 발송',

@@ -15,3 +15,15 @@ export function AdminSpecPrintButton({ specId }: { specId: string }) {
     </button>
   )
 }
+
+export function AdminStatementPrintButton() {
+  return (
+    <button
+      type="button"
+      onClick={() => window.print()}
+      className="rounded-lg border border-gray-300 text-gray-600 px-6 py-2.5 text-sm font-semibold hover:bg-gray-50"
+    >
+      프린트
+    </button>
+  )
+}

@@ -17,7 +17,7 @@ export default async function NoticeDetailPage({ params }: Props) {
 
   const { data: notice } = await db
     .from('notices')
-    .select('id, title, body, created_at')
+    .select('id, title, body, created_at, file_path')
     .eq('id', id)
     .single()
 
@@ -38,12 +38,25 @@ export default async function NoticeDetailPage({ params }: Props) {
             </span>
             <span className="text-sm text-gray-400 bg-gray-100 px-3 py-2 rounded shrink-0">{dateStr}</span>
           </div>
-          <div className="flex gap-3 px-5 py-4">
+          <div className="flex gap-3 px-5 py-4 border-b border-gray-100">
             <span className="text-sm text-gray-500 shrink-0 pt-1">내용:</span>
             <div className="flex-1 bg-gray-100 rounded-lg px-4 py-3 min-h-48">
               <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{notice.body}</p>
             </div>
           </div>
+          {notice.file_path && (
+            <div className="flex items-center gap-3 px-5 py-4">
+              <span className="text-sm text-gray-500 shrink-0">첨부:</span>
+              <a
+                href={notice.file_path}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm text-brand-600 hover:underline truncate"
+              >
+                {decodeURIComponent(notice.file_path.split('/').pop() ?? '파일').replace(/^\d+_/, '')}
+              </a>
+            </div>
+          )}
         </div>
 
         <div className="flex justify-end gap-2">

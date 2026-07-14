@@ -142,6 +142,25 @@ export default function ProductEditForm({ product }: { product: Product }) {
         </select>
       </div>
 
+      <div>
+        <FieldLabel text="단가 유형" />
+        <div className="space-y-2.5">
+          <label className="flex items-start gap-2.5 text-sm cursor-pointer">
+            <input type="radio" name="is_fixed_price" value="true" defaultChecked={product.is_fixed_price !== false} className="mt-0.5 shrink-0" />
+            <span>
+              <span className="font-medium text-gray-800">고정 단가</span>
+              <span className="block text-xs text-gray-500 mt-0.5">한 번 등록하면 변경 전까지 동일 단가 적용</span>
+            </span>
+          </label>
+          <label className="flex items-start gap-2.5 text-sm cursor-pointer">
+            <input type="radio" name="is_fixed_price" value="false" defaultChecked={product.is_fixed_price === false} className="mt-0.5 shrink-0" />
+            <span>
+              <span className="font-medium text-gray-800">변동 단가</span>
+              <span className="block text-xs text-gray-500 mt-0.5">매일 단가를 새로 입력해야 함</span>
+            </span>
+          </label>
+        </div>
+      </div>
       <div className="flex gap-6">
         <div>
           <FieldLabel text="kg당 단가 기준" />
@@ -151,17 +170,13 @@ export default function ProductEditForm({ product }: { product: Product }) {
           </label>
         </div>
         <div>
-          <FieldLabel text="고정 단가" />
-          <label className="flex items-center gap-2 text-sm cursor-pointer">
-            <input type="checkbox" name="is_fixed_price" value="true" defaultChecked={product.is_fixed_price ?? true} className="rounded" />
-            고정 단가 (변동 없음)
-          </label>
-        </div>
-        <div>
           <FieldLabel text="부가세" />
-          <label className="flex items-center gap-2 text-sm cursor-pointer">
-            <input type="checkbox" name="taxable_flag" value="true" defaultChecked={product.taxable_flag ?? true} className="rounded" />
-            부가세 10% 적용
+          <label className="flex items-start gap-2.5 text-sm cursor-pointer">
+            <input type="checkbox" name="taxable_flag" value="true" defaultChecked={product.taxable_flag ?? true} className="rounded mt-0.5 shrink-0" />
+            <span>
+              <span className="font-medium text-gray-800">부가세 포함</span>
+              <span className="block text-xs text-gray-500 mt-0.5">판매단가에 부가세가 포함된 가격으로 명세서에 반영</span>
+            </span>
           </label>
         </div>
       </div>

@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { createAdminClient } from '@/lib/supabase/admin'
 import AdminSettlementShell from '../../AdminSettlementShell'
-import RecordPaymentButton from '@/app/admin/finance/RecordPaymentButton'
+import { PayButton } from '@/app/member/spec/SpecActions'
 
 interface Props {
   params: Promise<{ restaurantId: string }>
@@ -101,10 +101,7 @@ export default async function AdminSettlementRestaurantPage({ params }: Props) {
                         진행중
                       </span>
                     ) : (
-                      <RecordPaymentButton
-                        restaurantId={restaurantId}
-                        restaurantName={restaurantName}
-                      />
+                      <PayButton disabled={outstanding === 0 && !isInProgress} amount={outstanding} />
                     )}
                   </div>
                 </div>
@@ -119,7 +116,7 @@ export default async function AdminSettlementRestaurantPage({ params }: Props) {
               <span className={`text-sm font-bold px-4 py-1.5 rounded min-w-28 text-right ${totalOutstanding > 0 ? 'bg-red-50 text-red-600' : 'bg-gray-100 text-gray-800'}`}>
                 {fmt(totalOutstanding)}
               </span>
-              <RecordPaymentButton restaurantId={restaurantId} restaurantName={restaurantName} />
+              <PayButton disabled={totalOutstanding === 0} amount={totalOutstanding} />
             </div>
           </div>
         </div>
