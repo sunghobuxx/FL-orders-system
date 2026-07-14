@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import WaitingQrCode from './WaitingQrCode'
 
-// admin member detail form
+// admin member detail edit form
 interface Props {
   orgId: string
   isEdit: boolean
