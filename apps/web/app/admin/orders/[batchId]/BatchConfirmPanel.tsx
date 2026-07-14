@@ -40,7 +40,7 @@ export function BatchConfirmPanel({
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [saveMsg, setSaveMsg] = useState('')
 
-  // 확인 상태 변경 시 localStorage 동기화
+  // 확인 상태 변경 시 localStorage 업데이트
   useEffect(() => {
     if (done) {
       localStorage.removeItem(CONFIRMED_KEY(batchId))
