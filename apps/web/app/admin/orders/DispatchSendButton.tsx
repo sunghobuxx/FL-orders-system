@@ -26,9 +26,9 @@ export default function DispatchSendButton({
       })
       const data = await res.json() as { success?: boolean; error?: string; alreadySent?: boolean }
       if (data.alreadySent) {
-        setMsg('이미 발송됨')
+        setMsg('✓ 이미 발송됨')
       } else if (data.success) {
-        setMsg('발송 완료')
+        setMsg('✓ 발송 완료')
         router.refresh()
       } else {
         setMsg(data.error ?? '발송 실패')
