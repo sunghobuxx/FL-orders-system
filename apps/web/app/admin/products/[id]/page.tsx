@@ -32,7 +32,7 @@ export default async function AdminProductEditPage({ params }: Props) {
     db.from('supplier_products')
       .select('id, supplier_id, supplier_name, purchase_unit, status, suppliers(organizations(name))')
       .eq('product_id', id)
-      .order('created_at'),
+      .order('updated_at'),
     db.from('suppliers')
       .select('id, organizations(name)')
       .eq('status', 'active'),
