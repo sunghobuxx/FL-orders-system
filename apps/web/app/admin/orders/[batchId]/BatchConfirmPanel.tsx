@@ -75,7 +75,7 @@ export function BatchConfirmPanel({
   const total = items.length
   const confirmedCount = confirmed.size
   const allConfirmed = confirmedCount === total && total > 0
-  const fmt = (n: number) => n.toLocaleString('ko-KR')
+  const fmt = (n: number) => n.toLocaleString()
 
   async function handleDeleteItem(itemId: string, productName: string) {
     if (!confirm(`"${productName}" 품목을 삭제하시겠습니까?\n(명세서·정산 금액도 함께 수정됩니다)`)) return
