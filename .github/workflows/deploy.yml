@@ -87,8 +87,11 @@ jobs:
                               continue
                           full = os.path.join(root, f)
                           rel_full = os.path.relpath(full, search_dir).replace(os.sep, '/')
-                          if '[' in rel_full:
-                              continue  # skip bracket files themselves
+                          # In _next/static, skip the bracket-path source chunks themselves
+                          # In _worker.js, do NOT skip .func.js files even if their path has brackets
+                          # (e.g. admin/orders/[batchId].func.js contains the RSC manifest)
+                          if '[' in rel_full and search_dir == next_static:
+                              continue
                           try:
                               content = open(full, encoding='utf-8').read()
                           except Exception:
