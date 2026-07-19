@@ -14,40 +14,51 @@ export default function SettlementShell({ children, orgName, date }: Props) {
   const pathname = usePathname()
 
   const TABS = [
-    { href: '/member/spec', label: '오늘 명세서' },
-    { href: '/member/settlement/history', label: '정산 내역' },
+    { href: '/member/spec', label: '당일명세서' },
+    { href: '/member/settlement/history', label: '명세서내역' },
+    { href: '/member/settlement', label: '정산', exact: true },
   ]
 
+  const tabClass = (isActive: boolean) => `block px-4 py-2 text-sm font-semibold rounded-lg transition-colors ${
+    isActive
+      ? 'bg-gray-800 text-white'
+      : 'text-gray-600 hover:bg-gray-100'
+  }`
+
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="sticky top-0 z-10 bg-white border-b border-gray-200 shadow-sm">
-        <div className="max-w-2xl mx-auto px-4 pt-4 pb-0">
-          <div className="flex items-baseline justify-between mb-3">
-            <h1 className="text-lg font-bold text-gray-900">{orgName || '정산'}</h1>
-            {date && <span className="text-sm text-gray-500">{date}</span>}
-          </div>
-          <div className="flex gap-1">
+    <div className="flex min-h-[calc(100vh-56px)] bg-gray-50">
+      <aside className="hidden md:block w-40 shrink-0 border-r border-gray-200 bg-white p-3">
+        <nav className="space-y-1">
+          {TABS.map(tab => {
+            const isActive = tab.exact ? pathname === tab.href : pathname.startsWith(tab.href)
+            return (
+              <Link key={tab.href} href={tab.href} className={tabClass(isActive)}>
+                {tab.label}
+              </Link>
+            )
+          })}
+        </nav>
+      </aside>
+      <div className="flex-1 w-full">
+        <div className="sticky top-14 z-10 bg-white border-b border-gray-200 md:hidden">
+          <div className="px-4 py-2 flex gap-1 overflow-x-auto">
             {TABS.map(tab => {
-              const isActive = pathname.startsWith(tab.href)
+              const isActive = tab.exact ? pathname === tab.href : pathname.startsWith(tab.href)
               return (
-                <Link
-                  key={tab.href}
-                  href={tab.href}
-                  className={`px-4 py-2 text-sm font-semibold rounded-t-lg -mb-px transition-colors ${
-                    isActive
-                      ? 'bg-white text-brand-700 border border-b-white border-gray-200'
-                      : 'text-gray-500 hover:text-gray-700'
-                  }`}
-                >
+                <Link key={tab.href} href={tab.href} className={tabClass(isActive)}>
                   {tab.label}
                 </Link>
               )
             })}
           </div>
         </div>
-      </div>
-      <div className="max-w-2xl mx-auto px-4 py-4">
-        {children}
+        <div className="max-w-2xl px-4 py-4 space-y-4">
+          <div className="text-sm text-gray-600">
+            업체명: <span className="font-semibold text-gray-900">{orgName || '-'}</span>
+            {date && <span className="ml-3 font-semibold text-gray-900">{date}</span>}
+          </div>
+          {children}
+        </div>
       </div>
     </div>
   )

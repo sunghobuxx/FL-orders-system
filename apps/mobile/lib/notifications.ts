@@ -7,6 +7,8 @@ import { supabase } from './supabase'
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
     shouldPlaySound: true,
     shouldSetBadge: false,
   }),
@@ -44,4 +46,16 @@ export async function savePushToken(userId: string, token: string) {
       { onConflict: 'user_id' }
     )
   if (error) console.error('[Push] Failed to save token:', error.message)
+}
+
+export async function registerAndSavePushToken(userId: string) {
+  try {
+    const token = await registerForPushNotifications()
+    if (!token) return null
+    await savePushToken(userId, token)
+    return token
+  } catch (error) {
+    console.error('[Push] Failed to register push token:', error)
+    return null
+  }
 }

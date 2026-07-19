@@ -43,10 +43,17 @@ export default async function OrderConfirmPage() {
   return (
     <OrderShell orgName={org.name} date={today}>
       <div className="space-y-3">
-        <h2 className="text-sm font-semibold text-gray-700">{today} 발주 확인</h2>
+        <div className="flex items-center justify-between">
+          <button type="button" className="text-2xl text-gray-400" aria-label="이전 날짜">‹</button>
+          <h2 className="text-sm font-semibold text-gray-700">{today}</h2>
+          <button type="button" className="text-2xl text-gray-400" aria-label="다음 날짜">›</button>
+        </div>
         {!batch ? (
           <div className="bg-white rounded-xl border border-gray-200 px-5 py-8 text-sm text-gray-400 text-center">
-            오늘 발주 내역이 없습니다.
+            <p>{today} 발주 내역이 없습니다</p>
+            <a href="/member/order" className="mt-3 inline-block rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700">
+              발주하러 가기
+            </a>
           </div>
         ) : (
           <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">

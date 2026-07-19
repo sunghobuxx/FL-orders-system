@@ -64,13 +64,16 @@ export default async function AdminSpecPrintPage({ searchParams }: Props) {
   if (periodIds.length > 0) {
     const { data: matchingStmts } = await db
       .from('sales_statements')
-      .select('id, settlement_period_id')
+      .select('id, settlement_period_id, total_amount')
       .eq('restaurant_id', spec.restaurant_id)
       .in('settlement_period_id', periodIds)
 
     const stmtIds = (matchingStmts ?? []).map((s: { id: string }) => s.id)
     const stmtPeriodMap = new Map(
       (matchingStmts ?? []).map((s: { id: string; settlement_period_id: string }) => [s.id, s.settlement_period_id])
+    )
+    const stmtTotalMap = new Map(
+      (matchingStmts ?? []).map((s: { id: string; total_amount: number }) => [s.id, Number(s.total_amount ?? 0)])
     )
 
     // 3단계: 미납 receivables
@@ -81,7 +84,15 @@ export default async function AdminSpecPrintPage({ searchParams }: Props) {
         .in('statement_id', stmtIds)
         .in('status', ['unpaid', 'partial', 'overdue'])
 
-      const coveredStmtIds = new Set<string>()
+      // receivable이 있는 statement는 모두 covered (paid 포함) — open period check에서 제외
+      const { data: allRecvs } = await db
+        .from('receivables')
+        .select('statement_id')
+        .in('statement_id', stmtIds)
+      const coveredStmtIds = new Set<string>(
+        (allRecvs ?? []).map((r: { statement_id: string }) => r.statement_id)
+      )
+
       for (const recv of outstandingRecvs ?? []) {
         const r = recv as { statement_id: string; balance: number }
         const periodId = stmtPeriodMap.get(r.statement_id)
@@ -89,7 +100,9 @@ export default async function AdminSpecPrintPage({ searchParams }: Props) {
         if (!period) continue
         coveredStmtIds.add(r.statement_id)
 
-        if (period.end_date < spec.business_date) {
+        if (period.start_date > spec.business_date) {
+          // 아직 시작 안 된 기간 → 건너뜀 (이 spec 날짜보다 미래 기간)
+        } else if (period.end_date < spec.business_date) {
           // 이미 끝난 기간 → 실제 미납 잔액 사용 (부분납부 정확히 반영)
           prevOutstanding += Number(r.balance ?? 0)
         } else {
@@ -116,6 +129,12 @@ export default async function AdminSpecPrintPage({ searchParams }: Props) {
               (s: number, ps: { id: string }) => s + (specIdToAmount[ps.id] ?? 0), 0
             )
           }
+
+          // 이월 미수금: statement.total_amount - statement_lines 합계 (전주에서 이월된 금액)
+          const stmtTotal = stmtTotalMap.get(r.statement_id) ?? 0
+          const stmtSpecTotal = Object.values(specIdToAmount).reduce((s, v) => s + v, 0)
+          const carryover = Math.round(stmtTotal - stmtSpecTotal)
+          if (carryover > 0) prevOutstanding += carryover
         }
       }
 

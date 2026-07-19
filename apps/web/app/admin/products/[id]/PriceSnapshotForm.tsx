@@ -27,7 +27,13 @@ export default function PriceSnapshotForm({
   const router = useRouter()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(true)
+  const [listOpen, setListOpen] = useState(false)
+
+  const todayKst = (() => {
+    const d = new Date(Date.now() + 9 * 60 * 60 * 1000)
+    return d.toISOString().split('T')[0]
+  })()
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -62,26 +68,36 @@ export default function PriceSnapshotForm({
     <div className="mt-2 space-y-2">
       {snapshots.length > 0 ? (
         <div className="rounded-lg border border-gray-100 overflow-hidden">
-          <table className="w-full text-xs">
-            <thead className="bg-gray-50 text-gray-500">
-              <tr>
-                <th className="text-left px-3 py-2">적용일</th>
-                <th className="text-right px-3 py-2">판매단가</th>
-                <th className="text-right px-3 py-2">매입단가</th>
-                <th className="text-left px-3 py-2">단위</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {snapshots.map(s => (
-                <tr key={s.id} className="bg-white">
-                  <td className="px-3 py-1.5 text-gray-700">{s.effective_from}</td>
-                  <td className="px-3 py-1.5 text-right font-medium text-gray-900">{s.sale_price.toLocaleString('ko-KR')}원</td>
-                  <td className="px-3 py-1.5 text-right text-gray-500">{s.purchase_price.toLocaleString('ko-KR')}원</td>
-                  <td className="px-3 py-1.5 text-gray-500">{s.unit}</td>
+          <button
+            type="button"
+            onClick={() => setListOpen(p => !p)}
+            className="w-full flex items-center justify-between px-3 py-2 bg-gray-50 text-xs text-gray-500 hover:bg-gray-100"
+          >
+            <span>단가 이력 ({snapshots.length}건)</span>
+            <span>{listOpen ? '▲' : '▼'}</span>
+          </button>
+          {listOpen && (
+            <table className="w-full text-xs">
+              <thead className="bg-gray-50 text-gray-500 border-t border-gray-100">
+                <tr>
+                  <th className="text-left px-3 py-2">적용일</th>
+                  <th className="text-right px-3 py-2">판매단가</th>
+                  <th className="text-right px-3 py-2">매입단가</th>
+                  <th className="text-left px-3 py-2">단위</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {snapshots.map(s => (
+                  <tr key={s.id} className="bg-white">
+                    <td className="px-3 py-1.5 text-gray-700">{s.effective_from}</td>
+                    <td className="px-3 py-1.5 text-right font-medium text-gray-900">{s.sale_price.toLocaleString('ko-KR')}원</td>
+                    <td className="px-3 py-1.5 text-right text-gray-500">{s.purchase_price.toLocaleString('ko-KR')}원</td>
+                    <td className="px-3 py-1.5 text-gray-500">{s.unit}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       ) : (
         <p className="text-xs text-gray-400">등록된 단가가 없습니다.</p>
@@ -129,6 +145,7 @@ export default function PriceSnapshotForm({
                 name="effective_from"
                 type="date"
                 required
+                defaultValue={todayKst}
                 className="w-full rounded border border-gray-200 bg-white px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-brand-500"
               />
             </div>

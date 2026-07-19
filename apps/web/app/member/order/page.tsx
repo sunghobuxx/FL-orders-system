@@ -2,6 +2,7 @@ export const runtime = 'edge'
 
 import { redirect } from 'next/navigation'
 import { getSessionUser } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import OrderShell from './OrderShell'
 import CutoffBanner from './CutoffBanner'
 import OrderForm from './OrderForm'
@@ -117,8 +118,9 @@ export default async function MemberOrderPage() {
   }
 
   const productIds = products.map((p: any) => p.id)
+  const adminSupabase = createAdminClient()
   const { data: prices } = productIds.length > 0
-    ? await supabase.from('supplier_products').select('id, product_id, price_snapshots').in('product_id', productIds)
+    ? await adminSupabase.from('supplier_products').select('id, product_id, price_snapshots').in('product_id', productIds)
     : { data: [] }
 
   return (

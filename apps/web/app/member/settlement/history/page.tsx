@@ -49,7 +49,8 @@ export default async function SpecHistoryPage({ searchParams }: Props) {
     currentMonth = monthParam ?? `${todayDate.getFullYear()}-${String(todayDate.getMonth() + 1).padStart(2, '0')}`
     const [year, mon] = currentMonth.split('-').map(Number)
     startDate = `${year}-${String(mon).padStart(2, '0')}-01`
-    endDate = new Date(year ?? 2026, mon ?? 1, 0).toISOString().split('T')[0]
+    const lastDay = new Date(year ?? 2026, mon ?? 1, 0).getDate()
+    endDate = `${year}-${String(mon).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
     periodLabel = currentMonth
   }
 

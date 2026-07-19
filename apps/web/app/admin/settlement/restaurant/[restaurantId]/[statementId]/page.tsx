@@ -29,6 +29,7 @@ export default async function AdminSettlementStatementPage({ params }: Props) {
   const totalAmount = Number(stmt.total_amount ?? 0)
   const outstandingAmount = Number(stmt.outstanding_amount ?? 0)
   const paidAmount = totalAmount - outstandingAmount
+  // 이전 미수금 이월분 = total_amount - 당기 daily_specs 합 (페이지 하단에서 dailySpecs 집계 후 계산)
 
   // daily_specs for the settlement period
   const { data: dailySpecsRaw } = period
@@ -41,6 +42,8 @@ export default async function AdminSettlementStatementPage({ params }: Props) {
         .order('business_date', { ascending: true })
     : { data: [] }
   const dailySpecs = dailySpecsRaw ?? []
+  const specTotal = dailySpecs.reduce((s, sp) => s + Number(sp.total_amount), 0)
+  const carryover = Math.round(totalAmount - specTotal)  // 지난주 미수금 이월분
 
   type SpecLineRow = { daily_spec_id: string; qty: number; unit: string; products: { standard_name: string } | null }
   const linesBySpec: Record<string, SpecLineRow[]> = {}
@@ -145,6 +148,14 @@ export default async function AdminSettlementStatementPage({ params }: Props) {
             {(['e0','e1','e2','e3','e4']).slice(0, Math.max(0, 5 - dailySpecs.length)).map(k => (
               <tr key={k}><td>&nbsp;</td><td></td><td></td><td style={{textAlign:'right'}}>₩ -</td></tr>
             ))}
+            {carryover > 0 && (
+              <tr>
+                <td style={{textAlign:'center', fontWeight:'bold', borderTop:'2px solid #000'}}>이월</td>
+                <td style={{textAlign:'center', borderTop:'2px solid #000'}}>-</td>
+                <td style={{fontWeight:'bold', borderTop:'2px solid #000'}}>★ 전주 미수금</td>
+                <td style={{textAlign:'right', fontWeight:'bold', borderTop:'2px solid #000'}}>{fmtWon(carryover)}</td>
+              </tr>
+            )}
             <tr style={{backgroundColor:'#f9f9f9'}}>
               <td colSpan={3} style={{textAlign:'right', fontWeight:'bold'}}>합계</td>
               <td style={{textAlign:'right', fontWeight:'bold', fontSize:'11pt'}}>{fmtWon(totalAmount)}</td>
@@ -179,7 +190,7 @@ export default async function AdminSettlementStatementPage({ params }: Props) {
             <span className="w-32 text-right">금액</span>
           </div>
 
-          {dailySpecs.length === 0 ? (
+          {dailySpecs.length === 0 && carryover <= 0 ? (
             <div className="py-10 text-center text-sm text-gray-400">항목이 없습니다</div>
           ) : (
             <div className="divide-y divide-gray-100">
@@ -191,6 +202,12 @@ export default async function AdminSettlementStatementPage({ params }: Props) {
                   <span className="w-32 text-right text-sm font-medium text-gray-900">{fmt(Number(spec.total_amount))}</span>
                 </div>
               ))}
+              {carryover > 0 && (
+                <div className="grid grid-cols-[1fr_auto] gap-3 items-center px-5 py-3 bg-amber-50">
+                  <span className="text-sm font-semibold text-amber-700">지난주 미수금 이월</span>
+                  <span className="w-32 text-right text-sm font-bold text-amber-700">{fmt(carryover)}</span>
+                </div>
+              )}
             </div>
           )}
 

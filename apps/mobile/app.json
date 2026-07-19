@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Fruitlife b2b 주문시스템",
+    "name": "FruitLife",
     "slug": "fruitlife",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -13,21 +13,25 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.fruitlife.app",
-      "buildNumber": "2",
+      "buildNumber": "1",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
-      },
-      "entitlements": {
-        "aps-environment": "production"
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSCameraUsageDescription": "카메라를 사용하지 않습니다.",
+        "NSPhotoLibraryUsageDescription": "사진 라이브러리를 사용하지 않습니다."
       }
     },
     "android": {
       "package": "com.fruitlife.app",
-      "versionCode": 2,
+      "versionCode": 1,
       "adaptiveIcon": {
-        "foregroundImage": "./assets/icon.png",
+        "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
-      }
+      },
+      "permissions": [
+        "POST_NOTIFICATIONS",
+        "RECEIVE_BOOT_COMPLETED",
+        "VIBRATE"
+      ]
     },
     "plugins": [
       "expo-router",
@@ -36,7 +40,6 @@
     "experiments": {
       "typedRoutes": true
     },
-    "newArchEnabled": true,
     "extra": {
       "router": {},
       "eas": {
@@ -44,11 +47,11 @@
       }
     },
     "owner": "buxx1982",
-    "runtimeVersion": {
-      "policy": "sdkVersion"
-    },
-    "updates": {
-      "url": "https://u.expo.dev/b96a9d08-d202-43f1-988a-44b767fa9e4c"
-    }
+    "scheme": "fruitlife",
+    "userInterfaceStyle": "light",
+    "platforms": [
+      "ios",
+      "android"
+    ]
   }
 }

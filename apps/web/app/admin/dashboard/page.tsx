@@ -29,7 +29,7 @@ export default async function AdminDashboardPage() {
     ? (managerRestaurantIds.length > 0 ? managerRestaurantIds : [DUMMY_ID])
     : null
 
-  const BATCH_SELECT = 'id, status, submitted_at, business_date, restaurants(organizations(name))'
+  const BATCH_SELECT = 'id, status, submitted_at, created_at, business_date, restaurants(organizations(name))'
 
   const [
     { data: allBatchesRaw },
@@ -44,7 +44,8 @@ export default async function AdminDashboardPage() {
       const q = db.from('order_batches').select(BATCH_SELECT)
         .in('business_date', [today, tomorrow])
         .order('business_date', { ascending: true })
-        .order('submitted_at', { ascending: false })
+        .order('submitted_at', { ascending: false, nullsFirst: false })
+        .order('created_at', { ascending: false })
       return filterIds ? q.in('restaurant_id', filterIds) : q
     })(),
 

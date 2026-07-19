@@ -44,10 +44,11 @@ export default async function AdminOrdersPage({ searchParams }: Props) {
 
   let query = adminDb
     .from('order_batches')
-    .select('id, status, business_date, submitted_at, restaurants(organizations(name)), orders(order_items(id))')
+    .select('id, status, business_date, submitted_at, created_at, restaurants(organizations(name)), orders(order_items(id))')
     .eq('business_date', targetDate)
     .neq('status', 'completed')
-    .order('submitted_at', { ascending: false })
+    .order('submitted_at', { ascending: false, nullsFirst: false })
+    .order('created_at', { ascending: false })
 
   if (assignedRestaurantIds !== null) {
     if (assignedRestaurantIds.length === 0) {
@@ -108,7 +109,7 @@ export default async function AdminOrdersPage({ searchParams }: Props) {
               type OrderWithItems = { order_items: { id: string }[] }
               const itemCount = (batch.orders as unknown as OrderWithItems[] | null)
                 ?.reduce((sum, o) => sum + o.order_items.length, 0) ?? 0
-              const timeStr = fmtKstTime(batch.submitted_at as string | null)
+              const timeStr = fmtKstTime((batch.submitted_at ?? batch.created_at) as string | null) ?? batch.business_date
               return (
                 <div key={batch.id} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
                   {/* 상단: 업체명 + 품목수 */}
@@ -124,7 +125,7 @@ export default async function AdminOrdersPage({ searchParams }: Props) {
                   {/* 하단: 타임스탬프 + 상태 + 액션 */}
                   <div className="px-5 py-3 space-y-2">
                     <div className="flex items-center gap-3">
-                      {timeStr && <span className="text-xs text-gray-400">{timeStr}</span>}
+                      <span className="text-xs text-gray-400">{timeStr}</span>
                       <div className="ml-auto flex items-center gap-2">
                         <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${STATUS_COLOR[batch.status] ?? 'bg-gray-100 text-gray-600'}`}>
                           {STATUS_LABEL[batch.status] ?? batch.status}

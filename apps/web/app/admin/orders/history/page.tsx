@@ -33,11 +33,12 @@ export default async function OrderHistoryPage({ searchParams }: Props) {
 
   const { data: batches } = await adminDb
     .from('order_batches')
-    .select('id, status, business_date, submitted_at, restaurants(organizations(name))')
+    .select('id, status, business_date, submitted_at, created_at, restaurants(organizations(name))')
     .gte('business_date', from)
     .lte('business_date', to)
     .order('business_date', { ascending: false })
-    .order('submitted_at', { ascending: false })
+    .order('submitted_at', { ascending: false, nullsFirst: false })
+    .order('created_at', { ascending: false })
 
   type BatchRow = NonNullable<typeof batches>[number]
   const byDate = new Map<string, BatchRow[]>()

@@ -6,6 +6,8 @@ export default function NoticeLayout() {
       headerStyle: { backgroundColor: '#fff' },
       headerTitleStyle: { fontWeight: '600', fontSize: 16 },
       headerTintColor: '#111',
-    }} />
+    }}>
+      <Stack.Screen name="[id]" options={{ title: '공지 상세' }} />
+    </Stack>
   )
 }

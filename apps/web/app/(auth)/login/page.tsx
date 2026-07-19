@@ -20,28 +20,38 @@ export default function LoginPage() {
     setLoading(true)
     setError(null)
 
-    const supabase = createClient()
-    const { data, error: authError } = await supabase.auth.signInWithPassword({ email, password })
+    try {
+      const supabase = createClient()
+      const { data, error: authError } = await supabase.auth.signInWithPassword({ email, password })
 
-    if (authError || !data.user) {
-      setError('이메일 또는 비밀번호가 올바르지 않습니다.')
+      if (authError || !data.user) {
+        setError('이메일 또는 비밀번호가 올바르지 않습니다.')
+        setLoading(false)
+        return
+      }
+
+      // 역할 확인 후 라우팅
+      const { data: memberships, error: membershipError } = await supabase
+        .from('memberships')
+        .select('role, organizations(organization_type)')
+        .eq('user_id', data.user.id)
+
+      if (membershipError) {
+        console.error('memberships error:', membershipError)
+      }
+
+      const isAdmin = memberships?.some(m => {
+        const org = Array.isArray(m.organizations) ? m.organizations[0] : m.organizations
+        return (org as { organization_type: string } | null)?.organization_type === 'platform' ||
+               (org as { organization_type: string } | null)?.organization_type === 'operator'
+      })
+
+      window.location.href = isAdmin ? '/admin/dashboard' : '/member/dashboard'
+    } catch (err) {
+      console.error('login error:', err)
+      setError('로그인 중 오류가 발생했습니다. 다시 시도해주세요.')
       setLoading(false)
-      return
     }
-
-    // 역할 확인 후 라우팅
-    const { data: memberships } = await supabase
-      .from('memberships')
-      .select('role, organizations(organization_type)')
-      .eq('user_id', data.user.id)
-
-    const isAdmin = memberships?.some(m => {
-      const org = Array.isArray(m.organizations) ? m.organizations[0] : m.organizations
-      return (org as { organization_type: string } | null)?.organization_type === 'platform' ||
-             (org as { organization_type: string } | null)?.organization_type === 'operator'
-    })
-
-    window.location.href = isAdmin ? '/admin/dashboard' : '/member/dashboard'
   }
 
   return (
