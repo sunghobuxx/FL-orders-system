@@ -38,6 +38,19 @@ export default async function OrderConfirmPage() {
     .eq('business_date', today)
     .maybeSingle()
 
+  const STATUS_LABEL: Record<string, string> = {
+    open: '작성 중', submitted: '발주완료', validated: '알림톡 발송',
+    ordered: '상차', dispatched: '배송완료', completed: '완료',
+  }
+  const STATUS_COLOR: Record<string, string> = {
+    open: 'bg-gray-100 text-gray-500',
+    submitted: 'bg-blue-100 text-blue-700',
+    validated: 'bg-purple-100 text-purple-700',
+    ordered: 'bg-yellow-100 text-yellow-700',
+    dispatched: 'bg-green-100 text-green-700',
+    completed: 'bg-green-100 text-green-700',
+  }
+
   const fmt = (n: number) => n.toLocaleString('ko-KR') + '원'
 
   return (
@@ -59,11 +72,9 @@ export default async function OrderConfirmPage() {
           <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
             <div className="px-5 py-3 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
               <span className="text-xs text-gray-500">발주번호 {batch.id.slice(-8)}</span>
-              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                batch.status === 'submitted' ? 'bg-blue-100 text-blue-700' :
-                batch.status === 'dispatched' ? 'bg-green-100 text-green-700' :
-                'bg-gray-100 text-gray-600'
-              }`}>{batch.status}</span>
+              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLOR[batch.status] ?? 'bg-gray-100 text-gray-600'}`}>
+                {STATUS_LABEL[batch.status] ?? batch.status}
+              </span>
             </div>
             <div className="divide-y divide-gray-100">
               {(batch.order_items as unknown as { id: string; product_name: string; qty: number; unit: string; unit_price_snapshot: number }[]).map(item => (
