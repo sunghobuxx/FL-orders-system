@@ -11,7 +11,7 @@ import { getKstToday } from '@/lib/date-kst'
 
 const STATUS_LABEL: Record<string, string> = {
   submitted: '당일발주', validated: '알림톡 발송',
-  ordered: '배송중', dispatched: '배송완료', completed: '완료',
+  ordered: '상차', dispatched: '배송완료', completed: '완료',
 }
 const STATUS_COLOR: Record<string, string> = {
   submitted: 'bg-blue-100 text-blue-700',

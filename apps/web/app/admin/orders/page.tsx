@@ -63,7 +63,7 @@ export default async function AdminOrdersPage({ searchParams }: Props) {
 
   const STATUS_LABEL: Record<string, string> = {
     open: '작성 중', submitted: '당일발주', validated: '알림톡 발송',
-    ordered: '배송중', dispatched: '배송완료', completed: '완료',
+    ordered: '상차', dispatched: '배송완료', completed: '완료',
   }
   const STATUS_COLOR: Record<string, string> = {
     open: 'bg-gray-100 text-gray-500',

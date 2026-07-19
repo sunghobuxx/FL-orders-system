@@ -5,7 +5,7 @@ import { useTransition } from 'react'
 
 const NEXT_STATUS: Record<string, { label: string; next: string; className: string }> = {
   submitted: { label: '→ 알림톡 발송', next: 'validated', className: 'bg-green-600 text-white hover:bg-green-700' },
-  validated: { label: '→ 배송중',      next: 'ordered',   className: 'bg-gray-200 text-gray-700 hover:bg-gray-300' },
+  validated: { label: '→ 상차',         next: 'ordered',   className: 'bg-gray-200 text-gray-700 hover:bg-gray-300' },
   ordered:   { label: '→ 배송완료',    next: 'dispatched', className: 'bg-gray-200 text-gray-700 hover:bg-gray-300' },
 }
 
