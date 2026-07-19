@@ -3,7 +3,7 @@ export const runtime = 'edge'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
-import { getSessionUser } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 
 import AdminOrderShell from '../AdminOrderShell'
 import { BatchConfirmPanel } from './BatchConfirmPanel'
@@ -27,7 +27,7 @@ interface Props {
 
 export default async function BatchDetailPage({ params }: Props) {
   const { batchId } = await params
-  const { supabase: adminDb } = await getSessionUser()
+  const adminDb = createAdminClient()
 
   const { data: batch } = await adminDb
     .from('order_batches')
