@@ -30,9 +30,9 @@ export async function POST(req: Request) {
       status: 'active',
     }).select('id').single()
 
-    if (error) return apiError('품목 등록에 실패했습니다', error)
+    if (error) return apiError('품목 등록에 실패했습니다')
     return NextResponse.json({ success: true, id: data.id })
-  } catch (e) {
-    return apiError('요청 처리 중 오류가 발생했습니다', e)
+  } catch {
+    return apiError('요청 처리 중 오류가 발생했습니다')
   }
 }

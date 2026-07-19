@@ -77,7 +77,7 @@ export default async function AdminDashboardPage() {
 
     // 문의/불편 (미답변)
     db.from('inquiries')
-      .select('id, title, created_at, organizations(name)')
+      .select('id, title, category, created_at, organizations(name)')
       .eq('status', 'open')
       .order('created_at', { ascending: false })
       .limit(5),
@@ -113,6 +113,7 @@ export default async function AdminDashboardPage() {
 
   const totalOutstanding = (receivables ?? []).reduce((s, r) => s + Number(r.balance), 0)
   const fmt = (n: number) => `${n.toLocaleString()}원`
+  const normalInquiries = (inquiries ?? []).filter(inq => inq.category !== 'work_note')
 
   // 업체별 미수금 합산 (receivable 여러 건 → 업체당 1행으로 통합)
   const outstandingByOrg = new Map<string, number>()
@@ -259,19 +260,19 @@ export default async function AdminDashboardPage() {
         <div className="px-5 py-3 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <h2 className="text-sm font-semibold text-gray-700">문의/불편</h2>
-            {(inquiries ?? []).length > 0 && (
+            {normalInquiries.length > 0 && (
               <span className="text-xs font-bold bg-red-500 text-white px-2 py-0.5 rounded-full">
-                미답변 {(inquiries ?? []).length}건
+                미답변 {normalInquiries.length}건
               </span>
             )}
           </div>
           <Link href="/admin/inquiries" className="text-xs text-brand-600 hover:text-brand-800">전체보기 →</Link>
         </div>
-        {(inquiries ?? []).length === 0 ? (
+        {normalInquiries.length === 0 ? (
           <p className="px-5 py-5 text-sm text-gray-400 text-center">미답변 문의 없음</p>
         ) : (
           <div className="divide-y divide-gray-100">
-            {(inquiries ?? []).map(inq => {
+            {normalInquiries.map(inq => {
               const orgName = (inq.organizations as unknown as { name: string } | null)?.name ?? '-'
               return (
                 <Link key={inq.id} href={`/admin/inquiries/${inq.id}`}

@@ -9,8 +9,10 @@ export default async function AdminInquiriesPage() {
 
   const { data: inquiries } = await db
     .from('inquiries')
-    .select('id, title, status, created_at, organizations(name)')
+    .select('id, title, status, category, created_at, organizations(name)')
     .order('created_at', { ascending: false })
+
+  const rows = (inquiries ?? []).filter(inq => inq.category !== 'work_note')
 
   const STATUS_LABEL: Record<string, string> = {
     pending: '답변 대기',
@@ -24,13 +26,13 @@ export default async function AdminInquiriesPage() {
   return (
     <AdminNoticesShell>
       <div className="space-y-3">
-        <span className="text-sm text-gray-500">총 {(inquiries ?? []).length}개</span>
+        <span className="text-sm text-gray-500">총 {rows.length}개</span>
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-          {(inquiries ?? []).length === 0 ? (
+          {rows.length === 0 ? (
             <p className="px-5 py-8 text-sm text-gray-400 text-center">문의가 없습니다.</p>
           ) : (
             <div className="divide-y divide-gray-100">
-              {(inquiries ?? []).map(inq => {
+              {rows.map(inq => {
                 const orgName = (inq.organizations as unknown as { name: string } | null)?.name ?? ''
                 return (
                   <Link key={inq.id} href={`/admin/inquiries/${inq.id}`}

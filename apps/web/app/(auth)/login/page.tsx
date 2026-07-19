@@ -55,50 +55,48 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
+    <div className="min-h-screen bg-white flex items-center justify-center px-8">
       <div className="w-full max-w-sm">
-        <div className="mb-8 text-center">
-          <h1 className="text-2xl font-bold text-gray-900">과일가게</h1>
-          <p className="text-sm text-gray-500 mt-1">주문 관리 시스템</p>
+        <div className="mb-11 text-center flex flex-col items-center">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo.png" alt="FRUIT LIFE" className="w-24 h-24 object-contain mb-3" />
+          <h1 className="text-[28px] leading-tight font-extrabold text-[#111111] tracking-[0.14em]">
+            FRUIT LIFE
+          </h1>
+          <p className="text-sm text-gray-400 mt-1">주문 관리 시스템</p>
         </div>
 
-        <form onSubmit={handleSubmit} className="bg-white rounded-2xl border border-gray-200 p-6 space-y-4 shadow-sm">
+        <form onSubmit={handleSubmit} className="space-y-3">
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-600 text-sm px-4 py-3 rounded-lg">
+            <div className="bg-red-50 border border-red-200 text-red-600 text-sm px-4 py-3 rounded-xl">
               {decodeURIComponent(error)}
             </div>
           )}
 
-          <div className="space-y-1">
-            <label className="text-sm font-medium text-gray-700">이메일</label>
-            <input
-              type="email"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              required
-              autoComplete="email"
-              placeholder="example@email.com"
-              className="w-full bg-gray-100 rounded-lg px-4 py-3 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-brand-500"
-            />
-          </div>
+          <input
+            type="email"
+            value={email}
+            onChange={e => setEmail(e.target.value)}
+            required
+            autoComplete="email"
+            placeholder="이메일"
+            className="w-full border border-gray-200 bg-gray-50 rounded-xl px-4 py-3.5 text-base text-gray-900 outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
+          />
 
-          <div className="space-y-1">
-            <label className="text-sm font-medium text-gray-700">비밀번호</label>
-            <input
-              type="password"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              required
-              autoComplete="current-password"
-              placeholder="비밀번호 입력"
-              className="w-full bg-gray-100 rounded-lg px-4 py-3 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-brand-500"
-            />
-          </div>
+          <input
+            type="password"
+            value={password}
+            onChange={e => setPassword(e.target.value)}
+            required
+            autoComplete="current-password"
+            placeholder="비밀번호"
+            className="w-full border border-gray-200 bg-gray-50 rounded-xl px-4 py-3.5 text-base text-gray-900 outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
+          />
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-brand-600 text-white rounded-lg py-3 text-sm font-semibold hover:bg-brand-700 disabled:opacity-50 transition-colors"
+            className="w-full bg-brand-600 text-white rounded-xl py-4 text-base font-bold hover:bg-brand-700 disabled:opacity-50 transition-colors mt-1"
           >
             {loading ? '로그인 중...' : '로그인'}
           </button>

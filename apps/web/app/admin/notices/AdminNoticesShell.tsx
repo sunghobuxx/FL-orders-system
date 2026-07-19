@@ -7,6 +7,7 @@ import type { ReactNode } from 'react'
 const TABS = [
   { href: '/admin/notices', label: '공지사항' },
   { href: '/admin/inquiries', label: '문의 목록' },
+  { href: '/admin/inquiries/work-notes', label: '배송 중 전달 사항' },
 ]
 
 export default function AdminNoticesShell({ children }: { children: ReactNode }) {
@@ -17,7 +18,9 @@ export default function AdminNoticesShell({ children }: { children: ReactNode })
       <h1 className="text-xl font-bold text-gray-900">공지 / 문의</h1>
       <div className="flex gap-1 border-b border-gray-200">
         {TABS.map(tab => {
-          const isActive = pathname.startsWith(tab.href)
+          const isActive = tab.href === '/admin/inquiries'
+            ? pathname === tab.href || /^\/admin\/inquiries\/(?!work-notes)/.test(pathname)
+            : pathname.startsWith(tab.href)
           return (
             <Link
               key={tab.href}

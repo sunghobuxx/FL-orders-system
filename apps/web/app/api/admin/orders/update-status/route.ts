@@ -20,10 +20,10 @@ export async function POST(req: Request) {
     if (nextIndex <= currentIndex) return NextResponse.json({ error: '이미 처리된 상태입니다.' }, { status: 400 })
 
     const { error } = await db.from('order_batches').update({ status: newStatus }).eq('id', batchId)
-    if (error) return apiError('상태 업데이트에 실패했습니다', error)
+    if (error) return apiError('상태 업데이트에 실패했습니다')
 
     return NextResponse.json({ success: true })
-  } catch (e) {
-    return apiError('요청 처리 중 오류가 발생했습니다', e)
+  } catch {
+    return apiError('요청 처리 중 오류가 발생했습니다')
   }
 }
