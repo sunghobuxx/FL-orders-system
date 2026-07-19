@@ -9,11 +9,11 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import AccountActions from './AccountActions'
 
 export default async function AdminAccountsPage() {
-  const { supabase: db, user: currentUser } = await getSessionUser()
+  const { user: currentUser } = await getSessionUser()
   const adminDb = createAdminClient()
 
-  // users 테이블 + memberships + organizations 조인 (auth.admin 불필요)
-  const { data: adminUsers } = await db
+  // users 테이블 + memberships + organizations 조인
+  const { data: adminUsers } = await adminDb
     .from('users')
     .select('id, email, name, status, created_at, memberships(role, organizations(id, name, organization_type))')
     .order('created_at', { ascending: true })
