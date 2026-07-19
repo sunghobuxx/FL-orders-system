@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { deleteNotice, updateNotice } from './actions'
 
 export function DeleteNoticeButton({ id }: { id: string }) {
   const router = useRouter()
@@ -10,14 +11,12 @@ export function DeleteNoticeButton({ id }: { id: string }) {
   async function handleDelete() {
     if (!confirm('이 공지를 삭제하시겠습니까?')) return
     setLoading(true)
-    try {
-      const res = await fetch(`/api/admin/notices/${id}`, { method: 'DELETE' })
-      if (!res.ok) throw new Error('삭제 실패')
-      router.push('/admin/notices')
-      router.refresh()
-    } catch {
+    const result = await deleteNotice(id)
+    if (result.error) {
       alert('삭제에 실패했습니다.')
       setLoading(false)
+    } else {
+      router.push('/admin/notices')
     }
   }
 
@@ -41,18 +40,12 @@ export function EditNoticeForm({ id, title, body }: { id: string; title: string;
     e.preventDefault()
     setLoading(true)
     const fd = new FormData(e.currentTarget)
-    try {
-      const res = await fetch(`/api/admin/notices/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: fd.get('title'), body: fd.get('body') }),
-      })
-      if (!res.ok) throw new Error('수정 실패')
-      router.push(`/admin/notices/${id}`)
-      router.refresh()
-    } catch {
+    const result = await updateNotice(id, fd.get('title') as string, fd.get('body') as string)
+    if (result.error) {
       alert('수정에 실패했습니다.')
       setLoading(false)
+    } else {
+      router.push(`/admin/notices/${id}`)
     }
   }
 

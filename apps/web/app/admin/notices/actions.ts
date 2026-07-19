@@ -1,5 +1,6 @@
 'use server'
 
+import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { cookies } from 'next/headers'
 import { createServerClient } from '@supabase/ssr'
@@ -60,4 +61,20 @@ export async function createNotice(formData: FormData) {
   }
 
   redirect('/admin/notices')
+}
+
+export async function deleteNotice(id: string): Promise<{ error?: string }> {
+  const adminDb = createAdminClient()
+  const { error } = await adminDb.from('notices').delete().eq('id', id)
+  if (error) return { error: error.message }
+  revalidatePath('/admin/notices')
+  return {}
+}
+
+export async function updateNotice(id: string, title: string, body: string): Promise<{ error?: string }> {
+  const adminDb = createAdminClient()
+  const { error } = await adminDb.from('notices').update({ title, body }).eq('id', id)
+  if (error) return { error: error.message }
+  revalidatePath(`/admin/notices/${id}`)
+  return {}
 }
