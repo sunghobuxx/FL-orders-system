@@ -1,9 +1,11 @@
 {
   "expo": {
-    "name": "FruitLife",
-    "slug": "fruitlife",
+    "name": "FruitLife Delivery",
+    "slug": "fruitlife-delivery",
     "version": "1.0.0",
     "orientation": "portrait",
+    "scheme": "fruitlife-delivery",
+    "userInterfaceStyle": "light",
     "icon": "./assets/icon.png",
     "splash": {
       "image": "./assets/splash.png",
@@ -12,43 +14,35 @@
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.fruitlife.app",
+      "bundleIdentifier": "com.fruitlife.delivery",
       "buildNumber": "2",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false,
-        "NSCameraUsageDescription": "카메라를 사용하지 않습니다.",
-        "NSPhotoLibraryUsageDescription": "사진 라이브러리를 사용하지 않습니다."
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
-      "package": "com.fruitlife.app",
-      "versionCode": 1,
+      "package": "com.fruitlife.delivery",
+      "versionCode": 2,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
-      },
-      "permissions": [
-        "POST_NOTIFICATIONS",
-        "RECEIVE_BOOT_COMPLETED",
-        "VIBRATE"
-      ]
+      }
     },
     "plugins": [
       "expo-router",
-      "expo-notifications"
+      "expo-font"
     ],
     "experiments": {
       "typedRoutes": true
     },
     "extra": {
       "router": {},
+      "apiBaseUrl": "https://order.fruitlife.shop",
       "eas": {
-        "projectId": "b96a9d08-d202-43f1-988a-44b767fa9e4c"
+        "projectId": "118ae88e-7428-45d0-a5d1-227c781b0433"
       }
     },
     "owner": "buxx1982",
-    "scheme": "fruitlife",
-    "userInterfaceStyle": "light",
     "platforms": [
       "ios",
       "android"
