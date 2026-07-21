@@ -3,13 +3,25 @@ export const runtime = 'edge'
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { sendSms } from '@/lib/messaging/kakao'
+import { getSessionUser } from '@/lib/supabase/server'
 
 export async function POST(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params
+  const { user } = await getSessionUser()
+  if (!user) return NextResponse.json({ error: '인증이 필요합니다' }, { status: 401 })
+
   const adminDb = createAdminClient()
+  const { data: membership } = await adminDb
+    .from('memberships')
+    .select('role')
+    .eq('user_id', user.id)
+    .maybeSingle()
+  if (!membership || !['admin', 'manager'].includes(membership.role)) {
+    return NextResponse.json({ error: '문자 발송 권한이 없습니다' }, { status: 403 })
+  }
 
   // 공지 조회
   const { data: notice, error: noticeErr } = await adminDb
@@ -33,13 +45,22 @@ export async function POST(
 
   const { data: contacts } = await adminDb
     .from('contacts')
-    .select('organization_id, name, phone')
+    .select('organization_id, name, phone, is_primary')
     .in('organization_id', orgIds)
-    .eq('is_primary', true)
     .not('phone', 'is', null)
     .neq('phone', '')
 
-  const targets = (contacts ?? []).filter(c => c.phone && c.phone.length >= 10)
+  // 업체당 1건: 대표번호를 우선하고, 없으면 등록된 다른 유효번호를 사용한다.
+  const targetByOrg = new Map<string, { organization_id: string; name: string | null; phone: string; is_primary: boolean }>()
+  for (const contact of contacts ?? []) {
+    const phone = contact.phone?.replace(/\D/g, '') ?? ''
+    if (!/^01\d{8,9}$/.test(phone)) continue
+    const existing = targetByOrg.get(contact.organization_id)
+    if (!existing || contact.is_primary) {
+      targetByOrg.set(contact.organization_id, { ...contact, phone })
+    }
+  }
+  const targets = [...targetByOrg.values()]
 
   if (targets.length === 0) {
     return NextResponse.json({ error: '발송 가능한 전화번호가 없습니다' }, { status: 400 })
@@ -53,9 +74,7 @@ export async function POST(
 
   for (const contact of targets) {
     const org = orgs?.find(o => o.id === contact.organization_id)
-    // 전화번호 정규화 (하이픈 제거)
-    const phone = contact.phone.replace(/-/g, '')
-    const result = await sendSms(phone, text)
+    const result = await sendSms(contact.phone, text)
     results.push({
       org: org?.name ?? contact.organization_id,
       phone: contact.phone,
