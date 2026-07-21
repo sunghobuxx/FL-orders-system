@@ -17,6 +17,8 @@ export interface DispatchLine {
   byRestaurant: { name: string; qty: number }[]
 }
 
+export const DISPATCH_ORDER_STATUSES = ['submitted', 'validated', 'ordered', 'dispatched', 'completed']
+
 function formatQty(qty: number) {
   return qty % 1 === 0 ? String(qty) : qty.toFixed(1)
 }
@@ -66,13 +68,14 @@ export async function getCurrentDispatchGroups(
   if (options.batchStatuses?.length) {
     batchQuery = batchQuery.in('status', options.batchStatuses)
   } else {
-    batchQuery = batchQuery.neq('status', 'completed')
+    // 작성 중(open) 주문만 제외하고, 배송 완료 후에도 발주 집계가 사라지지 않게 한다.
+    batchQuery = batchQuery.in('status', DISPATCH_ORDER_STATUSES)
   }
 
   const { data: batches } = await batchQuery
   const batchIds = (batches ?? []).map((b: { id: string }) => b.id)
   if (!batchIds.length) {
-    return { batches: [], grouped: {}, unmappedProducts: [] as string[] }
+    return { batches: [], allItems: [] as DispatchOrderItem[], grouped: {}, inactiveGrouped: {}, unmappedItems: [] as DispatchLine[] }
   }
 
   // 레스토랑 → 업체명 맵 + 주문 목록을 병렬로 조회
@@ -107,7 +110,7 @@ export async function getCurrentDispatchGroups(
 
   const orderIds = Object.keys(orderToRestaurantName)
   if (!orderIds.length) {
-    return { batches: batches ?? [], grouped: {}, unmappedProducts: [] as string[] }
+    return { batches: batches ?? [], allItems: [] as DispatchOrderItem[], grouped: {}, inactiveGrouped: {}, unmappedItems: [] as DispatchLine[] }
   }
 
   const { data: rawItems } = await adminDb
@@ -126,7 +129,7 @@ export async function getCurrentDispatchGroups(
   }))
 
   if (!items.length) {
-    return { batches: batches ?? [], grouped: {}, unmappedProducts: [] as string[] }
+    return { batches: batches ?? [], allItems: [] as DispatchOrderItem[], grouped: {}, inactiveGrouped: {}, unmappedItems: [] as DispatchLine[] }
   }
 
   const { productToSupplier, supplierProductToSupplier } = await resolveSupplierMaps(adminDb, items)
@@ -173,7 +176,7 @@ export async function getCurrentDispatchGroups(
     }
   }
 
-  return { batches: batches ?? [], grouped, inactiveGrouped, unmappedItems: [...unmappedMap.values()] }
+  return { batches: batches ?? [], allItems: items, grouped, inactiveGrouped, unmappedItems: [...unmappedMap.values()] }
 }
 
 export async function syncDispatchJobItems(
@@ -181,16 +184,47 @@ export async function syncDispatchJobItems(
   dispatchJobId: string,
   groupItems: DispatchOrderItem[],
 ) {
-  await adminDb.from('dispatch_job_items').delete().eq('dispatch_job_id', dispatchJobId)
+  const { data: existingRows, error: readError } = await adminDb
+    .from('dispatch_job_items')
+    .select('id, order_item_id')
+    .eq('dispatch_job_id', dispatchJobId)
+  if (readError) throw readError
 
-  if (groupItems.length) {
-    await adminDb.from('dispatch_job_items').insert(
-      groupItems.map(item => ({
+  const desiredByOrderItem = new Map(groupItems.map(item => [item.id, item]))
+  const existingByOrderItem = new Map<string, { id: string; order_item_id: string }>(
+    (existingRows ?? []).map((row: { id: string; order_item_id: string }) => [row.order_item_id, row]),
+  )
+
+  // 수동 제외 여부는 유지하면서 최신 수량과 추가 품목만 반영한다.
+  // 전체 삭제 후 재삽입하지 않아 삽입 실패 시 발주 품목 전체가 사라지는 상황도 막는다.
+  const staleIds = (existingRows ?? [])
+    .filter((row: { order_item_id: string }) => !desiredByOrderItem.has(row.order_item_id))
+    .map((row: { id: string }) => row.id)
+  if (staleIds.length) {
+    const { error } = await adminDb.from('dispatch_job_items').delete().in('id', staleIds)
+    if (error) throw error
+  }
+
+  const existingUpdates = groupItems.filter(item => existingByOrderItem.has(item.id))
+  const updateResults = await Promise.all(
+    existingUpdates.map(item => adminDb
+      .from('dispatch_job_items')
+      .update({ qty: item.qty })
+      .eq('id', existingByOrderItem.get(item.id)!.id)),
+  )
+  const updateError = updateResults.find(result => result.error)?.error
+  if (updateError) throw updateError
+
+  const missingItems = groupItems.filter(item => !existingByOrderItem.has(item.id))
+  if (missingItems.length) {
+    const { error } = await adminDb.from('dispatch_job_items').insert(
+      missingItems.map(item => ({
         dispatch_job_id: dispatchJobId,
         order_item_id: item.id,
         qty: item.qty,
       })),
     )
+    if (error) throw error
   }
 }
 

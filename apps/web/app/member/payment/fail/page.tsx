@@ -27,7 +27,7 @@ export default async function PaymentFailPage({ searchParams }: Props) {
         )}
         <div className="flex gap-2 pt-2">
           <Link
-            href={-1 as unknown as string}
+            href="/member/settlement"
             className="flex-1 rounded-lg border border-gray-300 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50"
           >
             다시 시도

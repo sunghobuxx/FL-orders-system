@@ -7,6 +7,7 @@ const NAV = [
   { href: '/member/notices', label: '공지', match: (p: string) => p.startsWith('/member/notices') || p.startsWith('/member/inquiries') },
   { href: '/member/order', label: '발주', match: (p: string) => p.startsWith('/member/order') },
   { href: '/member/settlement', label: '정산', match: (p: string) => p.startsWith('/member/settlement') || p.startsWith('/member/spec') },
+  { href: '/member/waiting', label: '웨이팅', match: (p: string) => p.startsWith('/member/waiting') },
   { href: '/member/profile', label: '회원정보', match: (p: string) => p.startsWith('/member/profile') },
 ]
 

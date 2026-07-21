@@ -247,7 +247,7 @@ export default async function AdminDashboardPage() {
   }
 
   return (
-    <div className="p-6 space-y-6 max-w-5xl">
+    <div className="p-4 space-y-4 lg:p-6 lg:space-y-6 max-w-5xl">
       <div>
         <h1 className="text-xl font-bold text-gray-900">대시보드</h1>
         <p className="text-sm text-gray-400 mt-0.5">
@@ -291,7 +291,7 @@ export default async function AdminDashboardPage() {
         )}
       </div>
 
-      <div className="grid grid-cols-2 gap-6">
+      <div className="grid grid-cols-2 gap-3 lg:gap-6">
         {/* 주문내역 (식당) — 오늘+내일 */}
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
           <div className="px-5 py-3 bg-gray-50 border-b border-gray-200 flex items-center justify-between">

@@ -5,7 +5,7 @@ import { notFound } from 'next/navigation'
 import { getSessionUser } from '@/lib/supabase/server'
 
 import AdminNoticesShell from '../AdminNoticesShell'
-import { DeleteNoticeButton } from '../NoticeButtons'
+import { DeleteNoticeButton, NoticeSmsButton } from '../NoticeButtons'
 
 interface Props {
   params: Promise<{ id: string }>
@@ -59,16 +59,19 @@ export default async function NoticeDetailPage({ params }: Props) {
           )}
         </div>
 
-        <div className="flex justify-end gap-2">
-          <DeleteNoticeButton id={id} />
-          <a href={`/admin/notices/${id}/edit`}
-            className="rounded-lg bg-brand-600 text-white px-5 py-2 text-sm font-semibold hover:bg-brand-700">
-            수정
-          </a>
-          <a href="/admin/notices"
-            className="rounded-lg border border-gray-300 text-gray-700 px-5 py-2 text-sm font-semibold hover:bg-gray-50">
-            목록
-          </a>
+        <div className="flex items-start justify-between gap-4">
+          <NoticeSmsButton id={id} />
+          <div className="flex gap-2 shrink-0">
+            <DeleteNoticeButton id={id} />
+            <a href={`/admin/notices/${id}/edit`}
+              className="rounded-lg bg-brand-600 text-white px-5 py-2 text-sm font-semibold hover:bg-brand-700">
+              수정
+            </a>
+            <a href="/admin/notices"
+              className="rounded-lg border border-gray-300 text-gray-700 px-5 py-2 text-sm font-semibold hover:bg-gray-50">
+              목록
+            </a>
+          </div>
         </div>
       </div>
     </AdminNoticesShell>

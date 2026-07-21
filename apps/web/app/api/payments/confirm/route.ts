@@ -1,7 +1,7 @@
 export const runtime = 'edge'
 
-import { createAdminClient } from '@/lib/supabase/admin'
 import { getSessionUser } from '@/lib/supabase/server'
+import { recordMemberReceivablePayment } from '@/lib/member-payments'
 
 export async function POST(req: Request) {
   try {
@@ -45,40 +45,25 @@ export async function POST(req: Request) {
     }
 
     // 2. 세션 확인
-    const { user } = await getSessionUser()
+    const { user, supabase } = await getSessionUser()
     if (!user) return Response.json({ error: '인증 필요' }, { status: 401 })
+    const { data: membership } = await supabase
+      .from('memberships')
+      .select('organization_id')
+      .eq('user_id', user.id)
+      .maybeSingle()
+    if (!membership?.organization_id) return Response.json({ error: '업체 정보 없음' }, { status: 403 })
 
-    const db = createAdminClient()
-
-    // 3. payments 테이블에 기록
-    await db.from('payments').insert({
-      target_type: refType === 'receivable' ? 'receivable' : 'receivable',
-      target_id: refId ?? null,
+    const result = await recordMemberReceivablePayment({
+      userId: user.id,
+      organizationId: membership.organization_id,
       amount,
-      direction: 'inbound',
-      method: 'card',
-      paid_at: new Date().toISOString(),
-      created_by: user.id,
+      paymentKey,
+      preferredReceivableId: refType === 'receivable' ? refId : null,
     })
+    if (!result.ok) return Response.json({ error: result.error }, { status: 400 })
 
-    // 4. receivable 잔액 업데이트 (refId가 receivable ID인 경우)
-    if (refId && refType === 'receivable') {
-      const { data: recv } = await db
-        .from('receivables')
-        .select('balance')
-        .eq('id', refId)
-        .single()
-
-      if (recv) {
-        const newBalance = Math.max(0, Number(recv.balance) - amount)
-        await db
-          .from('receivables')
-          .update({ balance: newBalance, status: newBalance === 0 ? 'paid' : 'partial' })
-          .eq('id', refId)
-      }
-    }
-
-    return Response.json({ ok: true, paymentKey: tossData.paymentKey, status: tossData.status })
+    return Response.json({ ok: true, paymentKey: tossData.paymentKey, status: tossData.status, appliedAmount: result.appliedAmount })
   } catch (e) {
     return Response.json({ error: String(e) }, { status: 500 })
   }

@@ -3,6 +3,7 @@ export const runtime = 'edge'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { getSessionUser } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import TossPaymentWidget from './TossPaymentWidget'
 
 interface Props {
@@ -14,13 +15,31 @@ export default async function MemberPaymentPage({ searchParams }: Props) {
   if (!user) redirect('/login')
 
   const { amount: amountStr, orderName, refType, refId } = await searchParams
-  const amount = Number(amountStr ?? 0)
+  const requestedAmount = Number(amountStr ?? 0)
 
   const { data: membership } = await supabase
     .from('memberships').select('organizations(id, name)').eq('user_id', user.id).single()
   const orgData = membership?.organizations
   const org = (Array.isArray(orgData) ? orgData[0] : orgData) as { id: string; name: string } | undefined
   if (!org) redirect('/member/dashboard')
+
+  const db = createAdminClient()
+  const { data: restaurants } = await db.from('restaurants').select('id').eq('organization_id', org.id)
+  const restaurantIds = (restaurants ?? []).map(row => row.id)
+  const { data: receivables } = restaurantIds.length > 0
+    ? await db
+        .from('receivables')
+        .select('id, balance, status')
+        .in('restaurant_id', restaurantIds)
+        .neq('status', 'paid')
+        .gt('balance', 0)
+    : { data: [] }
+  const totalOutstanding = (receivables ?? []).reduce((sum, row) => sum + Number(row.balance), 0)
+  if (refId && !(receivables ?? []).some(row => row.id === refId)) redirect('/member/settlement')
+  if (!Number.isFinite(requestedAmount) || requestedAmount <= 0 || requestedAmount > totalOutstanding) {
+    redirect('/member/settlement')
+  }
+  const amount = requestedAmount
 
   const tossClientKey = process.env.NEXT_PUBLIC_TOSS_CLIENT_KEY ?? ''
   const fmt = (n: number) => n.toLocaleString('ko-KR') + '원'

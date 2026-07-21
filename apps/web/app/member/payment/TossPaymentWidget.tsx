@@ -12,7 +12,7 @@ interface Props {
   refType?: string
 }
 
-export default function TossPaymentWidget({ clientKey, amount, orderName, orgName }: Props) {
+export default function TossPaymentWidget({ clientKey, amount, orderName, orgName, refId, refType }: Props) {
   const widgetRef = useRef<PaymentWidgetInstance | null>(null)
   const [ready, setReady] = useState(false)
   const orderId = useRef(`ord-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`)
@@ -33,11 +33,15 @@ export default function TossPaymentWidget({ clientKey, amount, orderName, orgNam
 
   async function handlePay() {
     if (!widgetRef.current || !ready) return
+    const successParams = new URLSearchParams()
+    if (refId) successParams.set('refId', refId)
+    if (refType) successParams.set('refType', refType)
+    const successQuery = successParams.toString()
     await widgetRef.current.requestPayment({
       orderId: orderId.current,
       orderName,
       customerName: orgName,
-      successUrl: `${window.location.origin}/member/payment/success`,
+      successUrl: `${window.location.origin}/member/payment/success${successQuery ? `?${successQuery}` : ''}`,
       failUrl: `${window.location.origin}/member/payment/fail`,
     })
   }

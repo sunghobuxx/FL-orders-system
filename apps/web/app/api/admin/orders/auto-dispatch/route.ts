@@ -20,11 +20,21 @@ export async function POST(req: NextRequest) {
 
     const adminDb = createAdminClient()
 
-    const { grouped } = await getCurrentDispatchGroups(adminDb, businessDate)
+    const { grouped, inactiveGrouped, unmappedItems } = await getCurrentDispatchGroups(adminDb, businessDate, {
+      batchStatuses: ['submitted', 'validated', 'ordered'],
+    })
     const supplierIds = Object.keys(grouped)
 
     if (!supplierIds.length) {
-      return NextResponse.json({ success: true, businessDate, dispatched: 0, processedDates: [businessDate], message: '발주 없음' })
+      return NextResponse.json({
+        success: true,
+        businessDate,
+        dispatched: 0,
+        processedDates: [businessDate],
+        excludedInactiveItems: Object.values(inactiveGrouped).flat().length,
+        unmappedItems: unmappedItems.length,
+        message: '자동 발송 대상 발주 없음',
+      })
     }
 
     // 1. 기존 dispatch_jobs 일괄 조회
@@ -96,17 +106,9 @@ export async function POST(req: NextRequest) {
       // 이미 발송된 경우 skip
       if (sentJobIdSet.has(jobId)) continue
 
-      // dispatch_job_items 동기화 (active items 없으면 재sync)
-      const { data: existingItems } = await adminDb
-        .from('dispatch_job_items')
-        .select('id')
-        .eq('dispatch_job_id', jobId)
-        .eq('is_excluded', false)
-        .limit(1)
-
-      if (!existingItems?.length) {
-        await syncDispatchJobItems(adminDb, jobId, items)
-      }
+      // 02:30 발송 직전의 최신 주문을 항상 스냅샷으로 저장한다.
+      // 미리 생성된 job에 일부 item만 있을 때 나머지 품목이 누락되던 문제를 방지한다.
+      await syncDispatchJobItems(adminDb, jobId, items)
 
       // 발주 라인 구성 (확정 items → fallback: order items 직접)
       let messageLines: string
@@ -157,7 +159,14 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    return NextResponse.json({ success: true, businessDate, dispatched, processedDates: [businessDate] })
+    return NextResponse.json({
+      success: true,
+      businessDate,
+      dispatched,
+      processedDates: [businessDate],
+      excludedInactiveItems: Object.values(inactiveGrouped).flat().length,
+      unmappedItems: unmappedItems.length,
+    })
   } catch (e) {
     console.error('[POST /api/admin/orders/auto-dispatch]', e)
     return NextResponse.json({ error: '처리 중 오류가 발생했습니다' }, { status: 500 })

@@ -63,7 +63,34 @@ export async function POST(req: NextRequest) {
       memo: i.memo ?? '',
     }))
 
+  if (items.length === 0) {
+    return NextResponse.json({ error: '발주할 품목을 1개 이상 선택해주세요.' }, { status: 400 })
+  }
+
   const adminDb = createAdminClient()
+
+  // 회원이 속한 업체의 식당인지 검증한다. 이 검증 전에 adminDb로 주문을 수정하면 안 된다.
+  const { data: restaurant } = await adminDb
+    .from('restaurants')
+    .select('id, organization_id')
+    .eq('id', restaurantId)
+    .maybeSingle()
+
+  if (!restaurant) {
+    return NextResponse.json({ error: '식당 정보를 확인할 수 없습니다.' }, { status: 404 })
+  }
+
+  const { data: membership } = await supabase
+    .from('memberships')
+    .select('organization_id')
+    .eq('user_id', user.id)
+    .eq('organization_id', restaurant.organization_id)
+    .maybeSingle()
+
+  if (!membership) {
+    return NextResponse.json({ error: '해당 식당의 발주 권한이 없습니다.' }, { status: 403 })
+  }
+
   const productIds = [...new Set(items.map(i => i.product_id))]
 
   // --- 마스터 강제 검증: 클라이언트가 stale 한 product 정보로 보내도
@@ -134,43 +161,50 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    let batchId = existingBatchId
-    let orderId = existingOrderId
+    let batchId: string | null = null
+    let orderId: string | null = null
 
-    // 배치 없으면 생성
-    if (!batchId) {
-      const { data: existing } = await supabase
-        .from('order_batches').select('id')
-        .eq('restaurant_id', restaurantId).eq('business_date', businessDate).maybeSingle()
+    // 식당+영업일자로 배치를 다시 확인해 클라이언트가 보낸 다른 업체 ID를 신뢰하지 않는다.
+    const { data: existingBatch } = await adminDb
+      .from('order_batches')
+      .select('id')
+      .eq('restaurant_id', restaurantId)
+      .eq('business_date', businessDate)
+      .maybeSingle()
 
-      if (existing) {
-        batchId = existing.id
-      } else {
-        const { data: newBatch, error: batchError } = await supabase
-          .from('order_batches')
-          .insert({ restaurant_id: restaurantId, business_date: businessDate, status: 'open' })
-          .select('id').single()
-        if (batchError) return NextResponse.json({ error: `배치 생성 실패: ${batchError.message}` }, { status: 500 })
-        batchId = newBatch.id
-      }
+    if (existingBatchId && existingBatch?.id !== existingBatchId) {
+      return NextResponse.json({ error: '발주 일자 정보가 올바르지 않습니다.' }, { status: 400 })
     }
 
-    // order 없으면 기존 order 재사용 or 생성 (중복 방지)
-    if (!orderId) {
-      const { data: existingOrder } = await supabase
-        .from('orders').select('id').eq('batch_id', batchId)
-        .order('created_at', { ascending: false }).limit(1).maybeSingle()
-      if (existingOrder) {
-        orderId = existingOrder.id
-      } else {
-        const timestamp = Date.now().toString(36).toUpperCase()
-        const { data: order, error: orderError } = await supabase
-          .from('orders')
-          .insert({ batch_id: batchId, order_no: `FL-${timestamp}`, source_type: 'web', version: 1 })
-          .select('id').single()
-        if (orderError) return NextResponse.json({ error: `주문 생성 실패: ${orderError.message}` }, { status: 500 })
-        orderId = order.id
-      }
+    if (existingBatch) {
+      batchId = existingBatch.id
+    } else {
+      const { data: newBatch, error: batchError } = await adminDb
+        .from('order_batches')
+        .insert({ restaurant_id: restaurantId, business_date: businessDate, status: 'open' })
+        .select('id').single()
+      if (batchError) return NextResponse.json({ error: `배치 생성 실패: ${batchError.message}` }, { status: 500 })
+      batchId = newBatch.id
+    }
+
+    const { data: existingOrder } = await adminDb
+      .from('orders').select('id').eq('batch_id', batchId)
+      .order('created_at', { ascending: false }).limit(1).maybeSingle()
+
+    if (existingOrderId && existingOrder?.id !== existingOrderId) {
+      return NextResponse.json({ error: '발주 정보가 올바르지 않습니다.' }, { status: 400 })
+    }
+
+    if (existingOrder) {
+      orderId = existingOrder.id
+    } else {
+      const timestamp = Date.now().toString(36).toUpperCase()
+      const { data: order, error: orderError } = await adminDb
+        .from('orders')
+        .insert({ batch_id: batchId, order_no: `FL-${timestamp}`, source_type: 'web', version: 1 })
+        .select('id').single()
+      if (orderError) return NextResponse.json({ error: `주문 생성 실패: ${orderError.message}` }, { status: 500 })
+      orderId = order.id
     }
 
     // 기존 아이템 삭제 전 FK 제약 해제 (dispatch_job_items, daily_spec_lines)
@@ -194,17 +228,17 @@ export async function POST(req: NextRequest) {
 
     // 제출 상태 변경 + daily_spec 자동 생성
     if (isSubmit) {
-      const { error: batchError } = await supabase
+      const { error: batchError } = await adminDb
         .from('order_batches')
         .update({ status: 'submitted', submitted_at: new Date().toISOString() })
         .eq('id', batchId)
       if (batchError) return NextResponse.json({ error: `제출 실패: ${batchError.message}` }, { status: 500 })
 
-      // daily_spec 멱등 생성 (이미 있으면 스킵)
+      // daily_spec 멱등 생성/갱신: 마감 전 재발주 시 기존 명세서도 최신 품목으로 교체한다.
       const { data: existingSpec } = await adminDb
         .from('daily_specs').select('id')
         .eq('restaurant_id', restaurantId).eq('business_date', businessDate).maybeSingle()
-      if (!existingSpec && orderId) {
+      if (orderId) {
         const { data: oiRows } = await adminDb
           .from('order_items')
           .select('id, product_id, qty, unit, unit_price_snapshot, products(taxable_flag)')
@@ -229,14 +263,38 @@ export async function POST(req: NextRequest) {
           })
           const total = lines.reduce((s, l) => s + l.qty * l.unit_price + l.vat_amount, 0)
           const vatTotal = lines.reduce((s, l) => s + l.vat_amount, 0)
-          const { data: spec } = await adminDb
-            .from('daily_specs')
-            .insert({ restaurant_id: restaurantId, business_date: businessDate, total_amount: total, vat_amount: vatTotal })
-            .select('id').single()
-          if (spec) {
-            await adminDb.from('daily_spec_lines').insert(
-              lines.map(l => ({ ...l, daily_spec_id: spec.id })),
-            )
+          let specId = existingSpec?.id
+          if (specId) {
+            const { error: specUpdateError } = await adminDb
+              .from('daily_specs')
+              .update({ total_amount: total, vat_amount: vatTotal })
+              .eq('id', specId)
+            if (specUpdateError) {
+              return NextResponse.json({ error: `명세서 갱신 실패: ${specUpdateError.message}` }, { status: 500 })
+            }
+            const { error: lineDeleteError } = await adminDb
+              .from('daily_spec_lines')
+              .delete()
+              .eq('daily_spec_id', specId)
+            if (lineDeleteError) {
+              return NextResponse.json({ error: `명세서 품목 갱신 실패: ${lineDeleteError.message}` }, { status: 500 })
+            }
+          } else {
+            const { data: spec, error: specInsertError } = await adminDb
+              .from('daily_specs')
+              .insert({ restaurant_id: restaurantId, business_date: businessDate, total_amount: total, vat_amount: vatTotal })
+              .select('id').single()
+            if (specInsertError) {
+              return NextResponse.json({ error: `명세서 생성 실패: ${specInsertError.message}` }, { status: 500 })
+            }
+            specId = spec.id
+          }
+
+          const { error: lineInsertError } = await adminDb.from('daily_spec_lines').insert(
+            lines.map(l => ({ ...l, daily_spec_id: specId! })),
+          )
+          if (lineInsertError) {
+            return NextResponse.json({ error: `명세서 품목 저장 실패: ${lineInsertError.message}` }, { status: 500 })
           }
         }
       }

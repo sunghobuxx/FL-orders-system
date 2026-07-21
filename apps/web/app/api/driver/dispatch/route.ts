@@ -25,15 +25,16 @@ export async function GET(req: Request) {
 
   const url = new URL(req.url)
   const businessDate = url.searchParams.get('date') ?? getKstToday()
-  const { grouped, unmappedItems } = await getCurrentDispatchGroups(ctx.db, businessDate)
-  const supplierIds = Object.keys(grouped)
+  const { allItems, grouped, inactiveGrouped, unmappedItems } = await getCurrentDispatchGroups(ctx.db, businessDate)
+  const activeSupplierIds = Object.keys(grouped)
+  const inactiveSupplierIds = Object.keys(inactiveGrouped)
+  const supplierIds = [...activeSupplierIds, ...inactiveSupplierIds]
   const groupedMap = grouped as Record<string, any[]>
-  const allItems = Object.values(groupedMap).flat()
   const orderItemIds = allItems.map(i => i.id)
 
   const [dispatchJobsResult, supplierRowsResult, priceRowsResult] = await Promise.all([
-    supplierIds.length
-      ? ctx.db.from('dispatch_jobs').select('id, supplier_id, status').eq('business_date', businessDate).in('supplier_id', supplierIds)
+    activeSupplierIds.length
+      ? ctx.db.from('dispatch_jobs').select('id, supplier_id, status').eq('business_date', businessDate).in('supplier_id', activeSupplierIds)
       : Promise.resolve({ data: [] as { id: string; supplier_id: string; status: string }[] }),
     supplierIds.length
       ? ctx.db.from('suppliers').select('id, organizations(name)').in('id', supplierIds)
@@ -76,16 +77,19 @@ export async function GET(req: Request) {
 
   const suppliers = await Promise.all(supplierIds.map(async supplierId => {
     const job = jobBySupplier.get(supplierId)
-    const lines = job
+    const inactive = inactiveSupplierIds.includes(supplierId)
+    const currentItems = inactive ? inactiveGrouped[supplierId] : groupedMap[supplierId]
+    const lines = job && !inactive
       ? await buildLinesFromDispatchJob(ctx.db, job.id)
-      : buildDispatchLines(groupedMap[supplierId])
+      : buildDispatchLines(currentItems)
 
     return {
       supplierId,
       jobId: job?.id ?? null,
       supplierName: supplierNameMap.get(supplierId) ?? '-',
-      status: job?.status ?? 'pending',
-      sent: job?.status === 'sent',
+      status: inactive ? 'inactive' : (job?.status ?? 'pending'),
+      sent: !inactive && job?.status === 'sent',
+      autoDispatchExcluded: inactive,
       lines: lines.map(line => ({
         name: line.name,
         qty: line.qty,

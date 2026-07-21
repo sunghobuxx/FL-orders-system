@@ -4,6 +4,47 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { deleteNotice, updateNotice } from './actions'
 
+export function NoticeSmsButton({ id }: { id: string }) {
+  const [loading, setLoading] = useState(false)
+  const [result, setResult] = useState<{ successCount: number; failCount: number; results: { org: string; phone: string; success: boolean; error?: string }[] } | null>(null)
+
+  async function handleSend() {
+    if (!confirm('전화번호가 등록된 매출업체에 SMS를 발송하시겠습니까?')) return
+    setLoading(true)
+    setResult(null)
+    const res = await fetch(`/api/admin/notices/${id}/send-sms`, { method: 'POST' })
+    const data = await res.json()
+    setLoading(false)
+    if (!res.ok) { alert(data.error ?? 'SMS 발송 실패'); return }
+    setResult(data)
+  }
+
+  return (
+    <div className="space-y-2">
+      <button
+        type="button"
+        onClick={handleSend}
+        disabled={loading}
+        className="rounded-lg bg-green-600 text-white px-5 py-2 text-sm font-semibold hover:bg-green-700 disabled:opacity-50"
+      >
+        {loading ? '발송 중...' : 'SMS 발송'}
+      </button>
+      {result && (
+        <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-xs space-y-1">
+          <p className="font-semibold text-gray-700">
+            발송 완료: {result.successCount}건 성공 / {result.failCount}건 실패
+          </p>
+          {result.results.map((r) => (
+            <p key={r.phone} className={r.success ? 'text-gray-500' : 'text-red-500'}>
+              {r.success ? '✓' : '✗'} {r.org} ({r.phone}){r.error ? ` — ${r.error}` : ''}
+            </p>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function DeleteNoticeButton({ id }: { id: string }) {
   const router = useRouter()
   const [loading, setLoading] = useState(false)

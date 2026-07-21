@@ -21,17 +21,20 @@ export function InquiryForm() {
     const form = e.currentTarget
     const title = (form.elements.namedItem('title') as HTMLInputElement).value
     const content = (form.elements.namedItem('content') as HTMLTextAreaElement).value
+    const payload = new FormData()
+    payload.append('title', title)
+    payload.append('content', content)
+    for (const file of Array.from(fileRef.current?.files ?? [])) payload.append('images', file)
 
     setError(null)
     startTransition(async () => {
       const res = await fetch('/api/member/inquiries', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title, content }),
+        body: payload,
       })
       const data = await res.json() as { error?: string }
-      if (data.error) {
-        setError(data.error)
+      if (!res.ok || data.error) {
+        setError(data.error ?? '문의 등록에 실패했습니다.')
       } else {
         router.push('/member/inquiries')
         router.refresh()

@@ -29,35 +29,29 @@ export async function createNotice(formData: FormData) {
   const body = formData.get('body') as string
 
   if (!title?.trim() || !body?.trim()) {
-    redirect('/admin/notices/new?error=' + encodeURIComponent('제목과 내용을 입력해주세요'))
+    redirect(`/admin/notices/new?error=${encodeURIComponent('제목과 내용을 입력해주세요')}`)
   }
 
-  let filePath: string | null = null
-  const file = formData.get('file') as File | null
-  if (file && file.size > 0) {
-    const adminDb = createAdminClient()
-    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
-    const fileName = `${Date.now()}_${safeName}`
-    const { data: uploadData, error: uploadError } = await adminDb.storage
-      .from('notices')
-      .upload(fileName, file, { cacheControl: '3600' })
-    if (uploadError) {
-      redirect('/admin/notices/new?error=' + encodeURIComponent('파일 업로드 실패: ' + uploadError.message))
-    }
-    const { data: { publicUrl } } = adminDb.storage.from('notices').getPublicUrl(uploadData.path)
-    filePath = publicUrl
+  // 파일은 클라이언트(NoticeFileInput)에서 직접 Storage에 업로드 후 URL만 전달
+  const fileUrl = formData.get('file_url') as string | null
+  const filePath: string | null = fileUrl && fileUrl.trim() ? fileUrl.trim() : null
+
+  let insertError: string | null = null
+  try {
+    const db = await getDb()
+    const { error } = await db.from('notices').insert({
+      title,
+      body,
+      audience_type: 'all',
+      ...(filePath ? { file_path: filePath } : {}),
+    })
+    if (error) insertError = error.message
+  } catch (err) {
+    insertError = err instanceof Error ? err.message : String(err)
   }
 
-  const db = await getDb()
-  const { error } = await db.from('notices').insert({
-    title,
-    body,
-    audience_type: 'all',
-    ...(filePath ? { file_path: filePath } : {}),
-  })
-
-  if (error) {
-    redirect('/admin/notices/new?error=' + encodeURIComponent(error.message))
+  if (insertError) {
+    redirect(`/admin/notices/new?error=${encodeURIComponent(insertError)}`)
   }
 
   redirect('/admin/notices')

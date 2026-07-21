@@ -8,9 +8,10 @@ interface Props {
   children: ReactNode
   orgName: string
   date: string
+  hideMeta?: boolean
 }
 
-export default function OrderShell({ children, orgName, date }: Props) {
+export default function OrderShell({ children, orgName, date, hideMeta = false }: Props) {
   const pathname = usePathname()
 
   const TABS = [
@@ -53,10 +54,12 @@ export default function OrderShell({ children, orgName, date }: Props) {
           </div>
         </div>
         <div className="max-w-2xl px-4 py-4 space-y-4">
-          <div className="text-sm text-gray-600 space-y-1">
-            <div>업체명: <span className="font-semibold text-gray-900">{orgName || '-'}</span></div>
-            {date && <div>날짜: <span className="font-semibold text-gray-900">{date}</span></div>}
-          </div>
+          {!hideMeta && (
+            <div className="text-sm text-gray-600 space-y-1">
+              <div>업체명: <span className="font-semibold text-gray-900">{orgName || '-'}</span></div>
+              {date && <div>날짜: <span className="font-semibold text-gray-900">{date}</span></div>}
+            </div>
+          )}
           {children}
         </div>
       </div>

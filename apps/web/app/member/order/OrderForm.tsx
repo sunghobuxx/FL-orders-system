@@ -108,7 +108,14 @@ export default function OrderForm({ restaurantId, businessDate, batchId, orderId
           if (!Number.isFinite(qty) || qty <= 0) continue
           const unit = units[product.id] ?? product.default_unit
           const { price, supplierProductId } = getPrice(product.id)
-          items.push({ productId: product.id, qty, unit, unitPrice: price, supplierProductId })
+          items.push({
+            product_id: product.id,
+            supplier_product_id: supplierProductId,
+            qty,
+            unit,
+            unit_price_snapshot: price,
+            memo: '',
+          })
         }
         if (items.length === 0) {
           setError('수량을 입력하세요')
@@ -117,12 +124,19 @@ export default function OrderForm({ restaurantId, businessDate, batchId, orderId
         const res = await fetch('/api/member/orders', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ restaurantId, businessDate, batchId, orderId: currentOrderId, items }),
+          body: JSON.stringify({
+            restaurantId,
+            businessDate,
+            batchId,
+            orderId: currentOrderId,
+            items,
+            isSubmit: true,
+          }),
         })
-        const data = await res.json()
-        if (data.error) throw new Error(data.error)
+        const data = await res.json() as { error?: string; orderId?: string }
+        if (!res.ok || data.error) throw new Error(data.error ?? '발주 저장에 실패했습니다.')
         if (data.orderId) setCurrentOrderId(data.orderId)
-        router.push('/member/order-confirm')
+        router.push(`/member/order-confirm?date=${businessDate}`)
       } catch (e) {
         setError(e instanceof Error ? e.message : '발주 저장에 실패했습니다.')
       }

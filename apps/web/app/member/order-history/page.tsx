@@ -49,12 +49,11 @@ export default async function OrderHistoryPage() {
 
   const today = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().split('T')[0] // KST
 
-  // 02:00 KST 이후 오늘 발주 마감 (내일 발주는 가능)
+  // 04:00 KST 이후 오늘 발주 마감 (내일 발주는 가능)
   const nowUtc = new Date()
   const kstNow = new Date(nowUtc.getTime() + 9 * 60 * 60 * 1000)
   const kstMinutes = kstNow.getUTCHours() * 60 + kstNow.getUTCMinutes()
-  // 오늘 batch가 처리중이면(open/submitted) 02:00 이후 차단, 아니면 내일 발주 허용
-  const isCutoff = kstMinutes >= 120
+  const isCutoff = kstMinutes >= 240
 
   if (!restaurant) return (
     <OrderShell orgName={org.name} date={today}>
@@ -163,16 +162,10 @@ export default async function OrderHistoryPage() {
         )}
 
         <div className="flex gap-3 pt-2">
-          {isCutoff ? (
-            <span className="flex-1 text-center rounded-lg bg-gray-300 text-gray-500 text-sm font-semibold py-3 cursor-not-allowed">
-              발주 마감 (02:00~)
-            </span>
-          ) : (
-            <Link href="/member/order"
-              className="flex-1 text-center rounded-lg bg-brand-600 text-white text-sm font-semibold py-3 hover:bg-brand-700">
-              발주하기
-            </Link>
-          )}
+          <Link href="/member/order"
+            className="flex-1 text-center rounded-lg bg-brand-600 text-white text-sm font-semibold py-3 hover:bg-brand-700">
+            {isCutoff ? '내일 발주하기' : '발주하기'}
+          </Link>
           <Link href="/member/spec"
             className="flex-1 text-center rounded-lg bg-gray-800 text-white text-sm font-semibold py-3 hover:bg-gray-700">
             당일명세서 확인

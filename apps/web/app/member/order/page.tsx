@@ -60,10 +60,6 @@ export default async function MemberOrderPage() {
       ? tomorrow
       : today
 
-  if (todayBatch && todayBatch.status === 'submitted' && afterCutoff) {
-    redirect('/member/order-confirm')
-  }
-
   const { data: batch } = businessDate === tomorrow
     ? await supabase.from('order_batches').select('id, status').eq('restaurant_id', restaurant.id).eq('business_date', tomorrow).maybeSingle()
     : { data: todayBatch }
