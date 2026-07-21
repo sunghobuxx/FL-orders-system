@@ -71,8 +71,7 @@ export async function sendKakaoAlimtalk(msg: KakaoMessage): Promise<SendResult> 
   const apiSecret = process.env.SOLAPI_API_SECRET
 
   if (!apiKey || !apiSecret) {
-    console.log('[Solapi Mock] 알림톡 시뮬레이션:', msg.receiverNum)
-    return { success: true, externalId: `mock_${Date.now()}` }
+    return { success: false, error: 'Solapi API 설정이 없습니다' }
   }
 
   const sender = process.env.SOLAPI_SENDER ?? ''
@@ -117,13 +116,11 @@ export async function sendKakaoAlimtalk(msg: KakaoMessage): Promise<SendResult> 
 export async function sendSms(phone: string, text: string): Promise<SendResult> {
   const apiKey = process.env.SOLAPI_API_KEY
   const apiSecret = process.env.SOLAPI_API_SECRET
-
-  if (!apiKey || !apiSecret) {
-    console.log('[Solapi Mock] SMS 시뮬레이션:', phone)
-    return { success: true, externalId: `sms_mock_${Date.now()}` }
-  }
-
   const sender = process.env.SOLAPI_SENDER ?? ''
+
+  if (!apiKey || !apiSecret || !sender) {
+    return { success: false, error: 'Solapi API 또는 발신번호 설정이 없습니다' }
+  }
 
   try {
     const result = await solapiRequest(apiKey, apiSecret, [{
