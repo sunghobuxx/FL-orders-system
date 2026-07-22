@@ -1,11 +1,11 @@
 export const runtime = 'edge'
 
 import Link from 'next/link'
-import { getSessionUser } from '@/lib/supabase/server'
+import { requireAdminNoticesDb } from '@/lib/admin-notices'
 import AdminNoticesShell from './AdminNoticesShell'
 
 export default async function AdminNoticesPage() {
-  const { supabase: db } = await getSessionUser()
+  const db = await requireAdminNoticesDb()
 
   const { data: notices } = await db
     .from('notices')
