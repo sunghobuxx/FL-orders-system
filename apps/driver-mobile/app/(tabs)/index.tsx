@@ -1,6 +1,6 @@
 import { router } from 'expo-router'
 import { ReactNode, useCallback, useEffect, useState } from 'react'
-import { Alert, Pressable, RefreshControl, ScrollView, Text, useWindowDimensions, View } from 'react-native'
+import { Alert, Linking, Pressable, RefreshControl, ScrollView, Text, useWindowDimensions, View } from 'react-native'
 
 import { Loading, Page } from '../../components'
 import { apiGet } from '../../lib/api'
@@ -145,6 +145,15 @@ export default function DashboardScreen() {
             )}
           </DashboardCard>
         </View>
+
+        <Pressable
+          onPress={() => void Linking.openURL('https://order.fruitlife.shop/driver-privacy-policy')}
+          style={{ alignSelf: 'center', paddingHorizontal: 12, paddingVertical: 8 }}
+        >
+          <Text style={{ color: '#64748B', fontSize: 12, fontWeight: '700', textDecorationLine: 'underline' }}>
+            개인정보처리방침
+          </Text>
+        </Pressable>
       </ScrollView>
     </Page>
   )
