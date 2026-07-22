@@ -31,8 +31,8 @@ jobs:
         env:
           VERCEL: ''
           NODE_OPTIONS: '--max-old-space-size=4096'
-          NEXT_PUBLIC_SUPABASE_URL: https://bkfkaugevqvbibjaasbj.supabase.co
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJrZmthdWdldnF2YmliamFhc2JqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE2NzIxNDgsImV4cCI6MjA4NzI0ODE0OH0.9btVcor4L0J8EPmT0IRIlGnl-UTC7w2AKf73-IXcoj8
+          NEXT_PUBLIC_SUPABASE_URL: https://nvpaggacvbotgqyxfdof.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im52cGFnZ2FjdmJvdGdxeXhmZG9mIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU3MTMyNzAsImV4cCI6MjA5MTI4OTI3MH0.CjVrOqtV38mwGpcgxHbWgAP70SgVSXymmD4CKx0IkVo
         run: pnpm build
 
       - name: Build (next-on-pages)
@@ -161,6 +161,13 @@ jobs:
               m = re.search(r'"/":\{[^}]+\}', content)
               if m: print('Current / mapping:', m.group())
           PYEOF
+
+      - name: Set CF Pages secrets (service role key)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          echo "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im52cGFnZ2FjdmJvdGdxeXhmZG9mIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NTcxMzI3MCwiZXhwIjoyMDkxMjg5MjcwfQ.XQHl-sDQQPT8Jnsld3-SCNuV2WZeTxxP2BFFohxp6Ic" | pnpm dlx wrangler pages secret put SUPABASE_SERVICE_ROLE_KEY --project-name fruitlife
 
       - name: Deploy to Cloudflare Pages
         working-directory: apps/web
