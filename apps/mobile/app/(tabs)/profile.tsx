@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
-  ActivityIndicator, Alert, KeyboardAvoidingView, Platform, ScrollView,
+  ActivityIndicator, Alert, KeyboardAvoidingView, Linking, Platform, ScrollView,
   StyleSheet, Text, TextInput, TouchableOpacity, View,
 } from 'react-native'
 import { router } from 'expo-router'
@@ -117,6 +117,8 @@ export default function ProfileScreen() {
         </View>
         <TouchableOpacity style={s.menu} onPress={() => router.push('/(tabs)/inquiry/new')}><Text style={s.menuText}>💬 문의하기</Text><Text style={s.chevron}>›</Text></TouchableOpacity>
         <TouchableOpacity style={s.menu} onPress={() => router.push('/(tabs)/inquiry')}><Text style={s.menuText}>📋 문의 내역</Text><Text style={s.chevron}>›</Text></TouchableOpacity>
+        <TouchableOpacity style={s.menu} onPress={() => void Linking.openURL('https://order.fruitlife.shop/privacy-policy')}><Text style={s.menuText}>🔒 개인정보처리방침</Text><Text style={s.chevron}>›</Text></TouchableOpacity>
+        <TouchableOpacity style={s.menu} onPress={() => void Linking.openURL('https://order.fruitlife.shop/account-deletion')}><Text style={s.menuText}>🗑️ 계정 및 데이터 삭제 요청</Text><Text style={s.chevron}>›</Text></TouchableOpacity>
         <TouchableOpacity style={s.logout} onPress={() => void handleLogout()}><Text style={s.logoutText}>로그아웃</Text></TouchableOpacity>
       </ScrollView>
     </KeyboardAvoidingView>
