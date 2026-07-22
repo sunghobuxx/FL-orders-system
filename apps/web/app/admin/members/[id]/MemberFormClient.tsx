@@ -26,7 +26,7 @@ export default function MemberFormClient({ orgId, isEdit, isSupplier, org, conta
   const router = useRouter()
   const [isLoading, setIsLoading] = useState(false)
   const [emailEdit, setEmailEdit] = useState(false)
-  const [newEmail, setNewEmail] = useState(memberEmail ?? '')
+  const [newEmail, setNewEmail] = useState('')
   const [emailLoading, setEmailLoading] = useState(false)
   const [emailMsg, setEmailMsg] = useState('')
   const [waitingEnabled, setWaitingEnabled] = useState(rest?.waiting_enabled ?? false)
@@ -244,6 +244,12 @@ export default function MemberFormClient({ orgId, isEdit, isSupplier, org, conta
         </button>
         {emailEdit && (
           <div className="px-5 pb-4 pt-2 border-t border-gray-100 space-y-3">
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-500 shrink-0 w-20">현재 이메일</span>
+              <span className="flex-1 bg-gray-50 rounded px-3 py-1.5 text-sm text-gray-700">
+                {memberEmail ?? '등록된 로그인 계정 없음'}
+              </span>
+            </div>
             <div className="flex items-center gap-2">
               <span className="text-sm text-gray-500 shrink-0 w-20">새 이메일</span>
               <input type="email" value={newEmail} onChange={e => setNewEmail(e.target.value)}

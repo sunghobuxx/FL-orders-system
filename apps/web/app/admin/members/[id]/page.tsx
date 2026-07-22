@@ -2,7 +2,7 @@ export const runtime = 'edge'
 
 import { notFound } from 'next/navigation'
 
-import { createAdminClient } from '@/lib/supabase/admin'
+import { getOrganizationLoginUser, requireAuthorizedAdminDb } from '@/lib/admin-member-user'
 
 import AdminMembersShell from '../AdminMembersShell'
 import DeleteMemberButton from '../DeleteMemberButton'
@@ -19,7 +19,7 @@ export default async function MemberDetailPage({ params, searchParams }: Props) 
   const { id } = await params
   const { mode } = await searchParams
   const isEdit = mode === 'edit'
-  const db = createAdminClient()
+  const db = await requireAuthorizedAdminDb()
 
   const [{ data: org }, { data: contacts }, { data: rest }, { data: supplier }] = await Promise.all([
     db.from('organizations').select('id, name, organization_type, status').eq('id', id).single(),
@@ -28,9 +28,9 @@ export default async function MemberDetailPage({ params, searchParams }: Props) 
     db.from('suppliers').select('id').eq('organization_id', id).maybeSingle(),
   ])
 
-  // 회원 이메일 조회 (관리자 전용 SECURITY DEFINER 함수)
-  const { data: emailRows } = await db.rpc('admin_get_org_user_email', { p_org_id: id })
-  const memberEmail = (emailRows as { user_email: string }[] | null)?.[0]?.user_email ?? null
+  // Supabase Auth의 실제 로그인 이메일을 조회한다.
+  const loginUser = await getOrganizationLoginUser(db, id)
+  const memberEmail = loginUser?.email ?? null
 
   if (!org) notFound()
 
