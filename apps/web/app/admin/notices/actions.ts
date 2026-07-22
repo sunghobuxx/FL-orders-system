@@ -4,21 +4,19 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getSessionUser } from '@/lib/supabase/server'
+import { hasNoticeAdminAccess } from '@/lib/admin-notices'
 
 async function getAuthorizedAdminDb() {
   const { user } = await getSessionUser()
   if (!user) return null
 
   const adminDb = createAdminClient()
-  const { data: membership } = await adminDb
+  const { data: memberships } = await adminDb
     .from('memberships')
-    .select('role')
+    .select('role, organizations(organization_type)')
     .eq('user_id', user.id)
-    .in('role', ['admin', 'manager'])
-    .limit(1)
-    .maybeSingle()
 
-  if (!membership) return null
+  if (!hasNoticeAdminAccess(memberships)) return null
   return adminDb
 }
 
