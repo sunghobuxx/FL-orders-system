@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { sendSms } from '@/lib/messaging/kakao'
 import { getSessionUser } from '@/lib/supabase/server'
+import { hasNoticeAdminAccess } from '@/lib/admin-notices'
 
 export async function POST(
   _req: NextRequest,
@@ -14,14 +15,11 @@ export async function POST(
   if (!user) return NextResponse.json({ error: '인증이 필요합니다' }, { status: 401 })
 
   const adminDb = createAdminClient()
-  const { data: membership } = await adminDb
+  const { data: memberships } = await adminDb
     .from('memberships')
-    .select('role')
+    .select('role, organizations(organization_type)')
     .eq('user_id', user.id)
-    .in('role', ['admin', 'manager'])
-    .limit(1)
-    .maybeSingle()
-  if (!membership) {
+  if (!hasNoticeAdminAccess(memberships)) {
     return NextResponse.json({ error: '문자 발송 권한이 없습니다' }, { status: 403 })
   }
 
