@@ -1,6 +1,6 @@
 import { router } from 'expo-router'
 import { useEffect, useState } from 'react'
-import { Alert, Image, KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
+import { Alert, Image, KeyboardAvoidingView, Linking, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
 
 import { supabase } from '../lib/supabase'
 
@@ -70,6 +70,9 @@ export default function Login() {
             <Text style={s.btnText}>{loading ? '로그인 중...' : '로그인'}</Text>
           </TouchableOpacity>
         </View>
+        <TouchableOpacity onPress={() => void Linking.openURL('https://order.fruitlife.shop/driver-privacy-policy')}>
+          <Text style={s.privacy}>개인정보처리방침</Text>
+        </TouchableOpacity>
       </View>
     </KeyboardAvoidingView>
   )
@@ -103,4 +106,5 @@ const s = StyleSheet.create({
   },
   btnDisabled: { opacity: 0.5 },
   btnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
+  privacy: { marginTop: 24, color: '#6B7280', fontSize: 12, textDecorationLine: 'underline' },
 })
