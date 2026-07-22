@@ -3,4 +3,4 @@ pages_build_output_dir = ".vercel/output/static"
 compatibility_date = "2024-09-23"
 compatibility_flags = ["nodejs_compat"]
 # rebuild trigger: CF Pages rollback recovery 2026-07-14
-# rebuild trigger: Supabase migration to Seoul region 2026-07-23 (v2)
+# rebuild trigger: rollback to Mumbai DB 2026-07-23 (emergency)
