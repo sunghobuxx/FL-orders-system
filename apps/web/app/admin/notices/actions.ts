@@ -14,9 +14,11 @@ async function getAuthorizedAdminDb() {
     .from('memberships')
     .select('role')
     .eq('user_id', user.id)
+    .in('role', ['admin', 'manager'])
+    .limit(1)
     .maybeSingle()
 
-  if (!membership || !['admin', 'manager'].includes(membership.role)) return null
+  if (!membership) return null
   return adminDb
 }
 

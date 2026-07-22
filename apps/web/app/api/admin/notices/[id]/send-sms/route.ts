@@ -18,8 +18,10 @@ export async function POST(
     .from('memberships')
     .select('role')
     .eq('user_id', user.id)
+    .in('role', ['admin', 'manager'])
+    .limit(1)
     .maybeSingle()
-  if (!membership || !['admin', 'manager'].includes(membership.role)) {
+  if (!membership) {
     return NextResponse.json({ error: '문자 발송 권한이 없습니다' }, { status: 403 })
   }
 

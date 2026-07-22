@@ -2,7 +2,7 @@ export const runtime = 'edge'
 
 import { notFound } from 'next/navigation'
 
-import { getSessionUser } from '@/lib/supabase/server'
+import { requireAdminNoticesDb } from '@/lib/admin-notices'
 
 import AdminNoticesShell from '../AdminNoticesShell'
 import { DeleteNoticeButton, NoticeSmsButton } from '../NoticeButtons'
@@ -13,7 +13,7 @@ interface Props {
 
 export default async function NoticeDetailPage({ params }: Props) {
   const { id } = await params
-  const { supabase: db } = await getSessionUser()
+  const db = await requireAdminNoticesDb()
 
   const { data: notice } = await db
     .from('notices')
