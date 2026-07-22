@@ -31,8 +31,8 @@ jobs:
         env:
           VERCEL: ''
           NODE_OPTIONS: '--max-old-space-size=4096'
-          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          NEXT_PUBLIC_SUPABASE_URL: https://nvpaggacvbotgqyxfdof.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im52cGFnZ2FjdmJvdGdxeXhmZG9mIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU3MTMyNzAsImV4cCI6MjA5MTI4OTI3MH0.CjVrOqtV38mwGpcgxHbWgAP70SgVSXymmD4CKx0IkVo
         run: pnpm build
 
       - name: Build (next-on-pages)
