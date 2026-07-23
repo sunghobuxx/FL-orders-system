@@ -63,6 +63,7 @@ export default function OrderScreen() {
   const [restaurantId, setRestaurantId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [products, setProducts] = useState<Product[]>([])
+  const [productError, setProductError] = useState<string | null>(null)
   const [quantities, setQuantities] = useState<Record<string, string>>({})
   const [submitting, setSubmitting] = useState(false)
   const [todayBatch, setTodayBatch] = useState<Batch | null>(null)
@@ -73,15 +74,40 @@ export default function OrderScreen() {
   const fetchedItemBatches = useRef(new Set<string>())
 
   const loadProducts = useCallback(async (restId: string) => {
-    const { data: rows } = await supabase
+    const { data: whitelist, error: whitelistError } = await supabase
       .from('restaurant_products')
-      .select('products(id, standard_name, default_unit)')
+      .select('product_id')
       .eq('restaurant_id', restId)
       .order('display_order')
 
-    return (rows ?? [])
-      .map((row) => unwrapRelation<Product>(row.products))
-      .filter(Boolean) as Product[]
+    if (whitelistError) {
+      console.warn('Could not load restaurant product whitelist; using all active products:', whitelistError)
+    }
+
+    const whitelistIds = whitelistError
+      ? []
+      : (whitelist ?? []).map((row) => row.product_id)
+    let productQuery = supabase
+      .from('products')
+      .select('id, standard_name, default_unit')
+      .eq('status', 'active')
+
+    if (whitelistIds.length !== 0) {
+      const { data: rows, error } = await productQuery.in('id', whitelistIds)
+      if (error) throw error
+
+      const productsById = new Map((rows ?? []).map((product) => [product.id, product as Product]))
+      return whitelistIds
+        .map((productId) => productsById.get(productId))
+        .filter(Boolean) as Product[]
+    }
+
+    const { data: rows, error } = await productQuery
+      .order('category')
+      .order('standard_name')
+
+    if (error) throw error
+    return (rows ?? []) as Product[]
   }, [])
 
   const loadToday = useCallback(async (restId: string): Promise<BatchState> => {
@@ -128,15 +154,22 @@ export default function OrderScreen() {
   }, [])
 
   const reload = useCallback(async (restId: string) => {
-    const [productRows, current, batches] = await Promise.all([
-      loadProducts(restId),
-      loadToday(restId),
-      loadHistory(restId),
-    ])
-    setProducts(productRows)
-    setTodayBatch(current.batch)
-    setQuantities(current.quantities)
-    setHistory(batches)
+    try {
+      const [productRows, current, batches] = await Promise.all([
+        loadProducts(restId),
+        loadToday(restId),
+        loadHistory(restId),
+      ])
+      setProducts(productRows)
+      setProductError(null)
+      setTodayBatch(current.batch)
+      setQuantities(current.quantities)
+      setHistory(batches)
+    } catch (error) {
+      console.error('Failed to load order data:', error)
+      setProducts([])
+      setProductError('품목을 불러오지 못했습니다. 아래로 당겨 다시 시도해주세요.')
+    }
   }, [loadHistory, loadProducts, loadToday])
 
   const loadBatchItems = useCallback(async (batchId: string) => {
@@ -185,8 +218,11 @@ export default function OrderScreen() {
   const onRefresh = useCallback(async () => {
     if (!restaurantId) return
     setRefreshing(true)
-    await reload(restaurantId)
-    setRefreshing(false)
+    try {
+      await reload(restaurantId)
+    } finally {
+      setRefreshing(false)
+    }
   }, [reload, restaurantId])
 
   const handleSubmit = useCallback(async () => {
@@ -274,7 +310,10 @@ export default function OrderScreen() {
   useEffect(() => {
     async function init() {
       const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
+      if (!user) {
+        setProductError('로그인 정보를 확인할 수 없습니다.')
+        return
+      }
 
       const { data: membership } = await supabase
         .from('memberships')
@@ -282,7 +321,10 @@ export default function OrderScreen() {
         .eq('user_id', user.id)
         .single()
 
-      if (!membership?.organization_id) return
+      if (!membership?.organization_id) {
+        setProductError('업체 연결 정보를 확인할 수 없습니다.')
+        return
+      }
 
       const { data: restaurant } = await supabase
         .from('restaurants')
@@ -290,13 +332,21 @@ export default function OrderScreen() {
         .eq('organization_id', membership.organization_id)
         .maybeSingle()
 
-      if (!restaurant?.id) return
+      if (!restaurant?.id) {
+        setProductError('식당 정보를 확인할 수 없습니다.')
+        return
+      }
 
       setRestaurantId(restaurant.id)
       await reload(restaurant.id)
     }
 
-    init().finally(() => setLoading(false))
+    init()
+      .catch((error) => {
+        console.error('Failed to initialize order screen:', error)
+        setProductError('발주 정보를 불러오지 못했습니다.')
+      })
+      .finally(() => setLoading(false))
   }, [reload])
 
   if (loading) {
@@ -341,7 +391,9 @@ export default function OrderScreen() {
             <View style={s.card}>
               <Text style={s.cardTitle}>오늘 발주 입력</Text>
               <Text style={s.cardSub}>{todayKst()}</Text>
-              {products.length !== 0 ? products.map((product) => (
+              {productError ? (
+                <Text style={s.empty}>{productError}</Text>
+              ) : products.length !== 0 ? products.map((product) => (
                 <View key={product.id} style={s.productRow}>
                   <View style={{ flex: 1 }}>
                     <Text style={s.productName}>{product.standard_name}</Text>
