@@ -13,16 +13,18 @@ export default async function AdminSpecPrintPage({ searchParams }: Props) {
   const { specId } = await searchParams
   if (!specId) return <div>specId 누락</div>
 
-  const { user, supabase } = await getSessionUser()
+  const { user } = await getSessionUser()
   if (!user) redirect('/login')
 
-  const { data: membership } = await supabase
-    .from('memberships').select('organizations(organization_type)').eq('user_id', user.id).single()
+  const db = createAdminClient()
+
+  // 권한 확인은 service role 로 한다. 사용자 세션(RLS)으로 조회하면 세션이 불안정할 때
+  // membership 이 null 이 되어 어드민인데도 /member/dashboard 로 튕긴다. (2026-07-27 발생)
+  const { data: membership } = await db
+    .from('memberships').select('organizations(organization_type)').eq('user_id', user.id).maybeSingle()
   const orgData = membership?.organizations
   const orgType = ((Array.isArray(orgData) ? orgData[0] : orgData) as { organization_type: string } | undefined)?.organization_type
   if (orgType !== 'platform' && orgType !== 'operator') redirect('/member/dashboard')
-
-  const db = createAdminClient()
 
   const { data: spec } = await db
     .from('daily_specs')

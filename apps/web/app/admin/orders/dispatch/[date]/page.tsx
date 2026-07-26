@@ -28,9 +28,14 @@ export default async function DispatchDatePage({ params }: Props) {
   const { date: targetDate } = await params
   const adminDb = createAdminClient()
 
-  const { grouped, unmappedItems } = await getCurrentDispatchGroups(adminDb, targetDate)
-  const supplierIds = Object.keys(grouped)
-  const groupedMap = grouped as Record<string, DispatchOrderItem[]>
+  const { grouped, inactiveGrouped, unmappedItems } = await getCurrentDispatchGroups(adminDb, targetDate)
+
+  // 비활성 공급처는 메시지 발송에서만 제외하고 발주 내역에는 표시한다.
+  // 이걸 빼먹으면 그날 발주가 전부 비활성 공급처로만 잡힌 날에 화면이 통째로 비어 버린다.
+  // (2026-07-27: 인천콩나물·시흥미나리 둘 다 inactive 라 "발주 내역이 없습니다" 로 나왔다)
+  const groupedMap = { ...grouped, ...inactiveGrouped } as Record<string, DispatchOrderItem[]>
+  const supplierIds = Object.keys(groupedMap)
+  const inactiveSupplierIds = new Set(Object.keys(inactiveGrouped))
   const allItems = Object.values(groupedMap).flat()
   const orderItemIds = allItems.map(i => i.id)
 
@@ -89,9 +94,11 @@ export default async function DispatchDatePage({ params }: Props) {
   const supplierLinesEntries = await Promise.all(
     supplierIds.map(async supplierId => {
       const job = jobBySupplier.get(supplierId)
-      const lines = job
-        ? await buildLinesFromDispatchJob(adminDb, job.id)
-        : buildDispatchLines(groupedMap[supplierId])
+      // 확정된 job 이 있으면 그 내용을 보여주되, dispatch_job_items 가 비어 있으면
+      // 발주 기준으로 되돌린다. 발주 날짜를 옮기면 dispatch_job_items 가 지워지는데,
+      // job 은 남아 있어서 이 폴백이 없으면 품목이 하나도 안 나온다. (2026-07-27 발생)
+      let lines = job ? await buildLinesFromDispatchJob(adminDb, job.id) : []
+      if (!lines.length) lines = buildDispatchLines(groupedMap[supplierId])
       return [supplierId, lines] as const
     })
   )
@@ -152,12 +159,15 @@ export default async function DispatchDatePage({ params }: Props) {
                   const sent = job?.status === 'sent'
                   const lines = supplierLines[supplierId] ?? []
                   const supplierName = supplierNameMap.get(supplierId) ?? '-'
+                  const isInactive = inactiveSupplierIds.has(supplierId)
                   return (
                     <div key={supplierId} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
                       {/* 헤더: 하늘색 배경, 공급처명 파란 텍스트 */}
-                      <div className="flex items-center justify-between px-5 py-3 bg-blue-50 border-b border-blue-100">
-                        <span className="text-sm font-semibold text-blue-800">{supplierName}</span>
-                        {sent ? (
+                      <div className={`flex items-center justify-between px-5 py-3 border-b ${isInactive ? 'bg-gray-100 border-gray-200' : 'bg-blue-50 border-blue-100'}`}>
+                        <span className={`text-sm font-semibold ${isInactive ? 'text-gray-500' : 'text-blue-800'}`}>{supplierName}</span>
+                        {isInactive ? (
+                          <span className="text-xs px-2.5 py-1 rounded-full bg-gray-200 text-gray-600 font-medium">비활성 · 발송 제외</span>
+                        ) : sent ? (
                           <span className="text-xs px-2.5 py-1 rounded-full bg-green-100 text-green-700 font-medium">전송완료</span>
                         ) : (
                           <DispatchSendButton supplierId={supplierId} businessDate={targetDate} />
