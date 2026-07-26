@@ -132,37 +132,99 @@ export async function POST(req: Request) {
       const productIds = [...new Set(items.map((i: { product_id: string }) => i.product_id))]
       const { priceMap, orgOverrides } = await buildPriceMapByProduct(adminDb, productIds, businessDate, organizationId)
 
-      const specLines = items.map((item: { id: string; product_id: string; qty: number; unit: string }) => {
-        const unitPrice = priceMap[item.product_id] ?? 0
-        const vatAmount = 0
+      // 기존 명세서가 있으면 지우지 않고 그 위에 갱신한다.
+      // 명세서를 delete 후 재생성하면 관리자가 손으로 고친 수량·단가가 전부 날아간다.
+      // 단가 우선순위 1순위는 "명세서 수동 단가는 절대 건드리지 말 것" 이다.
+      //
+      // maybeSingle() 을 쓰지 않는 이유: 같은 식당·날짜에 명세서가 2개 이상이면
+      // maybeSingle 은 에러를 내고 null 을 돌려준다. 그러면 여기서 명세서를 하나 더
+      // 만들어 중복이 계속 늘어난다. 가장 오래된 것을 기준으로 삼는다.
+      const { data: existingSpecs } = await adminDb
+        .from('daily_specs').select('id')
+        .eq('restaurant_id', batch.restaurant_id).eq('business_date', businessDate)
+        .order('created_at', { ascending: true })
+
+      let specId: string | null = existingSpecs?.[0]?.id ?? null
+      if (!specId) {
+        const { data: spec, error: specError } = await adminDb
+          .from('daily_specs')
+          .insert({ restaurant_id: batch.restaurant_id, business_date: businessDate, total_amount: 0, vat_amount: 0 })
+          .select('id').single()
+        if (specError || !spec) continue
+        specId = spec.id
+      }
+
+      // 수동으로 고친 라인은 품목 기준으로 찾아 그대로 둔다.
+      // (order_item_id 는 발주 재제출 때 NULL 로 끊기므로 기준이 될 수 없다)
+      const { data: existingLines } = await adminDb
+        .from('daily_spec_lines')
+        .select('id, product_id, qty, unit, unit_price, vat_amount, price_overridden')
+        .eq('daily_spec_id', specId)
+
+      type ExistingLine = { id: string; product_id: string; qty: number; unit: string; unit_price: number; vat_amount: number; price_overridden: boolean }
+      const keepByProduct = new Map<string, ExistingLine>()
+      for (const l of (existingLines ?? []) as ExistingLine[]) {
+        if (l.price_overridden) keepByProduct.set(l.product_id, l)
+      }
+
+      type SpecLine = {
+        order_item_id: string | null
+        product_id: string
+        qty: number
+        unit: string
+        unit_price: number
+        vat_amount: number
+        price_overridden: boolean
+      }
+
+      const specLines: SpecLine[] = items.map((item: { id: string; product_id: string; qty: number; unit: string }) => {
+        const kept = keepByProduct.get(item.product_id)
+        if (kept) {
+          // 관리자가 고친 수량·단가를 그대로 유지한다
+          return {
+            order_item_id: item.id,
+            product_id: item.product_id,
+            qty: kept.qty,
+            unit: kept.unit ?? item.unit,
+            unit_price: kept.unit_price,
+            vat_amount: kept.vat_amount ?? 0,
+            price_overridden: true,
+          }
+        }
         return {
           order_item_id: item.id,
           product_id: item.product_id,
           qty: item.qty,
           unit: item.unit,
-          unit_price: unitPrice,
-          vat_amount: vatAmount,
+          unit_price: priceMap[item.product_id] ?? 0,
+          vat_amount: 0,
           price_overridden: orgOverrides.has(item.product_id),
         }
       })
 
-      const totalAmount = specLines.reduce((s: number, l: { qty: number; unit_price: number; vat_amount: number }) => s + Number(l.qty) * Number(l.unit_price) + l.vat_amount, 0)
-      const vatAmount = specLines.reduce((s: number, l: { vat_amount: number }) => s + l.vat_amount, 0)
-
-      const { data: existing } = await adminDb
-        .from('daily_specs').select('id')
-        .eq('restaurant_id', batch.restaurant_id).eq('business_date', businessDate).maybeSingle()
-      if (existing) {
-        await adminDb.from('daily_specs').delete().eq('id', existing.id)
+      // 발주에 없지만 관리자가 직접 추가한 품목도 명세서에 남긴다
+      const orderedProductIds = new Set(items.map((i: { product_id: string }) => i.product_id))
+      for (const [pid, kept] of keepByProduct) {
+        if (orderedProductIds.has(pid)) continue
+        specLines.push({
+          order_item_id: null,
+          product_id: pid,
+          qty: kept.qty,
+          unit: kept.unit,
+          unit_price: kept.unit_price,
+          vat_amount: kept.vat_amount ?? 0,
+          price_overridden: true,
+        })
       }
 
-      const { data: spec, error: specError } = await adminDb
-        .from('daily_specs')
-        .insert({ restaurant_id: batch.restaurant_id, business_date: businessDate, total_amount: totalAmount, vat_amount: vatAmount })
-        .select('id').single()
+      const totalAmount = specLines.reduce((s: number, l: { qty: number; unit_price: number; vat_amount: number }) => s + Number(l.qty) * Number(l.unit_price) + Number(l.vat_amount), 0)
+      const vatAmount = specLines.reduce((s: number, l: { vat_amount: number }) => s + Number(l.vat_amount), 0)
 
-      if (specError || !spec) continue
-      await adminDb.from('daily_spec_lines').insert(specLines.map((l: { order_item_id: string; product_id: string; qty: number; unit: string; unit_price: number; vat_amount: number; price_overridden: boolean }) => ({ ...l, daily_spec_id: spec.id })))
+      await adminDb.from('daily_spec_lines').delete().eq('daily_spec_id', specId)
+      await adminDb.from('daily_spec_lines').insert(specLines.map(l => ({ ...l, daily_spec_id: specId })))
+      await adminDb.from('daily_specs')
+        .update({ total_amount: totalAmount, vat_amount: vatAmount })
+        .eq('id', specId)
       created++
     }
 
