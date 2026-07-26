@@ -20,6 +20,9 @@ type OrderRow = {
 
 type OrdersResponse = {
   date: string
+  from: string
+  to: string
+  mode: 'today' | 'history'
   orders: OrderRow[]
 }
 
@@ -39,6 +42,7 @@ const NEXT_STATUS: Record<string, { label: string; next: string; primary?: boole
 }
 
 export default function OrdersScreen() {
+  const [mode, setMode] = useState<'today' | 'history'>('today')
   const [data, setData] = useState<OrdersResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -46,9 +50,9 @@ export default function OrdersScreen() {
   const [newDate, setNewDate] = useState(getKstToday())
 
   const load = useCallback(async () => {
-    const next = await apiGet<OrdersResponse>('/api/driver/orders?mode=today')
+    const next = await apiGet<OrdersResponse>(`/api/driver/orders?mode=${mode}`)
     setData(next)
-  }, [])
+  }, [mode])
 
   useFocusEffect(useCallback(() => {
     load().catch((error) => Alert.alert('당일 주문', error.message)).finally(() => setLoading(false))
@@ -100,7 +104,18 @@ export default function OrdersScreen() {
           <Text style={{ color: '#64748B', fontSize: 13, fontWeight: '800' }}>총 {data?.orders.length ?? 0}개 업체</Text>
         </View>
 
-        {!data?.orders.length ? <Empty message="발주 없음" /> : data.orders.map((order) => {
+        <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
+          <ModeButton active={mode === 'today'} label="당일 주문" onPress={() => setMode('today')} />
+          <ModeButton active={mode === 'history'} label="주문 내역" onPress={() => setMode('history')} />
+        </View>
+
+        {mode === 'history' ? (
+          <Text style={{ color: '#94A3B8', fontSize: 12, fontWeight: '700', marginBottom: 10 }}>
+            최근 30일 · 담당 업체 주문만 표시
+          </Text>
+        ) : null}
+
+        {!data?.orders.length ? <Empty message={mode === 'today' ? '오늘 담당 업체 주문이 없습니다.' : '최근 30일 담당 업체 주문이 없습니다.'} /> : data.orders.map((order) => {
           const badge = STATUS_COLORS[order.status] ?? STATUS_COLORS.open
           const next = NEXT_STATUS[order.status]
           const isEditingDate = editingDateId === order.id
@@ -163,6 +178,22 @@ function SmallButton({ label, tone = 'gray', onPress }: { label: string; tone?: 
   return (
     <Pressable onPress={onPress} style={{ borderRadius: 8, paddingHorizontal: 10, paddingVertical: 7, backgroundColor: style.bg }}>
       <Text style={{ color: style.fg, fontSize: 12, fontWeight: '900' }}>{label}</Text>
+    </Pressable>
+  )
+}
+
+function ModeButton({ active, label, onPress }: { active: boolean; label: string; onPress: () => void }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={{
+        borderRadius: 999,
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        backgroundColor: active ? colors.green : '#F3F4F6',
+      }}
+    >
+      <Text style={{ color: active ? '#FFFFFF' : '#64748B', fontSize: 13, fontWeight: '900' }}>{label}</Text>
     </Pressable>
   )
 }

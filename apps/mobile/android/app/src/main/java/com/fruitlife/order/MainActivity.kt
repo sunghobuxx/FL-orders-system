@@ -1,4 +1,4 @@
-package com.fruitlife.app
+package com.fruitlife.order
 import expo.modules.splashscreen.SplashScreenManager
 
 import android.os.Build

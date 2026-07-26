@@ -181,7 +181,7 @@ export default async function AdminSettlementStatementPage({ params }: Props) {
               <span className="text-sm bg-gray-100 px-4 py-1.5 rounded font-medium text-gray-700">{periodStr}</span>
             )}
           </div>
-          <AdminStatementPrintButton />
+          <AdminStatementPrintButton restaurantId={restaurantId} statementId={statementId} />
         </div>
 
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
