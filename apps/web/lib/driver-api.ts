@@ -29,19 +29,40 @@ export async function requireDriverUser(req: Request) {
 
   const { data: membership } = await db
     .from('memberships')
-    .select('role')
+    .select('role, organizations(organization_type)')
     .eq('user_id', userData.user.id)
     .maybeSingle()
 
-  if (!membership || !['admin', 'manager'].includes(membership.role)) {
+  // 'owner'는 운영사 오너와 식당 사장님이 함께 쓰는 역할명이다.
+  // 역할만 보고 열면 식당 사장님이 전 업체 배송 데이터를 보게 되므로 조직 타입까지 확인한다.
+  const organization = Array.isArray(membership?.organizations)
+    ? membership.organizations[0]
+    : membership?.organizations
+  const isOperatorOwner = membership?.role === 'owner' &&
+    ['platform', 'operator'].includes(
+      (organization as { organization_type: string } | null)?.organization_type ?? '',
+    )
+
+  if (!membership || !(['admin', 'manager'].includes(membership.role) || isOperatorOwner)) {
     return { error: NextResponse.json({ error: 'Forbidden' }, { status: 403 }) }
   }
 
-  const { data: assigned } = await db
+  const { data: assigned, error: assignedError } = await db
     .from('manager_restaurants')
     .select('restaurant_id')
     .eq('user_id', userData.user.id)
 
+  if (assignedError) {
+    console.error('Failed to load manager restaurant assignments:', assignedError)
+    return {
+      error: NextResponse.json(
+        { error: '담당업체 정보를 불러오지 못했습니다.' },
+        { status: 500 },
+      ),
+    }
+  }
+
+  // manager만 담당업체로 제한하고, admin/오너는 null(전체 조회)을 받는다.
   const assignedRestaurantIds = membership.role === 'manager'
     ? (assigned ?? []).map((row: { restaurant_id: string }) => row.restaurant_id)
     : null
@@ -49,7 +70,7 @@ export async function requireDriverUser(req: Request) {
   return {
     db,
     user: userData.user,
-    role: membership.role as 'admin' | 'manager',
+    role: membership.role as 'admin' | 'manager' | 'owner',
     assignedRestaurantIds,
   }
 }

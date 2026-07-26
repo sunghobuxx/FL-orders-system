@@ -162,6 +162,47 @@ jobs:
               if m: print('Current / mapping:', m.group())
           PYEOF
 
+      - name: Set CF Pages project config (production branch + Supabase Seoul)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          API="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/pages/projects/fruitlife"
+
+          show() {
+            curl -sf -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$API" | python3 -c "
+          import sys, json
+          r = json.load(sys.stdin)['result']
+          print('  production_branch =', r.get('production_branch'))
+          e = r['deployment_configs']['production'].get('env_vars') or {}
+          for k, v in sorted(e.items()):
+              print(f'  {k} = {(v or {}).get(\"value\") or \"(secret)\"}')
+          "
+          }
+
+          echo "── 변경 전 ──"; show
+
+          # production_branch가 아래 deploy 스텝의 --branch 값과 다르면 CF는 그 배포를
+          # preview로 취급한다. 그러면 워크플로는 성공하는데 운영 도메인은 옛 배포를
+          # 계속 서빙한다 (2026-07-26 확인된 실제 원인).
+          #
+          # env_vars는 대시보드 런타임 값이 build-time 값을 override하므로 여기서 Seoul로 못박는다.
+          # 키 단위 merge라 SUPABASE_SERVICE_ROLE_KEY 등 나머지는 건드리지 않는다.
+          curl -sf -X PATCH -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            -H "Content-Type: application/json" "$API" -d '{
+              "production_branch": "main",
+              "deployment_configs": {
+                "production": {
+                  "env_vars": {
+                    "NEXT_PUBLIC_SUPABASE_URL": {"type": "plain_text", "value": "https://nvpaggacvbotgqyxfdof.supabase.co"},
+                    "NEXT_PUBLIC_SUPABASE_ANON_KEY": {"type": "plain_text", "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im52cGFnZ2FjdmJvdGdxeXhmZG9mIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU3MTMyNzAsImV4cCI6MjA5MTI4OTI3MH0.CjVrOqtV38mwGpcgxHbWgAP70SgVSXymmD4CKx0IkVo"}
+                  }
+                }
+              }
+            }' > /dev/null
+
+          echo "── 변경 후 ──"; show
+
       - name: Set CF Pages secrets (service role key)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -181,9 +222,20 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
+          # 이 스텝은 2026-07-26 이전까지 매번 IndexError로 죽고 있었다.
+          # 토큰에 Zone:Read 권한이 없거나 zone 이름이 안 맞으면 result가 빈 배열이 되는데
+          # [0]을 그냥 인덱싱해서 터졌다. 캐시가 안 비워지면 새 배포가 가려질 수 있으므로
+          # 실패 원인을 로그에 남기도록 바꾼다.
           ZONE=$(curl -sf -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
             "https://api.cloudflare.com/client/v4/zones?name=fruitlife.shop" | \
-            python3 -c "import sys,json; print(json.load(sys.stdin)['result'][0]['id'])")
+            python3 -c "import sys,json; r=json.load(sys.stdin).get('result') or []; print(r[0]['id'] if r else '')")
+
+          if [ -z "$ZONE" ]; then
+            echo "::warning::fruitlife.shop zone을 찾지 못했습니다. CDN 캐시를 비우지 못했습니다."
+            echo "  → CLOUDFLARE_API_TOKEN에 Zone:Read + Cache Purge 권한이 있는지 확인하세요."
+            exit 0
+          fi
+
           echo "Zone: $ZONE"
           RES=$(curl -sf -X POST \
             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \

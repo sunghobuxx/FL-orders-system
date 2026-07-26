@@ -14,6 +14,7 @@ type Dashboard = {
   totalAssignedOrders: number
   totalAllOrders: number
   orders: Array<{ id: string; restaurantName: string; status: string; businessDate: string; itemCount: number; submittedAt: string }>
+  notes: Array<{ id: string; title: string; content: string; status: string; created_at: string }>
   inquiries: Array<{ id: string; title: string; status: string; created_at: string }>
   dispatches: Array<{
     id: string
@@ -23,6 +24,15 @@ type Dashboard = {
     sent: boolean
     items: Array<{ name: string; qty: number; unit: string }>
   }>
+}
+
+const ORDER_STATUS: Record<string, { label: string; backgroundColor: string; color: string }> = {
+  open: { label: '작성 중', backgroundColor: '#F3F4F6', color: '#64748B' },
+  submitted: { label: '당일발주', backgroundColor: '#DBEAFE', color: '#1D4ED8' },
+  validated: { label: '알림톡 발송', backgroundColor: '#F3E8FF', color: '#7E22CE' },
+  ordered: { label: '배송중', backgroundColor: '#FEF3C7', color: '#B45309' },
+  dispatched: { label: '배송완료', backgroundColor: '#DCFCE7', color: '#15803D' },
+  completed: { label: '배송완료', backgroundColor: '#DCFCE7', color: '#15803D' },
 }
 
 export default function DashboardScreen() {
@@ -78,13 +88,13 @@ export default function DashboardScreen() {
         <DashboardCard>
           <CardHeader title="배송 중 전달 사항" action="전체보기 →" onPress={() => router.push('/notes')} />
           <View style={{ minHeight: 60, alignItems: 'center', justifyContent: 'center', borderTopWidth: 1, borderTopColor: '#E5E7EB' }}>
-            {(data?.inquiries.length ?? 0) === 0 ? (
-              <Text style={{ color: '#94A3B8', fontWeight: '800' }}>미답변 문의 없음</Text>
+            {(data?.notes.length ?? 0) === 0 ? (
+              <Text style={{ color: '#94A3B8', fontWeight: '800' }}>배송 중 전달 사항 없음</Text>
             ) : (
               <View style={{ alignSelf: 'stretch' }}>
-                {data?.inquiries.slice(0, 3).map((inq) => (
-                  <Pressable key={inq.id} style={{ paddingHorizontal: 18, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#EEF2F7' }}>
-                    <Text numberOfLines={1} style={{ color: '#111827', fontWeight: '800' }}>{inq.title}</Text>
+                {data?.notes.slice(0, 3).map((note) => (
+                  <Pressable key={note.id} onPress={() => router.push('/notes')} style={{ paddingHorizontal: 18, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#EEF2F7' }}>
+                    <Text numberOfLines={1} style={{ color: '#111827', fontWeight: '800' }}>{note.title}</Text>
                   </Pressable>
                 ))}
               </View>
@@ -101,15 +111,31 @@ export default function DashboardScreen() {
             {(data?.orders.length ?? 0) === 0 ? (
               <EmptyLine text="담당 업체 주문이 없습니다." />
             ) : (
-              data?.orders.map((order) => (
-                <View key={order.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 18, paddingVertical: 12, borderTopWidth: 1, borderTopColor: '#EEF2F7' }}>
-                  <Text numberOfLines={1} style={{ flex: 1, color: '#111827', fontSize: 14, fontWeight: '800' }}>{order.restaurantName}</Text>
-                  <Text style={{ width: 36, textAlign: 'right', color: '#64748B', fontSize: 13, fontWeight: '800' }}>{order.itemCount}개</Text>
-                  <Pressable style={{ backgroundColor: '#F3E8FF', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5 }}>
-                    <Text style={{ color: '#8A22E6', fontSize: 12, fontWeight: '900' }}>상차시작</Text>
+              data?.orders.map((order) => {
+                const status = ORDER_STATUS[order.status] ?? ORDER_STATUS.open
+                return (
+                  <Pressable
+                    key={order.id}
+                    onPress={() => router.push(`/order/${order.id}`)}
+                    style={({ pressed }) => ({
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 8,
+                      paddingHorizontal: 18,
+                      paddingVertical: 12,
+                      borderTopWidth: 1,
+                      borderTopColor: '#EEF2F7',
+                      backgroundColor: pressed ? '#F8FAFC' : '#FFFFFF',
+                    })}
+                  >
+                    <Text numberOfLines={1} style={{ flex: 1, color: '#111827', fontSize: 14, fontWeight: '800' }}>{order.restaurantName}</Text>
+                    <Text style={{ width: 36, textAlign: 'right', color: '#64748B', fontSize: 13, fontWeight: '800' }}>{order.itemCount}개</Text>
+                    <View style={{ backgroundColor: status.backgroundColor, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5 }}>
+                      <Text style={{ color: status.color, fontSize: 12, fontWeight: '900' }}>{status.label}</Text>
+                    </View>
                   </Pressable>
-                </View>
-              ))
+                )
+              })
             )}
           </DashboardCard>
 
