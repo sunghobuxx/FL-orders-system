@@ -39,6 +39,10 @@ jobs:
         working-directory: apps/web
         env:
           VERCEL: ''
+          # next-on-pages는 내부적으로 앱을 다시 빌드한다. 여기에 값을 넘기지 않으면
+          # next.config.ts의 fallback이 쓰이면서 클라이언트 번들이 엉뚱한 DB로 고정된다.
+          NEXT_PUBLIC_SUPABASE_URL: https://nvpaggacvbotgqyxfdof.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im52cGFnZ2FjdmJvdGdxeXhmZG9mIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU3MTMyNzAsImV4cCI6MjA5MTI4OTI3MH0.CjVrOqtV38mwGpcgxHbWgAP70SgVSXymmD4CKx0IkVo
         run: pnpm dlx @cloudflare/next-on-pages@1.13.16
 
       - name: Fix bracket-path static chunks (CF Pages cannot serve [bracket] directories)
