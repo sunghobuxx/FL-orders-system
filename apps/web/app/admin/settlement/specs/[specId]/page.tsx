@@ -3,7 +3,7 @@ export const runtime = 'edge'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
-import { getSessionUser } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 
 import { AdminSpecPrintButton } from '@/app/admin/settlement/AdminPrintButtons'
 import AdminSettlementShell from '@/app/admin/settlement/AdminSettlementShell'
@@ -14,7 +14,9 @@ interface Props { params: Promise<{ specId: string }> }
 
 export default async function AdminSpecDetailPage({ params }: Props) {
   const { specId } = await params
-  const { supabase: db } = await getSessionUser()
+  // 어드민 화면은 형제 페이지들과 동일하게 service role 로 조회한다.
+  // 사용자 세션(RLS)으로 조회하면 세션이 끊겼을 때 명세서가 통째로 안 나온다.
+  const db = createAdminClient()
 
   const { data: spec } = await db
     .from('daily_specs')

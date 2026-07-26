@@ -52,28 +52,54 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ batch
       return NextResponse.json({ error: '올바른 날짜 형식이 아닙니다 (YYYY-MM-DD)' }, { status: 400 })
     }
 
-    const { supabase: db } = await getSessionUser()
+    // 이 라우트의 나머지 단계는 전부 adminDb 를 쓴다. 조회·변경만 사용자 세션을 쓰면
+    // 세션이 끊겼을 때 RLS 에 막혀 0행만 업데이트되는데, PostgREST 는 그걸 에러로 주지 않아
+    // success 를 돌려주고 화면만 새로고침된다 (날짜가 안 바뀌는 것처럼 보임).
     const adminDb = createAdminClient()
 
     // 기존 날짜 조회
-    const { data: batch } = await db
+    const { data: batch } = await adminDb
       .from('order_batches')
       .select('business_date, restaurant_id')
       .eq('id', batchId)
-      .single()
+      .maybeSingle()
 
-    const oldDate = batch?.business_date
-    const restaurantId = batch?.restaurant_id
+    if (!batch) {
+      return NextResponse.json({ error: '발주를 찾을 수 없습니다' }, { status: 404 })
+    }
 
-    // 1) 발주 날짜 변경
-    const { error } = await db
+    const oldDate = batch.business_date
+    const restaurantId = batch.restaurant_id
+
+    // 같은 식당·날짜 배치가 이미 있으면 unique 제약에 걸린다. 먼저 알려준다.
+    if (oldDate !== businessDate) {
+      const { data: clash } = await adminDb
+        .from('order_batches')
+        .select('id')
+        .eq('restaurant_id', restaurantId)
+        .eq('business_date', businessDate)
+        .maybeSingle()
+      if (clash) {
+        return NextResponse.json(
+          { error: `${businessDate} 에 이미 발주가 있습니다. 먼저 정리해 주세요.` },
+          { status: 409 },
+        )
+      }
+    }
+
+    // 1) 발주 날짜 변경 — 실제로 바뀐 행을 돌려받아 확인한다
+    const { data: updated, error } = await adminDb
       .from('order_batches')
       .update({ business_date: businessDate })
       .eq('id', batchId)
+      .select('id')
 
     if (error) {
       console.error('[PATCH /api/admin/orders/[batchId]]', error)
-      return NextResponse.json({ error: '날짜 변경 실패' }, { status: 500 })
+      return NextResponse.json({ error: `날짜 변경 실패: ${error.message}` }, { status: 500 })
+    }
+    if (!updated?.length) {
+      return NextResponse.json({ error: '날짜가 변경되지 않았습니다' }, { status: 500 })
     }
 
     if (oldDate && oldDate !== businessDate) {
