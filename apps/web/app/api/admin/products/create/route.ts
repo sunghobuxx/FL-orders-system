@@ -2,6 +2,7 @@ export const runtime = 'edge'
 
 import { NextResponse } from 'next/server'
 import { apiError, validationError } from '@/lib/api-error'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { getSessionUser } from '@/lib/supabase/server'
 
 export async function POST(req: Request) {
@@ -15,7 +16,11 @@ export async function POST(req: Request) {
     if (!default_unit) return validationError('기본 단위를 선택하세요')
     if (standard_name.length > 100) return validationError('품목명은 100자 이하로 입력하세요')
 
-    const { supabase: db } = await getSessionUser()
+    const { user } = await getSessionUser()
+    if (!user) return NextResponse.json({ error: '로그인이 필요합니다' }, { status: 401 })
+    // 데이터 작업은 service role 로 한다. 세션(RLS)으로 쓰면 막혀도 에러가 안 나
+    // 조용히 실패하거나 조회가 null 이 되어 엉뚱한 404 가 난다.
+    const db = createAdminClient()
 
     const { data, error } = await db.from('products').insert({
       sku: sku?.trim() || null,

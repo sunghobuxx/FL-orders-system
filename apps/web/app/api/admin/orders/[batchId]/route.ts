@@ -1,14 +1,18 @@
 export const runtime = 'edge'
 
 import { NextRequest, NextResponse } from 'next/server'
-import { getSessionUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { getSessionUser } from '@/lib/supabase/server'
 
 // 발주 삭제
 export async function DELETE(_req: NextRequest, context: { params: Promise<{ batchId: string }> }) {
   try {
     const { batchId } = await context.params
-    const { supabase: db } = await getSessionUser()
+    const { user } = await getSessionUser()
+    if (!user) return NextResponse.json({ error: '로그인이 필요합니다' }, { status: 401 })
+    // 데이터 작업은 service role 로 한다. 세션(RLS)으로 쓰면 막혀도 에러가 안 나
+    // 조용히 실패하거나 조회가 null 이 되어 엉뚱한 404 가 난다.
+    const db = createAdminClient()
 
     // 삭제 순서: dispatch_job_items → order_items → orders → order_batches
     // dispatch_job_items 삭제 (order_item_id FK)

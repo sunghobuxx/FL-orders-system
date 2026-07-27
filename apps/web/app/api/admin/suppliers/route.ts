@@ -1,6 +1,7 @@
 export const runtime = 'edge'
 
 import { NextRequest, NextResponse } from 'next/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { getSessionUser } from '@/lib/supabase/server'
 
 export async function POST(req: NextRequest) {
@@ -8,7 +9,11 @@ export async function POST(req: NextRequest) {
     const { name, dispatch_channel, phone } = await req.json()
     if (!name?.trim()) return NextResponse.json({ error: '공급처명을 입력하세요' }, { status: 400 })
 
-    const { supabase: db } = await getSessionUser()
+    const { user } = await getSessionUser()
+    if (!user) return NextResponse.json({ error: '로그인이 필요합니다' }, { status: 401 })
+    // 데이터 작업은 service role 로 한다. 세션(RLS)으로 쓰면 막혀도 에러가 안 나
+    // 조용히 실패하거나 조회가 null 이 되어 엉뚱한 404 가 난다.
+    const db = createAdminClient()
 
     const { data: orgId, error: orgErr } = await db.rpc('admin_create_organization', {
       p_name: name.trim(),

@@ -2,6 +2,7 @@ export const runtime = 'edge'
 
 import { NextResponse } from 'next/server'
 
+import { createAdminClient } from '@/lib/supabase/admin'
 import { getSessionUser } from '@/lib/supabase/server'
 
 // 공급처 추가
@@ -10,7 +11,11 @@ export async function POST(req: Request) {
     const body = await req.json() as {
       productId: string; supplierId: string; supplierName: string; purchaseUnit: string
     }
-    const { supabase: db } = await getSessionUser()
+    const { user } = await getSessionUser()
+    if (!user) return NextResponse.json({ error: '로그인이 필요합니다' }, { status: 401 })
+    // 데이터 작업은 service role 로 한다. 세션(RLS)으로 쓰면 막혀도 에러가 안 나
+    // 조용히 실패하거나 조회가 null 이 되어 엉뚱한 404 가 난다.
+    const db = createAdminClient()
     const { error } = await db.from('supplier_products').upsert(
       { supplier_id: body.supplierId, product_id: body.productId, supplier_name: body.supplierName, purchase_unit: body.purchaseUnit },
       { onConflict: 'supplier_id,product_id' }
@@ -26,7 +31,11 @@ export async function POST(req: Request) {
 export async function DELETE(req: Request) {
   try {
     const { supplierProductId } = await req.json() as { supplierProductId: string }
-    const { supabase: db } = await getSessionUser()
+    const { user } = await getSessionUser()
+    if (!user) return NextResponse.json({ error: '로그인이 필요합니다' }, { status: 401 })
+    // 데이터 작업은 service role 로 한다. 세션(RLS)으로 쓰면 막혀도 에러가 안 나
+    // 조용히 실패하거나 조회가 null 이 되어 엉뚱한 404 가 난다.
+    const db = createAdminClient()
 
     // 1. 연결된 단가 이력 먼저 삭제
     const { error: snapErr } = await db.from('price_snapshots').delete().eq('supplier_product_id', supplierProductId)
