@@ -5,8 +5,9 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import AdminSettlementShell from './AdminSettlementShell'
 import { CalcButton, CloseButton, PeriodForm } from './history/SettlementActions'
 
-const PERIOD_LABEL: Record<string, string> = { weekly: '주', monthly: '월' }
+const PERIOD_LABEL: Record<string, string> = { daily: '일', weekly: '주', monthly: '월' }
 const PERIOD_COLOR: Record<string, string> = {
+  daily: 'bg-green-100 text-green-700',
   weekly: 'bg-purple-100 text-purple-700',
   monthly: 'bg-blue-100 text-blue-700',
 }

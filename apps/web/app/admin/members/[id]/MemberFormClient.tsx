@@ -157,11 +157,18 @@ export default function MemberFormClient({ orgId, isEdit, isSupplier, org, conta
           {isEdit ? (
             <div className="flex gap-6">
               <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <input type="radio" name="settlement_cycle" value="daily"
+                  defaultChecked={cycle === 'daily'}
+                  className="accent-brand-600" />
+                <span className="font-medium">일정산</span>
+                <span className="text-gray-400 text-xs">— 매일 마감</span>
+              </label>
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
                 <input type="radio" name="settlement_cycle" value="weekly"
                   defaultChecked={cycle === 'weekly'}
                   className="accent-brand-600" />
                 <span className="font-medium">주정산</span>
-                <span className="text-gray-400 text-xs">— 월~토 마감</span>
+                <span className="text-gray-400 text-xs">— 월~일 마감</span>
               </label>
               <label className="flex items-center gap-2 text-sm cursor-pointer">
                 <input type="radio" name="settlement_cycle" value="monthly"
@@ -174,9 +181,11 @@ export default function MemberFormClient({ orgId, isEdit, isSupplier, org, conta
           ) : (
             <div className="flex items-center gap-2">
               <span className={`px-3 py-1.5 rounded text-sm font-semibold ${
-                cycle === 'weekly' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
+                cycle === 'daily' ? 'bg-green-100 text-green-700'
+                  : cycle === 'weekly' ? 'bg-purple-100 text-purple-700'
+                  : 'bg-blue-100 text-blue-700'
               }`}>
-                {cycle === 'weekly' ? '주정산 (월~토)' : '월정산'}
+                {cycle === 'daily' ? '일정산 (매일)' : cycle === 'weekly' ? '주정산 (월~일)' : '월정산'}
               </span>
               <span className="text-xs text-gray-400">(수정하려면 편집 버튼 클릭)</span>
             </div>

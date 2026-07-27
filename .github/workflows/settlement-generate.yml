@@ -1,0 +1,48 @@
+name: Settlement Generate (03:00 KST)
+
+# 정산서 자동 생성.
+# 자동발주(02:30) 이후에 돌려 그날 명세서까지 반영되게 한다.
+# 업체별 settlement_cycle(daily/weekly/monthly)에 맞는 기간이 끝난 업체만 만들어진다.
+
+on:
+  schedule:
+    # 18:00 UTC = 03:00 KST
+    - cron: '0 18 * * *'
+  workflow_dispatch:
+    inputs:
+      businessDate:
+        description: 'Business date (YYYY-MM-DD). Defaults to today KST.'
+        required: false
+        default: ''
+      force:
+        description: 'Generate even if not the period end date'
+        required: false
+        default: 'false'
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger settlement generation
+        run: |
+          DATE="${{ github.event.inputs.businessDate }}"
+          if [ -z "$DATE" ]; then
+            DATE=$(TZ=Asia/Seoul date +%Y-%m-%d)
+          fi
+          FORCE="${{ github.event.inputs.force }}"
+          if [ "$FORCE" != "true" ]; then FORCE=false; fi
+          echo "Generating settlements for: $DATE (force=$FORCE)"
+
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+            https://order.fruitlife.shop/api/admin/settlement/generate \
+            -H "Authorization: Bearer ${{ secrets.PUSH_CRON_SECRET }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"businessDate\":\"$DATE\",\"force\":$FORCE}")
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+          echo "Response: $BODY"
+          echo "HTTP Status: $HTTP_CODE"
+          if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -ge 300 ]; then
+            echo "Settlement generation failed with HTTP $HTTP_CODE"
+            exit 1
+          fi

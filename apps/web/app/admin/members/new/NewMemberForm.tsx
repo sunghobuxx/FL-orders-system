@@ -112,10 +112,16 @@ export default function NewMemberForm({ orgType, products }: Props) {
           <span className="text-sm text-gray-500 shrink-0">정산 주기:</span>
           <div className="flex gap-6">
             <label className="flex items-center gap-2 text-sm cursor-pointer">
+              <input type="radio" name="settlement_cycle" value="daily"
+                className="accent-brand-600" />
+              <span className="font-medium">일정산</span>
+              <span className="text-gray-400 text-xs">— 매일 마감</span>
+            </label>
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
               <input type="radio" name="settlement_cycle" value="weekly" defaultChecked
                 className="accent-brand-600" />
               <span className="font-medium">주정산</span>
-              <span className="text-gray-400 text-xs">— 월~토 마감</span>
+              <span className="text-gray-400 text-xs">— 월~일 마감</span>
             </label>
             <label className="flex items-center gap-2 text-sm cursor-pointer">
               <input type="radio" name="settlement_cycle" value="monthly"
