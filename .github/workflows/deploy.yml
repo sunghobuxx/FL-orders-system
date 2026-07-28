@@ -247,3 +247,31 @@ jobs:
             "https://api.cloudflare.com/client/v4/zones/$ZONE/purge_cache" \
             -d '{"purge_everything":true}')
           echo "Purge result: $RES"
+
+      - name: Verify production (배포 성공 ≠ 사이트 정상)
+        run: |
+          # 2026-07-28: 배포는 success 인데 워커가 죽어 전 경로가 503 이었다.
+          # 워크플로 결과만 보고 넘어가면 장애를 모른 채 지나간다. 실제 응답을 확인한다.
+          BASE=https://order.fruitlife.shop
+          sleep 20
+
+          FAILED=0
+          for P in /login /admin/dashboard /admin/orders /admin/products /admin/settlement; do
+            CODE=""
+            for TRY in 1 2 3; do
+              CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 25 "$BASE$P" || echo 000)
+              case "$CODE" in 2*|3*) break ;; esac
+              sleep 10
+            done
+            echo "  $P → $CODE"
+            case "$CODE" in
+              2*|3*) ;;
+              *) echo "::error::$P 가 $CODE 를 반환했습니다"; FAILED=1 ;;
+            esac
+          done
+
+          if [ "$FAILED" = "1" ]; then
+            echo "배포는 됐지만 운영이 정상 응답하지 않습니다. 롤백이 필요합니다."
+            exit 1
+          fi
+          echo "운영 정상 확인"
