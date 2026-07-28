@@ -115,13 +115,15 @@ export async function POST(req: NextRequest) {
       variables: { items: messageLines },
     })
 
-    await adminDb.from('dispatch_messages').insert({
+    const { error: msgError } = await adminDb.from('dispatch_messages').insert({
       dispatch_job_id: jobId,
+      channel: result.channel,
       status: result.success ? 'sent' : 'failed',
       external_message_id: result.externalId ?? null,
       error_message: result.error ?? null,
       sent_at: new Date().toISOString(),
     })
+    if (msgError) console.error('[confirm-dispatch] dispatch_messages 기록 실패', msgError)
 
     if (result.success) {
       await adminDb.from('dispatch_jobs').update({ status: 'sent' }).eq('id', jobId)

@@ -15,6 +15,8 @@ interface SendResult {
   success: boolean
   externalId?: string
   error?: string
+  /** 실제로 나간 경로. 알림톡이 막히면 SMS 로 대체되므로 결과를 보고 기록해야 한다. */
+  channel: 'kakao' | 'sms'
 }
 
 async function buildAuthHeader(apiKey: string, apiSecret: string): Promise<string> {
@@ -71,7 +73,7 @@ export async function sendKakaoAlimtalk(msg: KakaoMessage): Promise<SendResult> 
   const apiSecret = process.env.SOLAPI_API_SECRET
 
   if (!apiKey || !apiSecret) {
-    return { success: false, error: 'Solapi API 설정이 없습니다' }
+    return { success: false, error: 'Solapi API 설정이 없습니다', channel: 'kakao' }
   }
 
   const sender = process.env.SOLAPI_SENDER ?? ''
@@ -107,9 +109,9 @@ export async function sendKakaoAlimtalk(msg: KakaoMessage): Promise<SendResult> 
       return sendSms(msg.receiverNum, filledText)
     }
 
-    return { success: true, externalId: result.groupId }
+    return { success: true, externalId: result.groupId, channel: 'kakao' }
   } catch (e) {
-    return { success: false, error: String(e) }
+    return { success: false, error: String(e), channel: 'kakao' }
   }
 }
 
@@ -119,7 +121,7 @@ export async function sendSms(phone: string, text: string): Promise<SendResult> 
   const sender = process.env.SOLAPI_SENDER ?? ''
 
   if (!apiKey || !apiSecret || !sender) {
-    return { success: false, error: 'Solapi API 또는 발신번호 설정이 없습니다' }
+    return { success: false, error: 'Solapi API 또는 발신번호 설정이 없습니다', channel: 'sms' }
   }
 
   try {
@@ -131,9 +133,9 @@ export async function sendSms(phone: string, text: string): Promise<SendResult> 
     }])
 
     return result.success
-      ? { success: true, externalId: result.groupId }
-      : { success: false, error: result.error }
+      ? { success: true, externalId: result.groupId, channel: 'sms' }
+      : { success: false, error: result.error, channel: 'sms' }
   } catch (e) {
-    return { success: false, error: String(e) }
+    return { success: false, error: String(e), channel: 'sms' }
   }
 }

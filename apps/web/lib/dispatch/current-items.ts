@@ -186,13 +186,13 @@ export async function syncDispatchJobItems(
 ) {
   const { data: existingRows, error: readError } = await adminDb
     .from('dispatch_job_items')
-    .select('id, order_item_id')
+    .select('id, order_item_id, qty_overridden')
     .eq('dispatch_job_id', dispatchJobId)
   if (readError) throw readError
 
   const desiredByOrderItem = new Map(groupItems.map(item => [item.id, item]))
-  const existingByOrderItem = new Map<string, { id: string; order_item_id: string }>(
-    (existingRows ?? []).map((row: { id: string; order_item_id: string }) => [row.order_item_id, row]),
+  const existingByOrderItem = new Map<string, { id: string; order_item_id: string; qty_overridden?: boolean }>(
+    (existingRows ?? []).map((row: { id: string; order_item_id: string; qty_overridden?: boolean }) => [row.order_item_id, row]),
   )
 
   // 수동 제외 여부는 유지하면서 최신 수량과 추가 품목만 반영한다.
@@ -205,7 +205,12 @@ export async function syncDispatchJobItems(
     if (error) throw error
   }
 
-  const existingUpdates = groupItems.filter(item => existingByOrderItem.has(item.id))
+  // qty_overridden 인 줄은 문자용으로 손수 고친 수량이라 발주 수량으로 되돌리지 않는다.
+  // 이게 없으면 발송 직전 sync 가 매번 덮어써서 수정이 문자에 반영되지 않는다.
+  const existingUpdates = groupItems.filter(item => {
+    const row = existingByOrderItem.get(item.id)
+    return row && !row.qty_overridden
+  })
   const updateResults = await Promise.all(
     existingUpdates.map(item => adminDb
       .from('dispatch_job_items')
@@ -226,6 +231,59 @@ export async function syncDispatchJobItems(
     )
     if (error) throw error
   }
+}
+
+// 문자에 나갈 수량을 업체별로 하나씩 펼친 것. 화면에서 수정할 때 쓴다.
+export interface DispatchEditableRow {
+  id: string            // dispatch_job_items.id
+  qty: number           // 문자에 나갈 수량
+  orderQty: number      // 원래 발주 수량 (되돌릴 때 기준)
+  overridden: boolean
+  unit: string
+  productId: string
+  productName: string
+  restaurantName: string
+}
+
+export async function getDispatchJobItemRows(adminDb: any, jobId: string): Promise<DispatchEditableRow[]> {
+  const { data: rows } = await adminDb
+    .from('dispatch_job_items')
+    .select('id, qty, qty_overridden, order_items(qty, product_id, unit, products(standard_name), orders(order_batches(restaurants(organizations(name)))))')
+    .eq('dispatch_job_id', jobId)
+    .eq('is_excluded', false)
+
+  return (rows ?? [])
+    .filter((row: any) => row.order_items)
+    .map((row: any) => {
+      const oi = row.order_items
+      return {
+        id: row.id,
+        qty: Number(row.qty),
+        orderQty: Number(oi.qty),
+        overridden: Boolean(row.qty_overridden),
+        unit: oi.unit ?? '',
+        productId: oi.product_id,
+        productName: oi.products?.standard_name ?? '품목',
+        restaurantName: oi.orders?.order_batches?.restaurants?.organizations?.name ?? '',
+      }
+    })
+}
+
+// 수정 화면의 행들을 문자와 똑같은 모양으로 묶는다.
+// buildLinesFromDispatchJob 과 키를 맞춰야 화면과 문자가 어긋나지 않는다.
+export function groupEditableRows(rows: DispatchEditableRow[]) {
+  const map = new Map<string, { name: string; unit: string; qty: number; rows: DispatchEditableRow[] }>()
+  for (const row of rows) {
+    const key = `${row.productId}:${row.unit}:${row.productName}`
+    const existing = map.get(key)
+    if (existing) {
+      existing.qty += row.qty
+      existing.rows.push(row)
+    } else {
+      map.set(key, { name: row.productName, unit: row.unit, qty: row.qty, rows: [row] })
+    }
+  }
+  return [...map.values()]
 }
 
 // 발주 사전 확정된 job → dispatch_job_items에서 직접 메시지 라인 생성
