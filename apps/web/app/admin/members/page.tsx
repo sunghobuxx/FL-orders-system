@@ -12,20 +12,16 @@ const TYPE_LABELS: Record<string, string> = {
 export default async function AdminMembersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ view?: string; inactive?: string }>
+  searchParams: Promise<{ view?: string }>
 }) {
-  const { view = 'restaurant', inactive } = await searchParams
+  const { view = 'restaurant' } = await searchParams
   const orgType = view === 'supplier' ? 'supplier' : 'restaurant'
-  const showInactive = inactive === '1'
   const supabase = createAdminClient()
 
-  // 기본은 활성만, 토글하면 비활성만 따로 모아 보여준다.
-  // 목록이 길어져 작업이 불편해지지 않도록 둘을 섞지 않는다.
   const { data: orgs } = await supabase
     .from('organizations')
     .select('id, name, organization_type, status, updated_at')
     .eq('organization_type', orgType)
-    .eq('status', showInactive ? 'inactive' : 'active')
     .order('name')
 
   return (
@@ -54,24 +50,12 @@ export default async function AdminMembersPage({
               매입 공급처
             </Link>
           </div>
-          <div className="flex items-center gap-2">
-            <Link
-              href={`/admin/members?view=${orgType}${showInactive ? '' : '&inactive=1'}`}
-              className={`px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${
-                showInactive
-                  ? 'bg-gray-700 text-white border-gray-700'
-                  : 'text-gray-500 border-gray-300 hover:bg-gray-50'
-              }`}
-            >
-              {showInactive ? '← 활성 목록' : '비활성 목록'}
-            </Link>
-            <Link
-              href={`/admin/members/new?type=${orgType}`}
-              className="rounded-lg bg-brand-600 text-white px-5 py-2 text-sm font-semibold hover:bg-brand-700"
-            >
-              등록
-            </Link>
-          </div>
+          <Link
+            href={`/admin/members/new?type=${orgType}`}
+            className="rounded-lg bg-brand-600 text-white px-5 py-2 text-sm font-semibold hover:bg-brand-700"
+          >
+            등록
+          </Link>
         </div>
 
         {(orgs ?? []).length === 0 ? (

@@ -4,7 +4,6 @@ import { notFound } from 'next/navigation'
 import { createAdminClient } from '@/lib/supabase/admin'
 import ProductEditForm from './ProductEditForm'
 import ImageUpload from './ImageUpload'
-import StatusToggleButton from '../../StatusToggleButton'
 import DeleteProductButton from './DeleteProductButton'
 import AddSupplierProductForm from './AddSupplierProductForm'
 import DeleteSupplierProductButton from './DeleteSupplierProductButton'
@@ -102,14 +101,7 @@ export default async function AdminProductEditPage({ params }: Props) {
             {product.status === 'active' ? '활성' : '비활성'}
           </span>
         </div>
-        <div className="flex items-center gap-2">
-          <StatusToggleButton
-            endpoint={`/api/admin/products/${product.id}/status`}
-            name={product.standard_name}
-            status={product.status ?? 'active'}
-          />
-          <DeleteProductButton productId={product.id} />
-        </div>
+        <DeleteProductButton productId={product.id} />
       </div>
 
       {/* 기본 정보 편집 */}

@@ -4,7 +4,6 @@ import { notFound } from 'next/navigation'
 
 import { getOrganizationLoginUser, requireAuthorizedAdminDb } from '@/lib/admin-member-user'
 
-import StatusToggleButton from '../../StatusToggleButton'
 import AdminMembersShell from '../AdminMembersShell'
 import DeleteMemberButton from '../DeleteMemberButton'
 import ProductSelectForm from '../ProductSelectForm'
@@ -96,11 +95,6 @@ export default async function MemberDetailPage({ params, searchParams }: Props) 
                 공급처 관리
               </a>
             )}
-            <StatusToggleButton
-              endpoint={`/api/admin/members/${id}/status`}
-              name={org.name}
-              status={org.status ?? 'active'}
-            />
             <DeleteMemberButton orgId={id} orgName={org.name} />
           </div>
         </div>
