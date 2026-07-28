@@ -32,7 +32,7 @@ export default function AdminNav() {
   const pathname = usePathname()
 
   return (
-    <nav className="hidden lg:flex w-[200px] shrink-0 bg-gray-900 flex-col h-screen sticky top-0 overflow-hidden">
+    <nav className="hidden desk:flex w-[200px] shrink-0 bg-gray-900 flex-col h-screen sticky top-0 overflow-hidden">
       {/* Logo */}
       <Link href="/admin/dashboard" className="px-4 py-4 border-b border-gray-800 flex items-center gap-2.5 hover:bg-gray-800 transition-colors">
         {/* eslint-disable-next-line @next/next/no-img-element */}

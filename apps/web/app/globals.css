@@ -1,5 +1,21 @@
 @import "tailwindcss";
 
+/*
+ * desk — PC 형태(왼쪽 사이드바) 레이아웃을 쓸 조건.
+ *
+ * 기존에는 lg(1024px) 이상에서만 사이드바가 나왔다. 그런데 휴대폰을 가로로 돌리면
+ * 폭이 667~932px 라 lg 에 못 미쳐 계속 모바일 레이아웃이었다.
+ * 가로 방향이면서 640px 이상이면 PC 형태로 보여준다.
+ */
+@custom-variant desk {
+  @media (min-width: 1024px) {
+    @slot;
+  }
+  @media (orientation: landscape) and (min-width: 640px) {
+    @slot;
+  }
+}
+
 @theme {
   --default-font-family: "Noto Sans KR", "Apple SD Gothic Neo", sans-serif;
 

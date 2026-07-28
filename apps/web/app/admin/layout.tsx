@@ -10,10 +10,10 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     <div className="flex min-h-screen bg-gray-50">
       <AdminNav />
       <div className="flex-1 min-w-0 flex flex-col">
-        <div className="lg:hidden shrink-0">
+        <div className="desk:hidden shrink-0">
           <AdminTopHeader />
         </div>
-        <main className="flex-1 overflow-x-hidden pb-16 lg:pb-0">
+        <main className="flex-1 overflow-x-hidden pb-16 desk:pb-0">
           {children}
         </main>
       </div>
