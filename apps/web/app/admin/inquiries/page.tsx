@@ -1,11 +1,13 @@
 export const runtime = 'edge'
 
 import Link from 'next/link'
-import { getSessionUser } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import AdminNoticesShell from '../notices/AdminNoticesShell'
 
 export default async function AdminInquiriesPage() {
-  const { supabase: db } = await getSessionUser()
+  // inquiries 의 RLS 는 "자기가 쓴 글만" 이다. 세션 클라이언트로 읽으면
+  // 식당이 남긴 문의가 어드민에게 하나도 안 보인다.
+  const db = createAdminClient()
 
   const { data: inquiries } = await db
     .from('inquiries')

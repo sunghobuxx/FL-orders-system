@@ -2,6 +2,7 @@ export const runtime = 'edge'
 
 import { notFound } from 'next/navigation'
 
+import { createAdminClient } from '@/lib/supabase/admin'
 import { getSessionUser } from '@/lib/supabase/server'
 
 import AdminNoticesShell from '../../notices/AdminNoticesShell'
@@ -13,7 +14,11 @@ interface Props {
 
 export default async function InquiryReplyPage({ params }: Props) {
   const { id } = await params
-  const { supabase: db, user } = await getSessionUser()
+  const { user } = await getSessionUser()
+  if (!user) notFound()
+
+  // RLS 가 "자기가 쓴 글만" 이라 세션 클라이언트로는 식당 문의를 열면 notFound 가 된다.
+  const db = createAdminClient()
 
   const { data: inquiry } = await db
     .from('inquiries')
