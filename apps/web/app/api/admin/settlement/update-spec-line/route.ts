@@ -32,11 +32,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: '필수 값 누락' }, { status: 400 })
     }
 
-    const { user } = await getSessionUser()
-    if (!user) return NextResponse.json({ error: '로그인이 필요합니다' }, { status: 401 })
-    // 데이터 작업은 service role 로. 세션(RLS)으로 쓰면 막혀도 에러가 안 나거나
-    // 정책이 없으면 통째로 실패한다 (restaurant_products 는 service_role 쓰기만 허용).
-    const db = createAdminClient()
+    const { user, supabase: db } = await getSessionUser()
     if (!user) return NextResponse.json({ error: '인증 필요' }, { status: 401 })
     const writeDb = getWriteClient(db as unknown as ReturnType<typeof createAdminClient>)
 
