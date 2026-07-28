@@ -1,8 +1,19 @@
 export const runtime = 'edge'
 
 import Link from 'next/link'
-import { getSessionUser } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import CategoryFilter from './CategoryFilter'
+
+type ProductRow = {
+  id: string
+  standard_name: string
+  category: string | null
+  default_unit: string | null
+  is_kg_based: boolean | null
+  is_fixed_price: boolean | null
+  status: string | null
+  image_path: string | null
+}
 
 const CATEGORY_LABEL: Record<string, string> = {
   vegetable: '채소',
@@ -16,18 +27,24 @@ const CATEGORY_LABEL: Record<string, string> = {
 }
 
 interface Props {
-  searchParams: Promise<{ category?: string }>
+  searchParams: Promise<{ category?: string; inactive?: string }>
 }
 
 export default async function AdminProductsPage({ searchParams }: Props) {
-  const { category: categoryParam } = await searchParams
-  const { supabase: db } = await getSessionUser()
+  const { category: categoryParam, inactive } = await searchParams
+  const showInactive = inactive === '1'
+  // 어드민 화면은 service role 로 조회한다 (세션 RLS 로 조회하면 세션이 끊겼을 때 빈 목록이 된다)
+  const db = createAdminClient()
 
-  const { data: products } = await db
+  // 기본은 활성만, 토글하면 비활성만 따로 모아 보여준다.
+  // 목록이 길어져 작업이 불편해지지 않도록 둘을 섞지 않는다.
+  const { data: productRows } = await db
     .from('products')
     .select('id, standard_name, category, default_unit, is_kg_based, is_fixed_price, status, image_path')
+    .eq('status', showInactive ? 'inactive' : 'active')
     .order('category')
     .order('standard_name')
+  const products = (productRows ?? []) as ProductRow[]
 
   const all = products ?? []
 
@@ -44,17 +61,31 @@ export default async function AdminProductsPage({ searchParams }: Props) {
     <div className="p-6">
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h1 className="text-xl font-bold text-gray-900">품목 마스터</h1>
+          <h1 className="text-xl font-bold text-gray-900">
+            품목 마스터{showInactive && <span className="text-gray-400 font-semibold"> · 비활성</span>}
+          </h1>
           <p className="text-sm text-gray-400 mt-0.5">
             {activeCategory ? `${CATEGORY_LABEL[activeCategory] ?? activeCategory} ${filtered.length}개` : `전체 ${all.length}개`}
           </p>
         </div>
-        <Link
-          href="/admin/products/new"
-          className="rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-700 transition-colors"
-        >
-          + 품목 등록
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link
+            href={`/admin/products?${activeCategory ? `category=${activeCategory}&` : ''}${showInactive ? '' : 'inactive=1'}`}
+            className={`px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${
+              showInactive
+                ? 'bg-gray-700 text-white border-gray-700'
+                : 'text-gray-500 border-gray-300 hover:bg-gray-50'
+            }`}
+          >
+            {showInactive ? '← 활성 목록' : '비활성 목록'}
+          </Link>
+          <Link
+            href="/admin/products/new"
+            className="rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-700 transition-colors"
+          >
+            + 품목 등록
+          </Link>
+        </div>
       </div>
 
       <CategoryFilter categoryCounts={categoryCounts} total={all.length} activeCategory={activeCategory} />
