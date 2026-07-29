@@ -4,12 +4,15 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import {
   getCurrentDispatchGroups,
   buildDispatchLines,
-  buildLinesFromDispatchJob,
+  getDispatchJobItemRows,
+  groupEditableRows,
   type DispatchOrderItem,
 } from '@/lib/dispatch/current-items'
 import AdminOrderShell from '../../AdminOrderShell'
 import DispatchSendButton from '../../DispatchSendButton'
 import DispatchValidateButton from './DispatchValidateButton'
+import DispatchQtyEditor from './DispatchQtyEditor'
+import DispatchResendButton from './DispatchResendButton'
 
 interface Props {
   params: Promise<{ date: string }>
@@ -90,19 +93,22 @@ export default async function DispatchDatePage({ params }: Props) {
 
   const hasDispatchJobs = (dispatchJobs ?? []).length > 0
 
-  // 공급처별 DispatchLine[] 병렬 빌드
-  const supplierLinesEntries = await Promise.all(
+  // 공급처별 품목 병렬 빌드.
+  // 확정된 job 이 있으면 dispatch_job_items(= 문자에 나갈 값) 를 그대로 보여주고 수정도 여기서 한다.
+  // dispatch_job_items 가 비어 있으면 발주 기준으로 되돌린다. 발주 날짜를 옮기면
+  // dispatch_job_items 가 지워지는데 job 은 남아 있어서, 이 폴백이 없으면 품목이 하나도 안 나온다.
+  // (2026-07-27 발생)
+  const supplierViewEntries = await Promise.all(
     supplierIds.map(async supplierId => {
       const job = jobBySupplier.get(supplierId)
-      // 확정된 job 이 있으면 그 내용을 보여주되, dispatch_job_items 가 비어 있으면
-      // 발주 기준으로 되돌린다. 발주 날짜를 옮기면 dispatch_job_items 가 지워지는데,
-      // job 은 남아 있어서 이 폴백이 없으면 품목이 하나도 안 나온다. (2026-07-27 발생)
-      let lines = job ? await buildLinesFromDispatchJob(adminDb, job.id) : []
-      if (!lines.length) lines = buildDispatchLines(groupedMap[supplierId])
-      return [supplierId, lines] as const
+      const rows = job ? await getDispatchJobItemRows(adminDb, job.id) : []
+      return [supplierId, {
+        groups: rows.length ? groupEditableRows(rows) : null,
+        fallback: rows.length ? [] : buildDispatchLines(groupedMap[supplierId]),
+      }] as const
     })
   )
-  const supplierLines = Object.fromEntries(supplierLinesEntries)
+  const supplierViews = Object.fromEntries(supplierViewEntries)
 
   return (
     <AdminOrderShell date={targetDate}>
@@ -157,7 +163,7 @@ export default async function DispatchDatePage({ params }: Props) {
                 {supplierIds.map(supplierId => {
                   const job = jobBySupplier.get(supplierId)
                   const sent = job?.status === 'sent'
-                  const lines = supplierLines[supplierId] ?? []
+                  const view = supplierViews[supplierId]
                   const supplierName = supplierNameMap.get(supplierId) ?? '-'
                   const isInactive = inactiveSupplierIds.has(supplierId)
                   return (
@@ -168,29 +174,36 @@ export default async function DispatchDatePage({ params }: Props) {
                         {isInactive ? (
                           <span className="text-xs px-2.5 py-1 rounded-full bg-gray-200 text-gray-600 font-medium">비활성 · 발송 제외</span>
                         ) : sent ? (
-                          <span className="text-xs px-2.5 py-1 rounded-full bg-green-100 text-green-700 font-medium">전송완료</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs px-2.5 py-1 rounded-full bg-green-100 text-green-700 font-medium">전송완료</span>
+                            {job && <DispatchResendButton jobId={job.id} />}
+                          </div>
                         ) : (
                           <DispatchSendButton supplierId={supplierId} businessDate={targetDate} />
                         )}
                       </div>
-                      {/* 품목 목록 */}
-                      <div className="divide-y divide-gray-50">
-                        {lines.map((line) => (
-                          <div key={`${line.name}-${line.unit}`} className="px-5 py-2.5">
-                            <div className="flex items-center justify-between">
-                              <span className="text-sm text-gray-800">{line.name}</span>
-                              <span className="text-sm text-gray-600 tabular-nums">
-                                {fmtQty(line.qty)} {line.unit}
-                              </span>
+                      {/* 품목 목록 — 확정된 job 이 있으면 문자에 나갈 수량을 여기서 고친다 */}
+                      {view?.groups ? (
+                        <DispatchQtyEditor groups={view.groups} />
+                      ) : (
+                        <div className="divide-y divide-gray-50">
+                          {(view?.fallback ?? []).map((line) => (
+                            <div key={`${line.name}-${line.unit}`} className="px-5 py-2.5">
+                              <div className="flex items-center justify-between">
+                                <span className="text-sm text-gray-800">{line.name}</span>
+                                <span className="text-sm text-gray-600 tabular-nums">
+                                  {fmtQty(line.qty)} {line.unit}
+                                </span>
+                              </div>
+                              {line.byRestaurant.length > 1 && (
+                                <p className="text-xs text-gray-400 mt-0.5">
+                                  {line.byRestaurant.map(r => `${shortName(r.name)} ${fmtQty(r.qty)}${line.unit}`).join('  ')}
+                                </p>
+                              )}
                             </div>
-                            {line.byRestaurant.length > 1 && (
-                              <p className="text-xs text-gray-400 mt-0.5">
-                                {line.byRestaurant.map(r => `${shortName(r.name)} ${fmtQty(r.qty)}${line.unit}`).join('  ')}
-                              </p>
-                            )}
-                          </div>
-                        ))}
-                      </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )
                 })}
