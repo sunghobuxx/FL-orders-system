@@ -49,7 +49,7 @@ export default function DispatchQtyEditor({ groups }: { groups: Group[] }) {
     setSaving(row.id)
     setError('')
     try {
-      const res = await fetch('/api/admin/orders/dispatch-item-qty', {
+      const res = await fetch('/api/admin/orders/items', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ itemId: row.id, qty: next }),
