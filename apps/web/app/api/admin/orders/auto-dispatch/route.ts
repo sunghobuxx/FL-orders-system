@@ -12,9 +12,25 @@ import {
 } from '@/lib/dispatch/current-items'
 import { sendKakaoAlimtalk } from '@/lib/messaging/kakao'
 import { getKstToday } from '@/lib/date-kst'
+import { getSessionUser } from '@/lib/supabase/server'
 
+const CRON_SECRET = process.env.PUSH_CRON_SECRET
+
+/**
+ * 발주 문자 자동 발송.
+ *
+ * 인증이 없던 동안 이 주소를 아는 누구나 발주 문자를 발송시킬 수 있었다.
+ * 크론은 Authorization: Bearer <PUSH_CRON_SECRET>, 사람은 로그인 세션으로 부른다.
+ */
 export async function POST(req: NextRequest) {
   try {
+    const auth = req.headers.get('Authorization')
+    const isCron = Boolean(CRON_SECRET) && auth === `Bearer ${CRON_SECRET}`
+    if (!isCron) {
+      const { user } = await getSessionUser()
+      if (!user) return NextResponse.json({ error: '권한이 없습니다' }, { status: 401 })
+    }
+
     const body = await req.json().catch(() => ({})) as { businessDate?: string }
     const businessDate: string = body.businessDate ?? getKstToday()
 

@@ -1,0 +1,217 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
+/**
+ * 발주 → 명세서 동기화.
+ *
+ * 같은 일을 세 곳에서 제각각 하고 있었고 둘이 틀렸다.
+ *   admin/orders   명세서가 이미 있으면 아예 손대지 않아, 나중에 추가한 품목이 명세서에 안 들어갔다
+ *   member/orders  라인을 전부 지우고 다시 넣어, 관리자가 손으로 넣은 단가·추가 품목이 날아갔다
+ *   generate-specs 유일하게 옳았다 — 그 로직을 여기로 옮긴다
+ *
+ * 규칙
+ *   - price_overridden 라인은 품목 기준으로 찾아 수량·단가를 그대로 둔다.
+ *     order_item_id 는 재발주 때 NULL 로 끊기므로 기준이 될 수 없다.
+ *   - 발주에 없어도 관리자가 손으로 넣은 품목은 명세서에 남긴다.
+ *   - 명세서 자체를 지우지 않는다. 지우면 정산서가 참조하는 근거가 사라진다.
+ */
+
+/** 단가 우선순위: 업체 고정단가 → 당일단가 → 고정단가 품목 → carry-forward */
+export async function buildPriceMapByProduct(
+  adminDb: any,
+  productIds: string[],
+  businessDate: string,
+  organizationId: string | null,
+): Promise<{ priceMap: Record<string, number>; orgOverrides: Set<string> }> {
+  if (!productIds.length) return { priceMap: {}, orgOverrides: new Set() }
+
+  const priceMap: Record<string, number> = {}
+  const orgOverrides = new Set<string>()
+
+  if (organizationId) {
+    const { data: orgPrices } = await adminDb
+      .from('org_product_prices')
+      .select('product_id, unit_price')
+      .eq('organization_id', organizationId)
+      .in('product_id', productIds)
+    for (const row of orgPrices ?? []) {
+      priceMap[row.product_id] = Number(row.unit_price)
+      orgOverrides.add(row.product_id)
+    }
+  }
+
+  const { data: spRows } = await adminDb
+    .from('supplier_products').select('id, product_id')
+    .in('product_id', productIds).eq('status', 'active')
+  if (!spRows?.length) return { priceMap, orgOverrides }
+
+  const spIds = (spRows as Array<{ id: string; product_id: string }>).map(r => r.id)
+  const spToProduct = Object.fromEntries(
+    (spRows as Array<{ id: string; product_id: string }>).map(r => [r.id, r.product_id]))
+
+  const { data: products } = await adminDb
+    .from('products').select('id, is_fixed_price').in('id', productIds)
+  const fixedMap = Object.fromEntries(
+    (products ?? []).map((p: { id: string; is_fixed_price: boolean }) => [p.id, p.is_fixed_price]))
+
+  const { data: exactSnaps } = await adminDb
+    .from('price_snapshots').select('supplier_product_id, sale_price')
+    .in('supplier_product_id', spIds)
+    .eq('effective_from', businessDate)
+    .order('created_at', { ascending: false })
+  for (const snap of exactSnaps ?? []) {
+    const pid = spToProduct[snap.supplier_product_id]
+    if (pid && priceMap[pid] === undefined) priceMap[pid] = Number(snap.sale_price)
+  }
+
+  const fixedNeedIds = productIds.filter(id => priceMap[id] === undefined && fixedMap[id])
+  const fixedSpIds = (spRows as Array<{ id: string; product_id: string }>)
+    .filter(r => fixedNeedIds.includes(r.product_id)).map(r => r.id)
+  if (fixedSpIds.length) {
+    const { data: fixedSnaps } = await adminDb
+      .from('price_snapshots').select('supplier_product_id, sale_price')
+      .in('supplier_product_id', fixedSpIds)
+      .order('effective_from', { ascending: false })
+      .order('created_at', { ascending: false })
+    for (const snap of fixedSnaps ?? []) {
+      const pid = spToProduct[snap.supplier_product_id]
+      if (pid && priceMap[pid] === undefined) priceMap[pid] = Number(snap.sale_price)
+    }
+  }
+
+  const remainSpIds = (spRows as Array<{ id: string; product_id: string }>)
+    .filter(r => priceMap[r.product_id] === undefined).map(r => r.id)
+  if (remainSpIds.length) {
+    const { data: carrySnaps } = await adminDb
+      .from('price_snapshots').select('supplier_product_id, sale_price')
+      .in('supplier_product_id', remainSpIds)
+      .lte('effective_from', businessDate)
+      .order('effective_from', { ascending: false })
+      .order('created_at', { ascending: false })
+    for (const snap of carrySnaps ?? []) {
+      const pid = spToProduct[snap.supplier_product_id]
+      if (pid && priceMap[pid] === undefined) priceMap[pid] = Number(snap.sale_price)
+    }
+  }
+
+  return { priceMap, orgOverrides }
+}
+
+interface ExistingLine {
+  id: string
+  product_id: string
+  qty: number
+  unit: string
+  unit_price: number
+  vat_amount: number
+  price_overridden: boolean
+}
+
+/**
+ * 한 식당·한 영업일의 명세서를 발주 내용에 맞춘다.
+ * 명세서가 없으면 만들고, 있으면 그 위에 갱신한다.
+ *
+ * @returns 명세서 id. 발주 품목이 하나도 없으면 null.
+ */
+export async function syncSpecFromOrders(
+  adminDb: any,
+  args: { restaurantId: string; businessDate: string; orderIds: string[]; organizationId?: string | null },
+): Promise<string | null> {
+  const { restaurantId, businessDate, orderIds } = args
+  if (!orderIds.length) return null
+
+  const { data: items } = await adminDb
+    .from('order_items').select('id, product_id, qty, unit').in('order_id', orderIds)
+  if (!items?.length) return null
+
+  let organizationId = args.organizationId ?? null
+  if (organizationId === undefined || organizationId === null) {
+    const { data: r } = await adminDb
+      .from('restaurants').select('organization_id').eq('id', restaurantId).maybeSingle()
+    organizationId = r?.organization_id ?? null
+  }
+
+  const productIds = [...new Set(items.map((i: { product_id: string }) => i.product_id))] as string[]
+  const { priceMap, orgOverrides } = await buildPriceMapByProduct(
+    adminDb, productIds, businessDate, organizationId)
+
+  // maybeSingle() 을 쓰지 않는다. 같은 식당·날짜에 명세서가 둘이면 에러 후 null 이 되어
+  // 명세서를 하나 더 만들고, 중복이 계속 늘어난다. 가장 오래된 것을 기준으로 삼는다.
+  const { data: existingSpecs } = await adminDb
+    .from('daily_specs').select('id')
+    .eq('restaurant_id', restaurantId).eq('business_date', businessDate)
+    .order('created_at', { ascending: true })
+
+  let specId: string | null = existingSpecs?.[0]?.id ?? null
+  if (!specId) {
+    const { data: spec, error } = await adminDb
+      .from('daily_specs')
+      .insert({ restaurant_id: restaurantId, business_date: businessDate, total_amount: 0, vat_amount: 0 })
+      .select('id').single()
+    if (error || !spec) throw error ?? new Error('명세서 생성 실패')
+    specId = spec.id
+  }
+
+  const { data: existingLines } = await adminDb
+    .from('daily_spec_lines')
+    .select('id, product_id, qty, unit, unit_price, vat_amount, price_overridden')
+    .eq('daily_spec_id', specId)
+
+  const keepByProduct = new Map<string, ExistingLine>()
+  for (const l of (existingLines ?? []) as ExistingLine[]) {
+    if (l.price_overridden) keepByProduct.set(l.product_id, l)
+  }
+
+  const specLines = (items as Array<{ id: string; product_id: string; qty: number; unit: string }>)
+    .map(item => {
+      const kept = keepByProduct.get(item.product_id)
+      if (kept) {
+        return {
+          order_item_id: item.id,
+          product_id: item.product_id,
+          qty: kept.qty,
+          unit: kept.unit ?? item.unit,
+          unit_price: kept.unit_price,
+          vat_amount: kept.vat_amount ?? 0,
+          price_overridden: true,
+        }
+      }
+      return {
+        order_item_id: item.id,
+        product_id: item.product_id,
+        qty: item.qty,
+        unit: item.unit,
+        unit_price: priceMap[item.product_id] ?? 0,
+        vat_amount: 0,
+        price_overridden: orgOverrides.has(item.product_id),
+      }
+    })
+
+  const orderedProductIds = new Set(productIds)
+  for (const [pid, kept] of keepByProduct) {
+    if (orderedProductIds.has(pid)) continue
+    specLines.push({
+      order_item_id: null as unknown as string,
+      product_id: pid,
+      qty: kept.qty,
+      unit: kept.unit,
+      unit_price: kept.unit_price,
+      vat_amount: kept.vat_amount ?? 0,
+      price_overridden: true,
+    })
+  }
+
+  const totalAmount = specLines.reduce(
+    (s, l) => s + Number(l.qty) * Number(l.unit_price) + Number(l.vat_amount), 0)
+  const vatAmount = specLines.reduce((s, l) => s + Number(l.vat_amount), 0)
+
+  await adminDb.from('daily_spec_lines').delete().eq('daily_spec_id', specId)
+  const { error: insertError } = await adminDb
+    .from('daily_spec_lines').insert(specLines.map(l => ({ ...l, daily_spec_id: specId })))
+  if (insertError) throw insertError
+
+  await adminDb.from('daily_specs')
+    .update({ total_amount: totalAmount, vat_amount: vatAmount })
+    .eq('id', specId)
+
+  return specId
+}

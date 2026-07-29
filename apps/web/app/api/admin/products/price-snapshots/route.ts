@@ -52,12 +52,28 @@ export async function POST(req: Request) {
       }
     }
 
-    // 2. effective_from 이후 모든 daily_spec_lines 단가 자동 업데이트
+    // 2. effective_from 이후 daily_spec_lines 단가 자동 업데이트
     // price_overridden=false인 라인만 업데이트 (수동 입력 단가는 유지)
-    const { data: specs } = await adminDb
+    //
+    // 이미 정산서로 청구된 명세서는 제외한다.
+    // 여기서 과거 명세서를 다시 계산해도 정산서 청구액은 따라오지 않아서,
+    // 단가를 등록할 때마다 "명세서 ≠ 청구액" 이 새로 생겼다.
+    // 받은 돈은 그때 청구한 금액이므로 지난 청구를 소급해 바꾸면 안 된다.
+    const { data: allSpecs } = await adminDb
       .from('daily_specs')
       .select('id')
       .gte('business_date', body.effective_from)
+
+    const { data: billedLines } = allSpecs?.length
+      ? await adminDb
+          .from('sales_statement_lines')
+          .select('source_doc_id')
+          .eq('source_doc_type', 'daily_spec')
+          .in('source_doc_id', allSpecs.map((s: { id: string }) => s.id))
+      : { data: [] as { source_doc_id: string }[] }
+
+    const billedSet = new Set((billedLines ?? []).map((l: { source_doc_id: string }) => l.source_doc_id))
+    const specs = (allSpecs ?? []).filter((s: { id: string }) => !billedSet.has(s.id))
 
     if (specs?.length) {
       // 품목 과세 여부 조회 (vat_amount 재계산용)

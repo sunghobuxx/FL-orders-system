@@ -3,6 +3,7 @@ export const runtime = 'edge'
 import { NextRequest, NextResponse } from 'next/server'
 import { getSessionUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { syncSpecFromOrders } from '@/lib/specs/sync'
 
 interface RawItem {
   product_id?: string
@@ -179,38 +180,15 @@ export async function POST(req: NextRequest) {
         .eq('id', batchId)
       if (batchError) return NextResponse.json({ error: `제출 실패: ${batchError.message}` }, { status: 500 })
 
-      const { data: existingSpec } = await adminDb
-        .from('daily_specs').select('id')
-        .eq('restaurant_id', restaurantId).eq('business_date', businessDate).maybeSingle()
-      if (!existingSpec && orderId) {
-        const { data: oiRows } = await adminDb
-          .from('order_items')
-          .select('id, product_id, qty, unit, unit_price_snapshot, products(taxable_flag)')
-          .eq('order_id', orderId)
-        if (oiRows?.length) {
-          const lines = oiRows.map((i: {
-            id: string; product_id: string; qty: number; unit: string;
-            unit_price_snapshot: number; products: { taxable_flag: boolean }[] | { taxable_flag: boolean } | null
-          }) => {
-            const price = Number(i.unit_price_snapshot ?? 0)
-            const qty = Number(i.qty)
-            const p = Array.isArray(i.products) ? i.products[0] : i.products
-            const taxable = p?.taxable_flag ?? false
-            const vat = taxable ? Math.round(qty * price * 0.1) : 0
-            return { order_item_id: i.id, product_id: i.product_id, qty, unit: i.unit, unit_price: price, vat_amount: vat }
-          })
-          const total = lines.reduce((s, l) => s + l.qty * l.unit_price + l.vat_amount, 0)
-          const vatTotal = lines.reduce((s, l) => s + l.vat_amount, 0)
-          const { data: spec } = await adminDb
-            .from('daily_specs')
-            .insert({ restaurant_id: restaurantId, business_date: businessDate, total_amount: total, vat_amount: vatTotal })
-            .select('id').single()
-          if (spec) {
-            await adminDb.from('daily_spec_lines').insert(
-              lines.map(l => ({ ...l, daily_spec_id: spec.id })),
-            )
-          }
-        }
+      // 명세서가 이미 있어도 반드시 맞춘다.
+      // 예전에는 있으면 건너뛰어서, 나중에 추가한 품목이 명세서에 안 들어갔다.
+      try {
+        await syncSpecFromOrders(adminDb, {
+          restaurantId, businessDate, orderIds: orderId ? [orderId] : [],
+        })
+      } catch (e) {
+        return NextResponse.json(
+          { error: `명세서 갱신 실패: ${e instanceof Error ? e.message : String(e)}` }, { status: 500 })
       }
     }
 

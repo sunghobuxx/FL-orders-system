@@ -1,9 +1,14 @@
-name: Auto Dispatch (02:30 KST)
+name: Auto Dispatch (backup)
 
 on:
   schedule:
-    # 17:30 UTC = 02:30 KST
-    - cron: '30 17 * * *'
+    # 정시(02:30 KST) 발송은 Supabase pg_cron 이 맡는다.
+    # GitHub 예약은 30~90분씩 밀려서 공급처가 새벽 4시에 문자를 받고 있었다.
+    #   실측 7/25 03:29 · 7/26 03:34 · 7/27 03:58 · 7/28 04:01
+    # 여기 남긴 건 뒷받침용이다. pg_cron 호출이 실패했을 때를 대비한다.
+    # 늦게 돌아도 auto-dispatch 가 dispatch_messages 를 보고
+    # 이미 발송된 공급처는 건너뛰므로 중복 발송되지 않는다.
+    - cron: '30 18 * * *'
   workflow_dispatch:
     inputs:
       businessDate:
@@ -25,6 +30,7 @@ jobs:
           RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
             https://order.fruitlife.shop/api/admin/orders/auto-dispatch \
             -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${{ secrets.PUSH_CRON_SECRET }}" \
             -d "{\"businessDate\":\"$DATE\"}")
           HTTP_CODE=$(echo "$RESPONSE" | tail -1)
           BODY=$(echo "$RESPONSE" | head -1)

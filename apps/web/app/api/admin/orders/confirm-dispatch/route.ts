@@ -2,6 +2,7 @@ export const runtime = 'edge'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { getSessionUser } from '@/lib/supabase/server'
 import {
   getCurrentDispatchGroups,
   buildLinesFromDispatchJob,
@@ -15,6 +16,10 @@ import { sendKakaoAlimtalk } from '@/lib/messaging/kakao'
 // 특정 공급처 dispatch 확정 및 발송
 export async function POST(req: NextRequest) {
   try {
+    // 발주 문자를 보내는 주소다. 로그인 없이 부를 수 있으면 안 된다.
+    const { user } = await getSessionUser()
+    if (!user) return NextResponse.json({ error: '권한이 없습니다' }, { status: 401 })
+
     const { supplierId, businessDate } = await req.json() as { supplierId: string; businessDate: string }
 
     if (!supplierId || !businessDate) {

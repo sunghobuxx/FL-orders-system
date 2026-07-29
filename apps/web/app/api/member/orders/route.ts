@@ -3,6 +3,7 @@ export const runtime = 'edge'
 import { NextRequest, NextResponse } from 'next/server'
 import { getSessionUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { syncSpecFromOrders } from '@/lib/specs/sync'
 
 interface RawItem {
   product_id?: string
@@ -234,69 +235,15 @@ export async function POST(req: NextRequest) {
         .eq('id', batchId)
       if (batchError) return NextResponse.json({ error: `제출 실패: ${batchError.message}` }, { status: 500 })
 
-      // daily_spec 멱등 생성/갱신: 마감 전 재발주 시 기존 명세서도 최신 품목으로 교체한다.
-      const { data: existingSpec } = await adminDb
-        .from('daily_specs').select('id')
-        .eq('restaurant_id', restaurantId).eq('business_date', businessDate).maybeSingle()
-      if (orderId) {
-        const { data: oiRows } = await adminDb
-          .from('order_items')
-          .select('id, product_id, qty, unit, unit_price_snapshot, products(taxable_flag)')
-          .eq('order_id', orderId)
-        if (oiRows?.length) {
-          const lines = oiRows.map((i: {
-            id: string; product_id: string; qty: number; unit: string;
-            unit_price_snapshot: number; products: { taxable_flag: boolean }[] | { taxable_flag: boolean } | null
-          }) => {
-            const price = Number(i.unit_price_snapshot ?? 0)
-            const qty = Number(i.qty)
-            const p = Array.isArray(i.products) ? i.products[0] : i.products
-            const taxable = p?.taxable_flag ?? false
-            const vat = taxable ? Math.round(qty * price * 0.1) : 0
-            return {
-              order_item_id: i.id,
-              product_id: i.product_id,
-              qty, unit: i.unit,
-              unit_price: price,
-              vat_amount: vat,
-            }
-          })
-          const total = lines.reduce((s, l) => s + l.qty * l.unit_price + l.vat_amount, 0)
-          const vatTotal = lines.reduce((s, l) => s + l.vat_amount, 0)
-          let specId = existingSpec?.id
-          if (specId) {
-            const { error: specUpdateError } = await adminDb
-              .from('daily_specs')
-              .update({ total_amount: total, vat_amount: vatTotal })
-              .eq('id', specId)
-            if (specUpdateError) {
-              return NextResponse.json({ error: `명세서 갱신 실패: ${specUpdateError.message}` }, { status: 500 })
-            }
-            const { error: lineDeleteError } = await adminDb
-              .from('daily_spec_lines')
-              .delete()
-              .eq('daily_spec_id', specId)
-            if (lineDeleteError) {
-              return NextResponse.json({ error: `명세서 품목 갱신 실패: ${lineDeleteError.message}` }, { status: 500 })
-            }
-          } else {
-            const { data: spec, error: specInsertError } = await adminDb
-              .from('daily_specs')
-              .insert({ restaurant_id: restaurantId, business_date: businessDate, total_amount: total, vat_amount: vatTotal })
-              .select('id').single()
-            if (specInsertError) {
-              return NextResponse.json({ error: `명세서 생성 실패: ${specInsertError.message}` }, { status: 500 })
-            }
-            specId = spec.id
-          }
-
-          const { error: lineInsertError } = await adminDb.from('daily_spec_lines').insert(
-            lines.map(l => ({ ...l, daily_spec_id: specId! })),
-          )
-          if (lineInsertError) {
-            return NextResponse.json({ error: `명세서 품목 저장 실패: ${lineInsertError.message}` }, { status: 500 })
-          }
-        }
+      // 발주 → 명세서 동기화. 관리자가 손으로 넣은 단가·추가 품목은 그대로 둔다.
+      // 예전에는 여기서 라인을 전부 지우고 다시 넣어, 손으로 넣은 값이 날아갔다.
+      try {
+        await syncSpecFromOrders(adminDb, {
+          restaurantId, businessDate, orderIds: orderId ? [orderId] : [],
+        })
+      } catch (e) {
+        return NextResponse.json(
+          { error: `명세서 갱신 실패: ${e instanceof Error ? e.message : String(e)}` }, { status: 500 })
       }
     }
 
