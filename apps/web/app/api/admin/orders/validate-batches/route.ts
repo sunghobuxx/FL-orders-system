@@ -2,7 +2,7 @@ export const runtime = 'edge'
 
 import { NextResponse } from 'next/server'
 import { getSessionUser } from '@/lib/supabase/server'
-import { getCurrentDispatchGroups } from '@/lib/dispatch/current-items'
+import { getCurrentDispatchGroups, syncDispatchJobItems } from '@/lib/dispatch/current-items'
 import { createAdminClient } from '@/lib/supabase/admin'
 
 export async function POST(req: Request) {
@@ -35,13 +35,27 @@ export async function POST(req: Request) {
         .eq('supplier_id', supplierId)
         .maybeSingle()
 
-      if (!existing) {
-        await adminDb.from('dispatch_jobs').insert({
+      let jobId = existing?.id
+      if (!jobId) {
+        const { data: created } = await adminDb.from('dispatch_jobs').insert({
           supplier_id: supplierId,
           business_date: businessDate,
           status: 'pending',
           idempotency_key: `${supplierId}_${businessDate}`,
-        })
+        }).select('id').single()
+        jobId = created?.id
+      }
+
+      // 확정하는 순간 품목까지 채운다.
+      // 예전에는 job 껍데기만 만들고 품목은 02:30 발송 직전에야 채워졌다.
+      // 그 탓에 확정 후 발송 전 — 정작 수량을 고쳐야 할 때 — 화면에 입력창이 안 나왔다.
+      // 발송 직전 sync 가 다시 돌지만 qty_overridden 인 줄은 건드리지 않는다.
+      if (jobId) {
+        try {
+          await syncDispatchJobItems(adminDb, jobId, grouped[supplierId])
+        } catch (e) {
+          console.error(`[validate-batches] 품목 동기화 실패: supplier ${supplierId}`, e)
+        }
       }
     }
 
