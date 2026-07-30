@@ -131,13 +131,16 @@ export async function generateStatements(
     let action: string
     if (existingStmt) {
       statementId = existingStmt.id
-      action = Math.abs(Number(existingStmt.total_amount ?? 0) - total) < 0.5 ? '변경없음' : '금액갱신'
-      if (action === '변경없음') {
-        result.skipped++
-        result.details.push({ restaurant: name, cycle, period: `${start}~${end}`, amount: total, action })
-        continue
+      // 총액이 같아도 라인은 반드시 다시 만든다.
+      // 예전에는 여기서 continue 로 빠져나가 라인 재구성을 건너뛰었다. 그런데
+      // 명세서가 새로 만들어져 id 만 바뀌면 금액은 그대로이므로 "변경없음" 이 되어,
+      // 정산서가 없어진 명세서를 가리키는 고아 라인이 영원히 남았다.
+      // (찬란한 아구 강남 7/20~26 — 고아 435,500 과 미포함 명세서 435,500 이 상쇄)
+      const amountChanged = Math.abs(Number(existingStmt.total_amount ?? 0) - total) >= 0.5
+      action = amountChanged ? '금액갱신' : '라인정정'
+      if (amountChanged) {
+        await db.from('sales_statements').update({ total_amount: total }).eq('id', statementId)
       }
-      await db.from('sales_statements').update({ total_amount: total }).eq('id', statementId)
       result.updated++
     } else {
       const { data: newStmt, error } = await db
