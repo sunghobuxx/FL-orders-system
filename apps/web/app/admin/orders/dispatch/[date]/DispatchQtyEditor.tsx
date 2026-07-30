@@ -33,8 +33,9 @@ export default function DispatchQtyEditor({ groups }: { groups: Group[] }) {
   const [saving, setSaving] = useState<string | null>(null)
   const [error, setError] = useState('')
 
+  // 뺀 줄은 0 으로 보여 준다. 0 을 입력하면 문자에서 빠지고, 숫자를 넣으면 되살아난다.
   function qtyOf(row: DispatchEditableRow) {
-    return edited[row.id] ?? row.qty
+    return edited[row.id] ?? (row.excluded ? 0 : row.qty)
   }
 
   async function save(row: DispatchEditableRow, raw: string) {
@@ -98,6 +99,9 @@ export default function DispatchQtyEditor({ groups }: { groups: Group[] }) {
                     <span className="text-xs text-gray-400 flex-1 truncate">
                       {shortName(row.restaurantName) || '—'}
                     </span>
+                    {current === 0 && (
+                      <span className="text-[11px] text-red-500 font-medium">빠짐</span>
+                    )}
                     {isChanged && (
                       <span className="text-[11px] text-gray-300 line-through tabular-nums">
                         {fmtQty(row.orderQty)}
@@ -116,7 +120,10 @@ export default function DispatchQtyEditor({ groups }: { groups: Group[] }) {
                       }}
                       className={`w-16 px-2 py-1 text-xs text-right tabular-nums rounded-md border outline-none
                         focus:border-blue-400 focus:ring-1 focus:ring-blue-200 disabled:opacity-50
-                        ${isChanged ? 'border-amber-300 bg-amber-50 text-amber-800' : 'border-gray-200 text-gray-700'}`}
+                        ${current === 0
+                          ? 'border-red-300 bg-red-50 text-red-700'
+                          : isChanged ? 'border-amber-300 bg-amber-50 text-amber-800'
+                          : 'border-gray-200 text-gray-700'}`}
                     />
                     <span className="text-xs text-gray-400 w-10">{row.unit}</span>
                   </div>
@@ -128,6 +135,7 @@ export default function DispatchQtyEditor({ groups }: { groups: Group[] }) {
       })}
       <p className="px-5 py-2 bg-gray-50 text-[11px] text-gray-400">
         여기서 고친 수량은 발주 문자에만 반영됩니다. 명세서·정산 금액은 그대로입니다.
+        0 을 넣으면 그 업체는 문자에서 빠집니다. 칸을 비우면 발주 수량으로 되돌아갑니다.
       </p>
     </div>
   )

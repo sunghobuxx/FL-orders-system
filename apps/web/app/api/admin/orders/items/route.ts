@@ -132,14 +132,24 @@ export async function PATCH(req: NextRequest) {
     if (!row) return NextResponse.json({ error: '발주 품목을 찾을 수 없습니다' }, { status: 404 })
 
     const orderQty = Number((row.order_items as unknown as { qty: number } | null)?.qty ?? row.qty)
+
+    // 0 은 "이 업체 것은 빼고 보낸다" 는 뜻이다.
+    // dispatch_job_items_qty_check 가 0 을 막으므로 수량은 그대로 두고 is_excluded 로 뺀다.
     const next = qty === null
-      ? { qty: orderQty, qty_overridden: false }
-      : { qty, qty_overridden: true }
+      ? { qty: orderQty, qty_overridden: false, is_excluded: false }
+      : qty === 0
+        ? { qty_overridden: true, is_excluded: true }
+        : { qty, qty_overridden: true, is_excluded: false }
 
     const { error } = await db.from('dispatch_job_items').update(next).eq('id', itemId)
     if (error) throw error
 
-    return NextResponse.json({ success: true, qty: next.qty, overridden: next.qty_overridden })
+    return NextResponse.json({
+      success: true,
+      qty: qty === 0 ? 0 : ('qty' in next ? next.qty : orderQty),
+      overridden: next.qty_overridden,
+      excluded: Boolean(next.is_excluded),
+    })
   } catch (e) {
     console.error('[PATCH /api/admin/orders/items]', e)
     return NextResponse.json({ error: '요청 처리 중 오류가 발생했습니다' }, { status: 500 })

@@ -239,6 +239,8 @@ export interface DispatchEditableRow {
   qty: number           // 문자에 나갈 수량
   orderQty: number      // 원래 발주 수량 (되돌릴 때 기준)
   overridden: boolean
+  /** 문자에서 뺀 줄. 수정 화면에는 0 으로 남겨 되돌릴 수 있게 한다. */
+  excluded: boolean
   unit: string
   productId: string
   productName: string
@@ -248,9 +250,10 @@ export interface DispatchEditableRow {
 export async function getDispatchJobItemRows(adminDb: any, jobId: string): Promise<DispatchEditableRow[]> {
   const { data: rows } = await adminDb
     .from('dispatch_job_items')
-    .select('id, qty, qty_overridden, order_items(qty, product_id, unit, products(standard_name), orders(order_batches(restaurants(organizations(name)))))')
+    // is_excluded 로 거르지 않는다. 제외한 줄도 화면에 0 으로 보여야 되돌릴 수 있다.
+    // 문자 본문은 buildLinesFromDispatchJob 이 따로 걸러 만든다.
+    .select('id, qty, qty_overridden, is_excluded, order_items(qty, product_id, unit, products(standard_name), orders(order_batches(restaurants(organizations(name)))))')
     .eq('dispatch_job_id', jobId)
-    .eq('is_excluded', false)
 
   return (rows ?? [])
     .filter((row: any) => row.order_items)
@@ -261,6 +264,7 @@ export async function getDispatchJobItemRows(adminDb: any, jobId: string): Promi
         qty: Number(row.qty),
         orderQty: Number(oi.qty),
         overridden: Boolean(row.qty_overridden),
+        excluded: Boolean(row.is_excluded),
         unit: oi.unit ?? '',
         productId: oi.product_id,
         productName: oi.products?.standard_name ?? '품목',
@@ -275,12 +279,13 @@ export function groupEditableRows(rows: DispatchEditableRow[]) {
   const map = new Map<string, { name: string; unit: string; qty: number; rows: DispatchEditableRow[] }>()
   for (const row of rows) {
     const key = `${row.productId}:${row.unit}:${row.productName}`
+    const q = row.excluded ? 0 : row.qty      // 뺀 줄은 합계에서 0 으로 센다
     const existing = map.get(key)
     if (existing) {
-      existing.qty += row.qty
+      existing.qty += q
       existing.rows.push(row)
     } else {
-      map.set(key, { name: row.productName, unit: row.unit, qty: row.qty, rows: [row] })
+      map.set(key, { name: row.productName, unit: row.unit, qty: q, rows: [row] })
     }
   }
   return [...map.values()]
