@@ -6,7 +6,6 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { getSessionUser } from '@/lib/supabase/server'
 import { getKstToday } from '@/lib/date-kst'
 import { generateStatements } from '@/lib/settlement/generate'
-import { checkIntegrity } from '@/lib/settlement/integrity'
 
 const CRON_SECRET = process.env.PUSH_CRON_SECRET
 
@@ -49,26 +48,5 @@ export async function POST(req: NextRequest) {
       { error: e instanceof Error ? e.message : '정산서 생성 중 오류가 발생했습니다' },
       { status: 500 },
     )
-  }
-}
-
-/**
- * 명세서 → 정산서 → 미수금 정합성 점검. 읽기만 한다.
- *
- * 라우트를 따로 두지 않고 여기 붙인 이유: Cloudflare Worker 3 MiB 한계에 걸려
- * 라우트를 하나 더 만들 여유가 없다.
- */
-export async function GET(req: NextRequest) {
-  try {
-    const { user } = await getSessionUser()
-    if (!user) return NextResponse.json({ error: '로그인이 필요합니다' }, { status: 401 })
-
-    const since = new URL(req.url).searchParams.get('since') ?? `${getKstToday().slice(0, 7)}-01`
-    const result = await checkIntegrity(createAdminClient(), since)
-    return NextResponse.json({ since, ...result })
-  } catch (e) {
-    console.error('[GET /api/admin/settlement/generate]', e)
-    return NextResponse.json(
-      { error: e instanceof Error ? e.message : '점검 중 오류가 발생했습니다' }, { status: 500 })
   }
 }

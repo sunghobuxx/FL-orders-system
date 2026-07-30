@@ -3,7 +3,6 @@ export const runtime = 'edge'
 import Link from 'next/link'
 import { createAdminClient } from '@/lib/supabase/admin'
 import AdminSettlementShell from './AdminSettlementShell'
-import IntegrityCheck from './IntegrityCheck'
 import { CalcButton, CloseButton, PeriodForm } from './history/SettlementActions'
 
 const PERIOD_LABEL: Record<string, string> = { daily: '일', weekly: '주', monthly: '월' }
@@ -50,9 +49,6 @@ export default async function AdminSettlementPage() {
   return (
     <AdminSettlementShell>
       <div className="space-y-4 max-w-3xl">
-        {/* 정합성 점검 — 마감 전에 명세서·정산서·미수금이 맞는지 본다 */}
-        <IntegrityCheck defaultSince={`${new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 7)}-01`} />
-
         {/* 정산 기간 / 정산 계산 */}
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
           <div className="px-5 py-3 bg-gray-50 border-b border-gray-200">
