@@ -38,11 +38,19 @@ export async function createAdminAccount(formData: FormData) {
     redirect('/admin/accounts/new?error=' + encodeURIComponent('조직 생성 실패'))
   }
 
-  await db.from('memberships').insert({
+  // insert 결과를 확인한다. supabase 는 실패해도 예외를 던지지 않아
+  // 확인하지 않으면 계정이 조직에 연결되지 않은 채로 넘어간다.
+  const { error: memberError } = await db.from('memberships').insert({
     user_id: authData.user.id,
     organization_id: org.id,
     role: 'admin',
   })
+
+  if (memberError) {
+    await db.from('organizations').delete().eq('id', org.id)
+    await db.auth.admin.deleteUser(authData.user.id)
+    redirect('/admin/accounts/new?error=' + encodeURIComponent(`계정 연결 실패: ${memberError.message}`))
+  }
 
   redirect('/admin/accounts')
 }
