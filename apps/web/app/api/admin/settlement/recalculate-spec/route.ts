@@ -58,12 +58,16 @@ export async function POST(req: Request) {
         if (pid && priceMap[pid] === undefined) priceMap[pid] = Number(s.sale_price)
       }
 
-      // 우선순위 3: 고정단가 품목
+      // 우선순위 3: 고정단가 품목 — 등록일(effective_from)을 지킨다.
+      // 예전에는 effective_from 을 무시하고 최신값을 가져와, 단가를 새로 넣으면
+      // 그보다 앞선 날짜의 명세서까지 소급해 바뀌었다.
+      // 규칙은 "입력한 날짜부터 다음 수정 전까지 적용" 이다(2026-07-31 확인).
       const fixedSpIds = (spRows ?? []).filter(r => priceMap[r.product_id] === undefined && fixedMap[r.product_id]).map(r => r.id)
       if (fixedSpIds.length) {
         const { data: fixedSnaps } = await db
           .from('price_snapshots').select('supplier_product_id, sale_price')
           .in('supplier_product_id', fixedSpIds)
+          .lte('effective_from', spec.business_date)
           .order('effective_from', { ascending: false }).order('created_at', { ascending: false })
         for (const s of fixedSnaps ?? []) {
           const pid = spToProduct[s.supplier_product_id]

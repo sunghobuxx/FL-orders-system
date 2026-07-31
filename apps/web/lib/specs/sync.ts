@@ -63,6 +63,10 @@ export async function buildPriceMapByProduct(
     if (pid && priceMap[pid] === undefined) priceMap[pid] = Number(snap.sale_price)
   }
 
+  // 고정단가 품목도 등록일(effective_from)을 지킨다.
+  // 예전에는 effective_from 을 무시하고 최신값을 가져왔다. 그래서 단가를 새로 넣으면
+  // 그보다 앞선 날짜의 명세서까지 소급해 바뀌어, 이미 청구한 금액과 어긋났다.
+  // 규칙은 "입력한 날짜부터 다음 수정 전까지 적용" 이다(2026-07-31 확인).
   const fixedNeedIds = productIds.filter(id => priceMap[id] === undefined && fixedMap[id])
   const fixedSpIds = (spRows as Array<{ id: string; product_id: string }>)
     .filter(r => fixedNeedIds.includes(r.product_id)).map(r => r.id)
@@ -70,6 +74,7 @@ export async function buildPriceMapByProduct(
     const { data: fixedSnaps } = await adminDb
       .from('price_snapshots').select('supplier_product_id, sale_price')
       .in('supplier_product_id', fixedSpIds)
+      .lte('effective_from', businessDate)
       .order('effective_from', { ascending: false })
       .order('created_at', { ascending: false })
     for (const snap of fixedSnaps ?? []) {
