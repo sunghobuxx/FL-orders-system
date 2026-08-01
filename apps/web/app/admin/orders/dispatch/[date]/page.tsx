@@ -13,6 +13,7 @@ import DispatchSendButton from '../../DispatchSendButton'
 import DispatchValidateButton from './DispatchValidateButton'
 import DispatchQtyEditor from './DispatchQtyEditor'
 import DispatchResendButton from './DispatchResendButton'
+import DispatchAdditionalButton from './DispatchAdditionalButton'
 
 interface Props {
   params: Promise<{ date: string }>
@@ -61,6 +62,29 @@ export default async function DispatchDatePage({ params }: Props) {
 
   const jobBySupplier = new Map(
     (dispatchJobs ?? []).map((j: { id: string; supplier_id: string; status: string }) => [j.supplier_id, j])
+  )
+
+  // 02:30 스냅샷(dispatch_job_items)에 없는 발주 품목이 추가발주 대상이다.
+  // 추가발주를 이미 보냈는지는 dispatch_messages.message_type 으로 판정한다.
+  const jobIds = (dispatchJobs ?? []).map((j: { id: string }) => j.id)
+  const [snapshotResult, additionalSentResult] = await Promise.all([
+    jobIds.length
+      ? adminDb.from('dispatch_job_items').select('dispatch_job_id, order_item_id').in('dispatch_job_id', jobIds)
+      : Promise.resolve({ data: [] as { dispatch_job_id: string; order_item_id: string }[] }),
+    jobIds.length
+      ? adminDb.from('dispatch_messages').select('dispatch_job_id').in('dispatch_job_id', jobIds)
+          .eq('message_type', 'additional').eq('status', 'sent')
+      : Promise.resolve({ data: [] as { dispatch_job_id: string }[] }),
+  ])
+
+  const snapshotByJob = new Map<string, Set<string>>()
+  for (const row of (snapshotResult.data ?? []) as { dispatch_job_id: string; order_item_id: string }[]) {
+    const set = snapshotByJob.get(row.dispatch_job_id) ?? new Set<string>()
+    set.add(row.order_item_id)
+    snapshotByJob.set(row.dispatch_job_id, set)
+  }
+  const additionalSentJobIds = new Set(
+    ((additionalSentResult.data ?? []) as { dispatch_job_id: string }[]).map(r => r.dispatch_job_id)
   )
 
   const supplierNameMap = new Map(
@@ -166,6 +190,12 @@ export default async function DispatchDatePage({ params }: Props) {
                   const view = supplierViews[supplierId]
                   const supplierName = supplierNameMap.get(supplierId) ?? '-'
                   const isInactive = inactiveSupplierIds.has(supplierId)
+                  // 02:30 이후 들어와 아직 문자에 안 나간 품목
+                  const snapshotIds = job ? snapshotByJob.get(job.id) : undefined
+                  const additionalItems = job && sent && !isInactive && snapshotIds
+                    ? (groupedMap[supplierId] ?? []).filter(i => !snapshotIds.has(i.id))
+                    : []
+                  const additionalSent = job ? additionalSentJobIds.has(job.id) : false
                   return (
                     <div key={supplierId} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
                       {/* 헤더: 하늘색 배경, 공급처명 파란 텍스트 */}
@@ -176,6 +206,16 @@ export default async function DispatchDatePage({ params }: Props) {
                         ) : sent ? (
                           <div className="flex items-center gap-2">
                             <span className="text-xs px-2.5 py-1 rounded-full bg-green-100 text-green-700 font-medium">전송완료</span>
+                            {additionalSent && (
+                              <span className="text-xs px-2.5 py-1 rounded-full bg-amber-100 text-amber-700 font-medium">추가발주 완료</span>
+                            )}
+                            {!additionalSent && additionalItems.length > 0 && (
+                              <DispatchAdditionalButton
+                                supplierId={supplierId}
+                                businessDate={targetDate}
+                                count={additionalItems.length}
+                              />
+                            )}
                             {job && <DispatchResendButton jobId={job.id} />}
                           </div>
                         ) : (
