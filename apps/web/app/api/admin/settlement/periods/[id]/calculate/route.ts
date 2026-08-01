@@ -2,10 +2,15 @@ export const runtime = 'edge'
 
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { getSessionUser } from '@/lib/supabase/server'
 import { computeOutstanding, syncStatementFinance } from '@/lib/settlement-finance'
 
 export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    // 청구·미수금을 만드는 주소다. 로그인 없이 부를 수 있으면 안 된다.
+    const { user } = await getSessionUser()
+    if (!user) return NextResponse.json({ error: '로그인이 필요합니다' }, { status: 401 })
+
     const { id: periodId } = await params
     const db = createAdminClient()
 
@@ -41,12 +46,21 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     const restaurantIds = [...byRestaurant.keys()]
     const { data: restaurants } = await db
       .from('restaurants')
-      .select('id, organization_id')
+      .select('id, organization_id, settlement_cycle')
       .in('id', restaurantIds)
     const orgMap = Object.fromEntries((restaurants ?? []).map(r => [r.id as string, r.organization_id as string]))
 
+    // 업체의 정산 주기와 기간 유형이 같을 때만 만든다.
+    // 이게 없으면 주정산 기간을 계산할 때 월정산 업체에도 주정산서가 생겨
+    // 같은 명세서를 두 번 청구하게 된다. (2026-07-24 사고, 2026-08-01 재정리)
+    const cycleMap = Object.fromEntries(
+      (restaurants ?? []).map(r => [r.id as string, (r.settlement_cycle as string | null) ?? 'weekly'])
+    )
+
     let count = 0
+    let skippedCycle = 0
     for (const [restaurantId, { total, specIds }] of byRestaurant) {
+      if (cycleMap[restaurantId] !== period.period_type) { skippedCycle++; continue }
       const organizationId = orgMap[restaurantId]
 
       // upsert sales_statement
@@ -82,7 +96,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
       count++
     }
 
-    return NextResponse.json({ success: true, count })
+    return NextResponse.json({ success: true, count, skippedCycle })
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : '오류' }, { status: 500 })
   }
