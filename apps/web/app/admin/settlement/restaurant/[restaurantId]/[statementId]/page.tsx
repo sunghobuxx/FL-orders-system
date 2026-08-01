@@ -3,6 +3,7 @@ export const runtime = 'edge'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { getCarryover } from '@/lib/settlement/carryover'
 import AdminSettlementShell from '../../../AdminSettlementShell'
 import { AdminStatementPrintButton } from '@/app/admin/settlement/AdminPrintButtons'
 
@@ -29,7 +30,7 @@ export default async function AdminSettlementStatementPage({ params }: Props) {
   const totalAmount = Number(stmt.total_amount ?? 0)
   const outstandingAmount = Number(stmt.outstanding_amount ?? 0)
   const paidAmount = totalAmount - outstandingAmount
-  // 이전 미수금 이월분 = total_amount - 당기 daily_specs 합 (페이지 하단에서 dailySpecs 집계 후 계산)
+  // 이전 미수금은 receivables 를 그대로 읽는다. 역산하지 않는다.
 
   // daily_specs for the settlement period
   const { data: dailySpecsRaw } = period
@@ -42,8 +43,8 @@ export default async function AdminSettlementStatementPage({ params }: Props) {
         .order('business_date', { ascending: true })
     : { data: [] }
   const dailySpecs = dailySpecsRaw ?? []
-  const specTotal = dailySpecs.reduce((s, sp) => s + Number(sp.total_amount), 0)
-  const carryover = Math.round(totalAmount - specTotal)  // 지난주 미수금 이월분
+  const { previous: carryover, totalDue } = await getCarryover(
+    db, restaurantId, statementId, outstandingAmount)
 
   type SpecLineRow = { daily_spec_id: string; qty: number; unit: string; products: { standard_name: string } | null }
   const linesBySpec: Record<string, SpecLineRow[]> = {}
@@ -190,7 +191,7 @@ export default async function AdminSettlementStatementPage({ params }: Props) {
             <span className="w-32 text-right">금액</span>
           </div>
 
-          {dailySpecs.length === 0 && carryover <= 0 ? (
+          {dailySpecs.length === 0 ? (
             <div className="py-10 text-center text-sm text-gray-400">항목이 없습니다</div>
           ) : (
             <div className="divide-y divide-gray-100">
@@ -202,20 +203,20 @@ export default async function AdminSettlementStatementPage({ params }: Props) {
                   <span className="w-32 text-right text-sm font-medium text-gray-900">{fmt(Number(spec.total_amount))}</span>
                 </div>
               ))}
-              {carryover > 0 && (
-                <div className="grid grid-cols-[1fr_auto] gap-3 items-center px-5 py-3 bg-amber-50">
-                  <span className="text-sm font-semibold text-amber-700">지난주 미수금 이월</span>
-                  <span className="w-32 text-right text-sm font-bold text-amber-700">{fmt(carryover)}</span>
-                </div>
-              )}
             </div>
           )}
 
           <div className="divide-y divide-gray-100 border-t border-gray-200 bg-gray-50">
             <div className="grid grid-cols-[1fr_auto] gap-3 items-center px-5 py-3">
-              <span className="text-sm font-semibold text-gray-700">합계</span>
+              <span className="text-sm font-semibold text-gray-700">당기 합계</span>
               <span className="w-32 text-right text-sm font-bold text-gray-900 bg-gray-100 px-3 py-1.5 rounded">{fmt(totalAmount)}</span>
             </div>
+            {carryover > 0 && (
+              <div className="grid grid-cols-[1fr_auto] gap-3 items-center px-5 py-3 bg-amber-50">
+                <span className="text-sm font-semibold text-amber-700">이전 미수금</span>
+                <span className="w-32 text-right text-sm font-bold text-amber-700">{fmt(carryover)}</span>
+              </div>
+            )}
             <div className="grid grid-cols-[1fr_auto] gap-3 items-center px-5 py-3">
               <span className="text-sm text-gray-500">납부액</span>
               <span className="w-32 text-right text-sm font-medium text-gray-900 bg-gray-100 px-3 py-1.5 rounded">{fmt(paidAmount)}</span>
@@ -224,6 +225,12 @@ export default async function AdminSettlementStatementPage({ params }: Props) {
               <span className="text-sm text-gray-500">미수금</span>
               <span className={`w-32 text-right text-sm font-medium bg-gray-100 px-3 py-1.5 rounded ${outstandingAmount > 0 ? 'text-red-600' : 'text-gray-900'}`}>{fmt(outstandingAmount)}</span>
             </div>
+            {carryover > 0 && (
+              <div className="grid grid-cols-[1fr_auto] gap-3 items-center px-5 py-3">
+                <span className="text-sm font-semibold text-gray-700">받을 금액</span>
+                <span className="w-32 text-right text-sm font-bold text-red-600 bg-gray-100 px-3 py-1.5 rounded">{fmt(totalDue)}</span>
+              </div>
+            )}
           </div>
         </div>
       </div>

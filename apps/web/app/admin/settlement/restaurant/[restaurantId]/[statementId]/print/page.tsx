@@ -2,6 +2,7 @@ export const runtime = 'edge'
 
 import { notFound } from 'next/navigation'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { getCarryover } from '@/lib/settlement/carryover'
 import AutoPrint from '@/app/member/spec/print/AutoPrint'
 
 interface Props {
@@ -27,6 +28,11 @@ export default async function AdminStatementPrintPage({ params }: Props) {
   const totalAmount = Number(stmt.total_amount ?? 0)
   const outstandingAmount = Number(stmt.outstanding_amount ?? 0)
   const paidAmount = totalAmount - outstandingAmount
+
+  // 화면과 같은 계산을 쓴다. 예전에는 프린트에 이전 미수금 항목이 아예 없어
+  // 거래처가 받는 종이와 화면 금액이 달랐다.
+  const { previous: carryover, totalDue } = await getCarryover(
+    db, restaurantId, statementId, outstandingAmount)
 
   const { data: dailySpecsRaw } = period
     ? await db
@@ -135,9 +141,15 @@ export default async function AdminStatementPrintPage({ params }: Props) {
             <tr key={`e${i}`}><td>&nbsp;</td><td></td><td></td><td style={{textAlign:'right'}}>₩ -</td></tr>
           ))}
           <tr style={{backgroundColor:'#f9f9f9'}}>
-            <td colSpan={3} style={{textAlign:'right', fontWeight:'bold'}}>합계</td>
+            <td colSpan={3} style={{textAlign:'right', fontWeight:'bold'}}>당기 합계</td>
             <td style={{textAlign:'right', fontWeight:'bold', fontSize:'11pt'}}>{fmtWon(totalAmount)}</td>
           </tr>
+          {carryover > 0 && (
+            <tr style={{backgroundColor:'#fffbf0'}}>
+              <td colSpan={3} style={{textAlign:'right', fontWeight:'bold', color:'#b45309'}}>이전 미수금</td>
+              <td style={{textAlign:'right', fontWeight:'bold', color:'#b45309'}}>{fmtWon(carryover)}</td>
+            </tr>
+          )}
           {paidAmount > 0 && (
             <tr>
               <td colSpan={3} style={{textAlign:'right', color:'#555'}}>납부액</td>
@@ -148,6 +160,12 @@ export default async function AdminStatementPrintPage({ params }: Props) {
             <td colSpan={3} style={{textAlign:'right', fontWeight:'bold', color:'#cc0000'}}>미수금</td>
             <td style={{textAlign:'right', fontWeight:'bold', color:'#cc0000', fontSize:'12pt'}}>{fmtWon(outstandingAmount)}</td>
           </tr>
+          {carryover > 0 && (
+            <tr style={{backgroundColor:'#fff5f5'}}>
+              <td colSpan={3} style={{textAlign:'right', fontWeight:'bold', color:'#cc0000'}}>받을 금액</td>
+              <td style={{textAlign:'right', fontWeight:'bold', color:'#cc0000', fontSize:'13pt'}}>{fmtWon(totalDue)}</td>
+            </tr>
+          )}
         </tbody>
       </table>
 

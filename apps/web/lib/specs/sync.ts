@@ -13,7 +13,10 @@
  *     order_item_id 는 재발주 때 NULL 로 끊기므로 기준이 될 수 없다.
  *   - 발주에 없어도 관리자가 손으로 넣은 품목은 명세서에 남긴다.
  *   - 명세서 자체를 지우지 않는다. 지우면 정산서가 참조하는 근거가 사라진다.
+ *   - 명세서를 고쳤으면 그 기간 정산서도 같이 갱신한다.
  */
+
+import { generateStatements } from '@/lib/settlement/generate'
 
 /** 단가 우선순위: 업체 고정단가 → 당일단가 → 고정단가 품목 → carry-forward */
 export async function buildPriceMapByProduct(
@@ -217,6 +220,22 @@ export async function syncSpecFromOrders(
   await adminDb.from('daily_specs')
     .update({ total_amount: totalAmount, vat_amount: vatAmount })
     .eq('id', specId)
+
+  // 정산서를 바로 맞춘다.
+  // 예전에는 명세서를 새로 만들어도 정산서 총액이 그대로여서, 화면의 명세서 목록에는
+  // 새 줄이 보이는데 합계만 옛 금액인 상태가 됐다. 정산서 갱신이 매일 04:00 크론이나
+  // 수동 생성 때만 일어났기 때문이다. (2026-08-01 할매 선부점 08-01 312,500원)
+  // 완납된 정산서는 건드리지 않는다 — 소급 청구하지 않는다.
+  try {
+    await generateStatements(adminDb, businessDate, {
+      force: true,
+      restaurantIds: [restaurantId],
+      skipSettled: true,
+    })
+  } catch (e) {
+    // 정산서 갱신이 실패해도 명세서 저장은 되돌리지 않는다. 매일 04:00 크론이 다시 맞춘다.
+    console.error('[syncSpecFromOrders] 정산서 갱신 실패', restaurantId, businessDate, e)
+  }
 
   return specId
 }

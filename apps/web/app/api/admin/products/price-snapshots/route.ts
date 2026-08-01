@@ -28,12 +28,17 @@ export async function POST(req: Request) {
 
     const adminDb = createAdminClient()
 
-    // 1. 미완료 발주 아이템 단가 자동 갱신 (effective_from 이후 날짜)
+    // 1. 발주 아이템 단가 자동 갱신 (effective_from 이후 날짜)
+    //
+    // 예전에는 open/submitted/validated/ordered 만 갱신해서, 발주 문자가 나간 뒤
+    // (dispatched) 부터는 단가를 등록해도 발주서에 하나도 반영되지 않았다.
+    // 2026-08-01 기준 그 주 배치 85개가 전부 dispatched 였다.
+    // effective_from 이후로만 바꾸므로 과거 발주를 소급해 흔들지 않는다.
     const { data: batches } = await adminDb
       .from('order_batches')
       .select('id')
       .gte('business_date', body.effective_from)
-      .in('status', ['open', 'submitted', 'validated', 'ordered'])
+      .in('status', ['open', 'submitted', 'validated', 'ordered', 'dispatched', 'completed'])
 
     if (batches?.length) {
       const batchIds = batches.map(b => b.id)
@@ -49,16 +54,29 @@ export async function POST(req: Request) {
           .update({ unit_price_snapshot: body.sale_price })
           .in('order_id', orderIds)
           .eq('supplier_product_id', body.supplierProductId)
+
+        // supplier_product_id 가 비어 있는 줄도 있다(2026-08-01 기준 5%).
+        // 그 줄은 품목으로 찾아 갱신한다. 안 그러면 같은 품목인데 단가만 옛것으로 남는다.
+        await adminDb
+          .from('order_items')
+          .update({ unit_price_snapshot: body.sale_price })
+          .in('order_id', orderIds)
+          .is('supplier_product_id', null)
+          .eq('product_id', body.productId)
       }
     }
 
     // 2. effective_from 이후 daily_spec_lines 단가 자동 업데이트
     // price_overridden=false인 라인만 업데이트 (수동 입력 단가는 유지)
     //
-    // 이미 정산서로 청구된 명세서는 제외한다.
-    // 여기서 과거 명세서를 다시 계산해도 정산서 청구액은 따라오지 않아서,
-    // 단가를 등록할 때마다 "명세서 ≠ 청구액" 이 새로 생겼다.
+    // 완납된 정산서에 들어간 명세서만 제외한다.
     // 받은 돈은 그때 청구한 금액이므로 지난 청구를 소급해 바꾸면 안 된다.
+    //
+    // 예전에는 "정산서에 들어갔으면" 전부 제외했다. 그때는 정산서가 기간이 끝나야
+    // 만들어져서 그 기준이 통했다. 2026-08-01 부터 매일 04:00 크론이 진행 중인 주도
+    // 정산서에 넣기 시작하면서, 오늘 명세서까지 전부 제외 대상이 되어
+    // 단가를 등록해도 명세서에 반영되지 않았다.
+    // 미납 정산서는 아래 cascade 가 청구액까지 같이 고치므로 제외할 이유가 없다.
     const { data: allSpecs } = await adminDb
       .from('daily_specs')
       .select('id')
@@ -67,13 +85,40 @@ export async function POST(req: Request) {
     const { data: billedLines } = allSpecs?.length
       ? await adminDb
           .from('sales_statement_lines')
-          .select('source_doc_id')
+          .select('source_doc_id, sales_statement_id')
           .eq('source_doc_type', 'daily_spec')
           .in('source_doc_id', allSpecs.map((s: { id: string }) => s.id))
       : { data: [] as { source_doc_id: string }[] }
 
-    const billedSet = new Set((billedLines ?? []).map((l: { source_doc_id: string }) => l.source_doc_id))
-    const specs = (allSpecs ?? []).filter((s: { id: string }) => !billedSet.has(s.id))
+    const stmtIdsOfSpec = new Map<string, string[]>()
+    for (const l of (billedLines ?? []) as { source_doc_id: string; sales_statement_id: string }[]) {
+      const arr = stmtIdsOfSpec.get(l.source_doc_id)
+      if (arr) arr.push(l.sales_statement_id)
+      else stmtIdsOfSpec.set(l.source_doc_id, [l.sales_statement_id])
+    }
+
+    const allStmtIds = [...new Set([...stmtIdsOfSpec.values()].flat())]
+    const { data: recvRows } = allStmtIds.length
+      ? await adminDb.from('receivables').select('statement_id, status').in('statement_id', allStmtIds)
+      : { data: [] as { statement_id: string; status: string }[] }
+
+    const recvByStmt = new Map<string, string[]>()
+    for (const r of (recvRows ?? []) as { statement_id: string; status: string }[]) {
+      const arr = recvByStmt.get(r.statement_id)
+      if (arr) arr.push(r.status)
+      else recvByStmt.set(r.statement_id, [r.status])
+    }
+    const isSettled = (stmtId: string) => {
+      const st = recvByStmt.get(stmtId) ?? []
+      return st.length > 0 && st.every(x => x === 'paid')
+    }
+
+    const settledSet = new Set(
+      [...stmtIdsOfSpec.entries()]
+        .filter(([, ids]) => ids.some(isSettled))
+        .map(([specId]) => specId)
+    )
+    const specs = (allSpecs ?? []).filter((s: { id: string }) => !settledSet.has(s.id))
 
     if (specs?.length) {
       // 품목 과세 여부 조회 (vat_amount 재계산용)

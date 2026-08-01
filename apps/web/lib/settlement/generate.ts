@@ -60,12 +60,14 @@ export interface GenerateResult {
 /**
  * businessDate 기준으로, 그날 정산 기간이 끝나는 업체들의 정산서를 만든다.
  * force=true 면 기간 종료일이 아니어도 현재까지의 금액으로 만든다(수동 재생성용).
+ * skipSettled=true 면 이미 완납된 정산서는 건드리지 않는다. 완납 건은 소급 청구하지
+ * 않기로 했으므로, 명세서가 뒤늦게 바뀌어도 청구액을 되살리지 않는다.
  */
 export async function generateStatements(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   db: any,
   businessDate: string,
-  options: { force?: boolean; restaurantIds?: string[] } = {},
+  options: { force?: boolean; restaurantIds?: string[]; skipSettled?: boolean } = {},
 ): Promise<GenerateResult> {
   const result: GenerateResult = { businessDate, created: 0, updated: 0, skipped: 0, details: [] }
 
@@ -135,6 +137,14 @@ export async function generateStatements(
     let statementId: string
     let action: string
     if (existingStmt) {
+      if (options.skipSettled) {
+        const { data: rs } = await db
+          .from('receivables').select('status').eq('statement_id', existingStmt.id)
+        if (rs?.length && rs.every((r: { status: string }) => r.status === 'paid')) {
+          result.skipped++
+          continue
+        }
+      }
       statementId = existingStmt.id
       // 총액이 같아도 라인은 반드시 다시 만든다.
       // 예전에는 여기서 continue 로 빠져나가 라인 재구성을 건너뛰었다. 그런데
