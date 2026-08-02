@@ -32,7 +32,7 @@ export default async function AdminStatementPrintPage({ params }: Props) {
   // 화면과 같은 계산을 쓴다. 예전에는 프린트에 이전 미수금 항목이 아예 없어
   // 거래처가 받는 종이와 화면 금액이 달랐다.
   const { previous: carryover, totalDue } = await getCarryover(
-    db, restaurantId, statementId, outstandingAmount)
+    db, restaurantId, statementId, outstandingAmount, period?.start_date ?? null)
 
   const { data: dailySpecsRaw } = period
     ? await db

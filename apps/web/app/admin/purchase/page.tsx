@@ -3,6 +3,7 @@ export const runtime = 'edge'
 import Link from 'next/link'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { fetchAll } from '@/lib/supabase/fetch-all'
+import { buildPurchaseCostResolver } from '@/lib/pricing/purchase-cost'
 import AdminSettlementShell from '@/app/admin/settlement/AdminSettlementShell'
 import { getKstToday } from '@/lib/date-kst'
 
@@ -24,18 +25,20 @@ export default async function AdminPurchasePage({ searchParams }: Props) {
   // Get order_batches in date range
   const { data: batches } = await db
     .from('order_batches')
-    .select('id')
+    .select('id, business_date')
     .gte('business_date', from)
     .lte('business_date', to)
     .in('status', ['submitted', 'validated', 'ordered', 'dispatched', 'completed'])
 
   const batchIds = (batches ?? []).map(b => b.id)
+  const batchDate = new Map((batches ?? []).map(b => [b.id as string, b.business_date as string]))
   let orderItems: {
     product_id: string
     qty: number
     unit: string
     unit_price_snapshot: number
     products: { standard_name: string; is_fixed_price: boolean } | null
+    orders: { batch_id: string } | null
   }[] = []
 
   if (batchIds.length > 0) {
@@ -64,6 +67,16 @@ export default async function AdminPurchasePage({ searchParams }: Props) {
     }
   }
 
+  // 공급처에 줄 돈이므로 매입가로 계산한다. unit_price_snapshot 은 판매가라
+  // 그대로 더하면 마진까지 얹혀 실제보다 많게 나온다.
+  // 매입가가 등록 안 된 품목만 판매가로 대신한다 — 빼면 과소 집계된다.
+  const costs = await buildPurchaseCostResolver(db, productIds)
+  const amountOf = (item: { product_id: string; qty: number; unit_price_snapshot: number; orders: { batch_id: string } | null }) => {
+    const date = item.orders ? batchDate.get(item.orders.batch_id) : undefined
+    const cost = date ? costs.costOf(item.product_id, date) : null
+    return Number(item.qty) * (cost ?? Number(item.unit_price_snapshot))
+  }
+
   // Aggregate by supplier
   const bySupplier = new Map<string, { supplierId: string; supplierName: string; totalAmount: number; fixedAmount: number; variableAmount: number }>()
   for (const item of orderItems) {
@@ -71,7 +84,7 @@ export default async function AdminPurchasePage({ searchParams }: Props) {
     if (!prod) continue
     const supplierId = productToSupplier.get(item.product_id)
     if (!supplierId) continue
-    const amount = Number(item.qty) * Number(item.unit_price_snapshot)
+    const amount = amountOf(item)
     if (!bySupplier.has(supplierId)) {
       bySupplier.set(supplierId, { supplierId, supplierName: '', totalAmount: 0, fixedAmount: 0, variableAmount: 0 })
     }
@@ -101,7 +114,7 @@ export default async function AdminPurchasePage({ searchParams }: Props) {
   for (const item of orderItems) {
     const prod = item.products
     if (!prod) continue
-    const amount = Number(item.qty) * Number(item.unit_price_snapshot)
+    const amount = amountOf(item)
     if (!byProduct.has(item.product_id)) {
       byProduct.set(item.product_id, { productId: item.product_id, productName: prod.standard_name, unit: item.unit, totalQty: 0, totalAmount: 0 })
     }

@@ -142,6 +142,18 @@ export async function syncSpecFromOrders(
   const { priceMap, orgOverrides } = await buildPriceMapByProduct(
     adminDb, productIds, businessDate, organizationId)
 
+  // 과세 여부를 보고 부가세를 계산한다.
+  // 예전에는 vat_amount 를 무조건 0 으로 넣었다. 그래서 발주로 새로 만들어진 명세서 줄은
+  // 과세 품목이어도 부가세가 빠졌고, 나중에 단가를 다시 등록하거나 재계산 버튼을 눌러야만
+  // 채워졌다. 같은 품목이 날짜마다 부가세가 붙었다 안 붙었다 했다.
+  // (2026-08-02 하이퐁: 7/24 는 16,500 인데 8/1 은 15,000)
+  const { data: taxRows } = await adminDb
+    .from('products').select('id, taxable_flag').in('id', productIds)
+  const taxable = new Map(
+    (taxRows ?? []).map((p: { id: string; taxable_flag: boolean | null }) => [p.id, Boolean(p.taxable_flag)]))
+  const vatOf = (productId: string, qty: number, unitPrice: number) =>
+    taxable.get(productId) ? Math.round(qty * unitPrice * 0.1) : 0
+
   // maybeSingle() 을 쓰지 않는다. 같은 식당·날짜에 명세서가 둘이면 에러 후 null 이 되어
   // 명세서를 하나 더 만들고, 중복이 계속 늘어난다. 가장 오래된 것을 기준으로 삼는다.
   const { data: existingSpecs } = await adminDb
@@ -183,13 +195,14 @@ export async function syncSpecFromOrders(
           price_overridden: true,
         }
       }
+      const unitPrice = priceMap[item.product_id] ?? 0
       return {
         order_item_id: item.id,
         product_id: item.product_id,
         qty: item.qty,
         unit: item.unit,
-        unit_price: priceMap[item.product_id] ?? 0,
-        vat_amount: 0,
+        unit_price: unitPrice,
+        vat_amount: vatOf(item.product_id, Number(item.qty), unitPrice),
         price_overridden: orgOverrides.has(item.product_id),
       }
     })

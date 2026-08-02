@@ -44,7 +44,7 @@ export default async function AdminSettlementStatementPage({ params }: Props) {
     : { data: [] }
   const dailySpecs = dailySpecsRaw ?? []
   const { previous: carryover, totalDue } = await getCarryover(
-    db, restaurantId, statementId, outstandingAmount)
+    db, restaurantId, statementId, outstandingAmount, period?.start_date ?? null)
 
   type SpecLineRow = { daily_spec_id: string; qty: number; unit: string; products: { standard_name: string } | null }
   const linesBySpec: Record<string, SpecLineRow[]> = {}
