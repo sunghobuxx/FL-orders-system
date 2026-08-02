@@ -5,6 +5,7 @@ import Link from 'next/link'
 
 import { getKstToday, getKstDateOffset } from '@/lib/date-kst'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { fetchAll } from '@/lib/supabase/fetch-all'
 import { getSessionUser } from '@/lib/supabase/server'
 
 export default async function AdminDashboardPage() {
@@ -64,10 +65,10 @@ export default async function AdminDashboardPage() {
       .in('business_date', [today, tomorrow]),
 
     // 결제정보 (전체 미수금)
-    db.from('receivables')
+    fetchAll(() => db.from('receivables')
       .select('balance, restaurants(organizations(name))')
       .in('status', ['unpaid', 'partial', 'overdue'])
-      .order('due_date'),
+      .order('due_date')).then(data => ({ data })),
 
     // 공지사항
     db.from('notices')

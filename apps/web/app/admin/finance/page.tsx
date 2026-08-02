@@ -2,17 +2,19 @@ export const runtime = 'edge'
 
 import Link from 'next/link'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { fetchAll } from '@/lib/supabase/fetch-all'
 import AdminSettlementShell from '@/app/admin/settlement/AdminSettlementShell'
 
 export default async function AdminFinancePage() {
   const db = createAdminClient()
   const today = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10)
 
-  const { data: receivables } = await db
+  // 미수금 전건을 더한다. 1000 행 제한에 걸리면 받을 돈이 실제보다 적게 나온다.
+  const receivables = await fetchAll(() => db
     .from('receivables')
     .select('id, balance, restaurant_id, restaurants(organizations(name))')
     .in('status', ['unpaid', 'partial', 'overdue'])
-    .order('due_date')
+    .order('due_date'))
 
   type RecvRow = {
     id: string

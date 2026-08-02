@@ -2,6 +2,7 @@ export const runtime = 'edge'
 
 import Link from 'next/link'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { fetchAll } from '@/lib/supabase/fetch-all'
 import AdminSettlementShell from '../AdminSettlementShell'
 import MonthPicker from '../specs/orgs/MonthPicker'
 
@@ -20,12 +21,12 @@ export default async function AdminHistoryPage({ searchParams }: Props) {
   const lastDay = new Date(year, mon, 0).getDate()
   const endDate = `${year}-${String(mon).padStart(2, '0')}-${lastDay}`
 
-  const { data: specs } = await db
+  const specs = await fetchAll(() => db
     .from('daily_specs')
     .select('id, business_date, total_amount, restaurants(organizations(name))')
     .gte('business_date', startDate)
     .lte('business_date', endDate)
-    .order('business_date', { ascending: false })
+    .order('business_date', { ascending: false }))
 
   type Spec = {
     id: string

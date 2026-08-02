@@ -32,7 +32,16 @@ function getNextMonth(month: string): string {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`
 }
 
-async function getTotalPurchase(db: ReturnType<typeof createAdminClient>, from: string, to: string): Promise<number> {
+/** 총매입과 함께 "이 숫자를 믿어도 되는지" 판단할 근거를 돌려준다. */
+interface PurchaseStat {
+  total: number
+  /** 발주를 판매가로 더한 값 — 명세서 매출과 비슷해야 정상 */
+  orderedAtSalePrice: number
+  /** 매입가가 등록되지 않아 판매가로 대신 계산한 품목 수 */
+  missingCostCount: number
+}
+
+async function getTotalPurchase(db: ReturnType<typeof createAdminClient>, from: string, to: string): Promise<PurchaseStat> {
   const batches = await fetchAll<{ id: string; business_date: string }>(() => db
     .from('order_batches')
     .select('id, business_date')
@@ -40,7 +49,7 @@ async function getTotalPurchase(db: ReturnType<typeof createAdminClient>, from: 
     .lte('business_date', to)
     .in('status', ['submitted', 'validated', 'ordered', 'dispatched', 'completed']))
   const batchIds = batches.map(b => b.id)
-  if (batchIds.length === 0) return 0
+  if (batchIds.length === 0) return { total: 0, orderedAtSalePrice: 0, missingCostCount: 0 }
 
   // 1000 행 제한 때문에 예전에는 발주 품목 일부만 더했다. 7월 총매입이 실제의 62% 로
   // 떠 있었다(25,166,880 / 40,664,640). 반드시 전부 읽는다.
@@ -73,13 +82,17 @@ async function getTotalPurchase(db: ReturnType<typeof createAdminClient>, from: 
   const costs = await buildPurchaseCostResolver(db, productIds)
 
   let total = 0
+  let orderedAtSalePrice = 0
+  let missingCostCount = 0
   for (const item of allItems) {
     if (!item.products || !productToSupplier.has(item.product_id)) continue
     const date = item.orders ? batchDate.get(item.orders.batch_id) : undefined
     const cost = date ? costs.costOf(item.product_id, date) : null
+    if (cost === null) missingCostCount++
     total += Number(item.qty) * (cost ?? Number(item.unit_price_snapshot))
+    orderedAtSalePrice += Number(item.qty) * Number(item.unit_price_snapshot)
   }
-  return total
+  return { total, orderedAtSalePrice, missingCostCount }
 }
 
 function buildCalendar(month: string, dailyAmounts: Map<string, number>) {
@@ -127,9 +140,9 @@ export default async function AdminSalesPage({ searchParams }: Props) {
 
   const [
     dailySpecsRaw,
-    totalPurchase,
+    purchaseStat,
     prevSpecsRaw,
-    prevPurchase,
+    prevPurchaseStat,
     receivablesRaw,
     payablesRaw,
   ] = await Promise.all([
@@ -160,6 +173,12 @@ export default async function AdminSalesPage({ searchParams }: Props) {
   const totalPayable = payablesRaw.reduce((s, r) => s + (Number(r.balance) || 0), 0)
   const daysWithSales = [...dailyAmountMap.values()].filter(a => a > 0).length
   const avgDailySales = daysWithSales > 0 ? Math.round(totalSales / daysWithSales) : 0
+  const totalPurchase = purchaseStat.total
+  const prevPurchase = prevPurchaseStat.total
+  // 발주가 매출을 얼마나 뒷받침하는지. 낮으면 그 달 발주 기록이 빠져 매입이 과소 집계된다.
+  // 2026-05 는 28일 중 19일치 발주만 있어 커버율이 54% 였다.
+  const orderCoverage = totalSales > 0
+    ? Math.round((purchaseStat.orderedAtSalePrice / totalSales) * 100) : 100
   const netProfit = totalSales - totalPurchase
   const salesDelta = pctChange(totalSales, prevTotalSales)
   const purchaseDelta = pctChange(totalPurchase, prevPurchase)
@@ -207,6 +226,26 @@ export default async function AdminSalesPage({ searchParams }: Props) {
             <Link href="/admin/sales" className="text-xs text-brand-600 hover:underline ml-1">이번달</Link>
           )}
         </div>
+
+        {/* 숫자를 믿어도 되는지 알려 준다.
+            매입은 발주에서 계산하므로 발주 기록이 빠진 달은 이익이 부풀려 보인다. */}
+        {(orderCoverage < 90 || purchaseStat.missingCostCount > 0) && (
+          <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 space-y-1">
+            {orderCoverage < 90 && (
+              <p className="text-xs text-amber-800">
+                <span className="font-semibold">발주 기록이 부족한 달입니다 (커버율 {orderCoverage}%).</span>{' '}
+                매출은 명세서에서, 매입은 발주에서 계산합니다. 발주가 빠진 만큼 매입이 적게 잡혀
+                순이익이 실제보다 크게 보입니다.
+              </p>
+            )}
+            {purchaseStat.missingCostCount > 0 && (
+              <p className="text-xs text-amber-800">
+                매입가가 등록되지 않은 발주 품목 {purchaseStat.missingCostCount}건은 판매가로 대신 계산했습니다.
+                그만큼 매입이 크게 잡힙니다.
+              </p>
+            )}
+          </div>
+        )}
 
         {/* Summary cards */}
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
