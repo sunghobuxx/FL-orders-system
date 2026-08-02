@@ -46,10 +46,16 @@ function addDays(dateStr: string, days: number) {
   return toDateString(date)
 }
 
-function getKstMonday() {
+/**
+ * 분석 대상 주 = 가장 최근에 끝난 일~토 주의 일요일.
+ *
+ * 예전에는 월요일 시작(월~일)이었다. 2026-08-01 에 정산 주를 일~토로 바꿨으므로
+ * 브리핑도 같은 기간을 봐야 한다. 안 그러면 "이번 주 발주" 가 정산서와 다른 범위를 가리킨다.
+ * 일요일에 돌리므로, 그날 시작한 주가 아니라 전날(토)에 끝난 주를 분석한다.
+ */
+function getKstCompletedWeekStart() {
   const kst = getKstDate()
-  const day = (kst.getUTCDay() + 6) % 7
-  kst.setUTCDate(kst.getUTCDate() - day)
+  kst.setUTCDate(kst.getUTCDate() - kst.getUTCDay() - 7)  // 이번 주 일요일에서 7일 전
   return toDateString(kst)
 }
 
@@ -99,10 +105,23 @@ function buildRuleSummary(current: ProductSummary[], previous: ProductSummary[],
     if (!currentByName.has(item.name) && item.qty > 0) decreased.push(`${item.name}(-100%)`)
   }
 
+  // 전주 평균 단가와 비교해 실제로 오른 품목만 고른다.
+  // 예전에는 `단가 / 1000` 을 반올림해 "%↑" 를 붙였다. 전주와 비교하는 코드가 아예 없어서,
+  // 양파(67%↑) 는 "단가가 67,000원대" 라는 뜻이었고 값이 내린 품목도 ↑ 로 나왔다.
   const risingPrices = current
-    .filter(item => item.cost > 0 && item.qty > 0)
-    .slice(0, 8)
-    .map(item => `${item.name}(${Math.max(10, Math.round((item.cost / Math.max(1, item.qty)) / 1000))}%↑)`)
+    .map(item => {
+      const prev = previousByName.get(item.name)
+      if (!prev || prev.qty <= 0 || prev.cost <= 0 || item.qty <= 0) return null
+      const now = item.cost / item.qty
+      const before = prev.cost / prev.qty
+      if (before <= 0) return null
+      const pct = Math.round(((now - before) / before) * 100)
+      return pct >= 5 ? { name: item.name, pct } : null
+    })
+    .filter((x): x is { name: string; pct: number } => x !== null)
+    .sort((a, b) => b.pct - a.pct)
+    .slice(0, 6)
+    .map(x => `${x.name}(${x.pct}%↑)`)
 
   return [
     `📦 이번 주 주요 발주: ${top.length ? top.map(item => `${item.name}(${qtyText(item.qty, item.unit)})`).join(', ') : '주요 발주 없음'}`,
@@ -198,7 +217,7 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json().catch(() => ({})) as InsightRequest
-    const weekStart = body.weekStart ?? getKstMonday()
+    const weekStart = body.weekStart ?? getKstCompletedWeekStart()
     const weekEnd = addDays(weekStart, 6)
     const previousWeekStart = addDays(weekStart, -7)
     const dataRangeStart = addDays(weekStart, -21)
