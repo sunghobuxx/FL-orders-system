@@ -6,7 +6,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { getSessionUser } from '@/lib/supabase/server'
 
 import AdminNoticesShell from '../../notices/AdminNoticesShell'
-import { replyToInquiry } from '../actions'
+import ReplyForm from './ReplyForm'
 
 interface Props {
   params: Promise<{ id: string }>
@@ -29,7 +29,6 @@ export default async function InquiryReplyPage({ params }: Props) {
   if (!inquiry) notFound()
 
   const orgName = (inquiry.organizations as unknown as { name: string } | null)?.name ?? '알 수 없음'
-  const replyWithId = replyToInquiry.bind(null, id)
   const images = (inquiry.image_paths ?? []) as string[]
   const dateStr = new Date(inquiry.created_at).toLocaleDateString('ko-KR', {
     year: '2-digit', month: '2-digit', day: '2-digit',
@@ -38,7 +37,7 @@ export default async function InquiryReplyPage({ params }: Props) {
   return (
     <AdminNoticesShell>
       <div className="max-w-2xl space-y-4">
-        <form action={replyWithId} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
           {/* 제목 + 날짜 */}
           <div className="flex items-center gap-3 px-5 py-4 border-b border-gray-100">
             <span className="text-sm text-gray-500 shrink-0">제목:</span>
@@ -79,28 +78,9 @@ export default async function InquiryReplyPage({ params }: Props) {
             </div>
           )}
 
-          {/* ① 답변 - 작성 가능 */}
-          <div className="flex gap-3 px-5 py-4">
-            <span className="text-sm text-gray-500 shrink-0 pt-1">답변:</span>
-            <textarea
-              name="reply"
-              rows={6}
-              defaultValue={inquiry.reply ?? ''}
-              placeholder="작성가능"
-              className="flex-1 bg-gray-100 rounded-lg px-4 py-3 text-sm text-gray-700 resize-none focus:outline-none focus:ring-2 focus:ring-brand-500 border-0"
-            />
-          </div>
-
-          {/* 확인 버튼 */}
-          <div className="flex justify-end px-5 py-4 border-t border-gray-100 bg-gray-50">
-            <button
-              type="submit"
-              className="rounded-lg bg-brand-600 text-white px-8 py-2.5 text-sm font-semibold hover:bg-brand-700"
-            >
-              확인
-            </button>
-          </div>
-        </form>
+          {/* 답변 입력 + 저장 */}
+          <ReplyForm inquiryId={id} initialReply={inquiry.reply ?? ''} />
+        </div>
       </div>
     </AdminNoticesShell>
   )
