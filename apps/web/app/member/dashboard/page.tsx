@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { getSessionUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { SupplyRiskSection } from './SupplyRiskSection'
 
 export default async function MemberDashboardPage() {
   const { user, supabase } = await getSessionUser()
@@ -176,6 +177,16 @@ export default async function MemberDashboardPage() {
       line,
     }
   })
+  // 이번 주에 받은 품목 목록 — 수급위험 예측 매칭에 쓴다.
+  const orderedProducts = [...new Map(
+    (trendLines ?? []).map(raw => {
+      const line = raw as unknown as TrendLine
+      const prod = Array.isArray(line.products) ? line.products[0] : line.products
+      const name = line.product_name ?? prod?.standard_name ?? ''
+      return [name, { name, unit: line.unit ?? '' }] as const
+    }).filter(([name]) => Boolean(name)),
+  ).values()]
+
   const latestTrend = [...trendPoints].reverse().find(p => p.line) ?? trendPoints.at(-1)
   const latestLine = latestTrend?.line ?? null
   const latestProduct = Array.isArray(latestLine?.products) ? latestLine?.products[0] : latestLine?.products
@@ -515,13 +526,7 @@ export default async function MemberDashboardPage() {
             <span className="text-xs text-gray-400">가락시장 출하물량 예측</span>
           </div>
           <div className="p-4 space-y-4">
-            <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
-              <p className="text-sm font-semibold text-gray-700 mb-1">이번 주 수급위험 브리핑</p>
-              <p className="text-sm text-gray-500">
-                주문 품목 중 가락시장 출하 예측 데이터가 있는 품목이 없습니다.
-              </p>
-              <p className="mt-2 text-xs text-gray-400">API 반환 품목 수: 0개</p>
-            </div>
+            <SupplyRiskSection products={orderedProducts} />
 
             <div>
               <div className="mb-3 flex items-center gap-2">
