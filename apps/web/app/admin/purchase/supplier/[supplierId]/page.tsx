@@ -3,6 +3,7 @@ export const runtime = 'edge'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { fetchAll } from '@/lib/supabase/fetch-all'
 import { getKstToday } from '@/lib/date-kst'
 
 interface Props {
@@ -69,12 +70,12 @@ export default async function AdminPurchaseSupplierPage({ params, searchParams }
 
   let orderItems: OrderItemRow[] = []
   if (batchIds.length > 0 && supplierProductIds.length > 0) {
-    const { data: items } = await db
+    const items = await fetchAll(() => db
       .from('order_items')
       .select('product_id, qty, unit, unit_price_snapshot, products(standard_name, is_fixed_price), orders!inner(batch_id)')
       .in('orders.batch_id', batchIds)
-      .in('product_id', supplierProductIds)
-    orderItems = (items ?? []) as unknown as OrderItemRow[]
+      .in('product_id', supplierProductIds))
+    orderItems = items as unknown as OrderItemRow[]
   }
 
   // 4. Aggregate by product

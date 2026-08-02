@@ -2,6 +2,7 @@ export const runtime = 'edge'
 
 import Link from 'next/link'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { fetchAll } from '@/lib/supabase/fetch-all'
 import AdminSettlementShell from '@/app/admin/settlement/AdminSettlementShell'
 import { getKstToday } from '@/lib/date-kst'
 
@@ -38,11 +39,12 @@ export default async function AdminPurchasePage({ searchParams }: Props) {
   }[] = []
 
   if (batchIds.length > 0) {
-    const { data } = await db
+    // 1000 행 제한 때문에 일부만 더하던 문제가 있었다. 전부 읽는다.
+    const data = await fetchAll(() => db
       .from('order_items')
       .select('product_id, qty, unit, unit_price_snapshot, products(standard_name, is_fixed_price), orders!inner(batch_id)')
-      .in('orders.batch_id', batchIds)
-    orderItems = (data ?? []) as unknown as typeof orderItems
+      .in('orders.batch_id', batchIds))
+    orderItems = data as unknown as typeof orderItems
   }
 
   // Map product_id → supplier_id (latest active)

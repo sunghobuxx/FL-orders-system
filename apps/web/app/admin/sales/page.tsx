@@ -4,6 +4,8 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { getSessionUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { fetchAll } from '@/lib/supabase/fetch-all'
+import { buildPurchaseCostResolver } from '@/lib/pricing/purchase-cost'
 import AdminSettlementShell from '@/app/admin/settlement/AdminSettlementShell'
 import { getKstToday } from '@/lib/date-kst'
 
@@ -31,40 +33,51 @@ function getNextMonth(month: string): string {
 }
 
 async function getTotalPurchase(db: ReturnType<typeof createAdminClient>, from: string, to: string): Promise<number> {
-  const { data: batches } = await db
+  const batches = await fetchAll<{ id: string; business_date: string }>(() => db
     .from('order_batches')
-    .select('id')
+    .select('id, business_date')
     .gte('business_date', from)
     .lte('business_date', to)
-    .in('status', ['submitted', 'validated', 'ordered', 'dispatched', 'completed'])
-  const batchIds = (batches ?? []).map(b => b.id)
+    .in('status', ['submitted', 'validated', 'ordered', 'dispatched', 'completed']))
+  const batchIds = batches.map(b => b.id)
   if (batchIds.length === 0) return 0
 
-  const { data: items } = await db
+  // 1000 행 제한 때문에 예전에는 발주 품목 일부만 더했다. 7월 총매입이 실제의 62% 로
+  // 떠 있었다(25,166,880 / 40,664,640). 반드시 전부 읽는다.
+  const batchDate = new Map(batches.map(b => [b.id, b.business_date]))
+  const allItems = await fetchAll<{
+    product_id: string; qty: number; unit_price_snapshot: number
+    products: { is_fixed_price: boolean } | null
+    orders: { batch_id: string } | null
+  }>(() => db
     .from('order_items')
     .select('product_id, qty, unit_price_snapshot, products(is_fixed_price), orders!inner(batch_id)')
-    .in('orders.batch_id', batchIds)
-
-  const allItems = items ?? []
+    .in('orders.batch_id', batchIds))
   const productIds = [...new Set(allItems.map(i => i.product_id))]
   const productToSupplier = new Map<string, string>()
   if (productIds.length > 0) {
-    const { data: spRows } = await db
+    const spRows = await fetchAll<{ product_id: string; supplier_id: string }>(() => db
       .from('supplier_products')
       .select('product_id, supplier_id, updated_at')
       .in('product_id', productIds)
       .eq('status', 'active')
-      .order('updated_at', { ascending: false })
-    for (const sp of spRows ?? []) {
+      .order('updated_at', { ascending: false }))
+    for (const sp of spRows) {
       if (!productToSupplier.has(sp.product_id)) productToSupplier.set(sp.product_id, sp.supplier_id)
     }
   }
 
+  // 매입은 매입가로 계산한다. unit_price_snapshot 은 판매가라 그대로 더하면
+  // 공급처에 준 적 없는 마진까지 매입으로 잡힌다(2026-07: 순이익이 음수로 나왔다).
+  // 매입가가 등록되지 않은 품목만 판매가로 대신한다 — 빼 버리면 매입이 과소 집계된다.
+  const costs = await buildPurchaseCostResolver(db, productIds)
+
   let total = 0
   for (const item of allItems) {
-    if (item.products && productToSupplier.has(item.product_id)) {
-      total += Number(item.qty) * Number(item.unit_price_snapshot)
-    }
+    if (!item.products || !productToSupplier.has(item.product_id)) continue
+    const date = item.orders ? batchDate.get(item.orders.batch_id) : undefined
+    const cost = date ? costs.costOf(item.product_id, date) : null
+    total += Number(item.qty) * (cost ?? Number(item.unit_price_snapshot))
   }
   return total
 }
@@ -113,28 +126,28 @@ export default async function AdminSalesPage({ searchParams }: Props) {
   const currentMonth = today.slice(0, 7)
 
   const [
-    { data: dailySpecsRaw },
+    dailySpecsRaw,
     totalPurchase,
-    { data: prevSpecsRaw },
+    prevSpecsRaw,
     prevPurchase,
-    { data: receivablesRaw },
-    { data: payablesRaw },
+    receivablesRaw,
+    payablesRaw,
   ] = await Promise.all([
-    db.from('daily_specs')
+    fetchAll(() => db.from('daily_specs')
       .select('id, business_date, total_amount, restaurants(organizations(name))')
       .gte('business_date', from)
-      .lte('business_date', to),
+      .lte('business_date', to)),
     getTotalPurchase(db, from, to),
-    db.from('daily_specs')
+    fetchAll<{ total_amount: number }>(() => db.from('daily_specs')
       .select('total_amount')
       .gte('business_date', prevFrom)
-      .lte('business_date', prevTo),
+      .lte('business_date', prevTo)),
     getTotalPurchase(db, prevFrom, prevTo),
-    db.from('receivables').select('balance').in('status', ['unpaid', 'partial', 'overdue']),
-    db.from('payables' as 'receivables').select('balance').in('status', ['unpaid', 'partial', 'overdue']),
+    fetchAll<{ balance: number }>(() => db.from('receivables').select('balance').in('status', ['unpaid', 'partial', 'overdue'])),
+    fetchAll<{ balance: number }>(() => db.from('payables' as 'receivables').select('balance').in('status', ['unpaid', 'partial', 'overdue'])),
   ])
 
-  const dailySpecs = dailySpecsRaw ?? []
+  const dailySpecs = dailySpecsRaw
   const dailyAmountMap = new Map<string, number>()
   for (const spec of dailySpecs) {
     const amount = Number(spec.total_amount) || 0
@@ -142,9 +155,9 @@ export default async function AdminSalesPage({ searchParams }: Props) {
   }
 
   const totalSales = [...dailyAmountMap.values()].reduce((s, a) => s + a, 0)
-  const prevTotalSales = (prevSpecsRaw ?? []).reduce((s, r) => s + (Number(r.total_amount) || 0), 0)
-  const totalReceivable = (receivablesRaw ?? []).reduce((s, r) => s + (Number(r.balance) || 0), 0)
-  const totalPayable = (payablesRaw ?? []).reduce((s, r) => s + (Number(r.balance) || 0), 0)
+  const prevTotalSales = prevSpecsRaw.reduce((s, r) => s + (Number(r.total_amount) || 0), 0)
+  const totalReceivable = receivablesRaw.reduce((s, r) => s + (Number(r.balance) || 0), 0)
+  const totalPayable = payablesRaw.reduce((s, r) => s + (Number(r.balance) || 0), 0)
   const daysWithSales = [...dailyAmountMap.values()].filter(a => a > 0).length
   const avgDailySales = daysWithSales > 0 ? Math.round(totalSales / daysWithSales) : 0
   const netProfit = totalSales - totalPurchase
