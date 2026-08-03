@@ -52,7 +52,8 @@ export interface Forecast {
   market: string
   predcQty: number
   prvmmQty: number
-  changeRate: number
+  /** 전월 대비 증감률. 비교 기준을 믿을 수 없으면 null */
+  changeRate: number | null
   riskScore: number
   supplyRisk: SupplyRisk
   advice: string
@@ -68,6 +69,7 @@ interface RawItem {
   llmt_predc_qty?: string | number
   uplmt_predc_qty?: string | number
   predc_prd?: string
+  unit_nm?: string
 }
 
 function num(v: unknown): number {
@@ -76,14 +78,17 @@ function num(v: unknown): number {
   return Number(String(v).replace(/,/g, '')) || 0
 }
 
+/**
+ * 출하 예측 증감률로 위험도를 매긴다.
+ *
+ * 원래는 최대 45점인데 '위험'이 50점, '매우위험'이 75점부터라 그 두 단계에 절대
+ * 도달할 수 없었다. 출하량이 반토막 나도 '주의'까지만 떴다. 임계값을 증감률에 직접 맞춘다.
+ */
 function scoreRisk(changeRate: number): { score: number; level: SupplyRisk } {
-  let score = 0
-  if (changeRate <= -40) score += 45
-  else if (changeRate <= -20) score += 30
-  else if (changeRate <= -10) score += 15
-  const level: SupplyRisk =
-    score >= 75 ? 'critical' : score >= 50 ? 'high' : score >= 25 ? 'watch' : 'safe'
-  return { score, level }
+  if (changeRate <= -40) return { score: 80, level: 'critical' }
+  if (changeRate <= -20) return { score: 60, level: 'high' }
+  if (changeRate <= -10) return { score: 30, level: 'watch' }
+  return { score: 0, level: 'safe' }
 }
 
 function buildAdvice(level: SupplyRisk, changeRate: number, base: number): string {
@@ -122,13 +127,20 @@ async function fetchForecast(serviceKey: string, opts: { marketCode?: string } =
     list.slice(0, 50).flatMap(i => [i.gds_mclsf_nm, i.gds_lclsf_nm].filter(Boolean) as string[]),
   )]
 
+  // 전월물량이 모든 행에서 같으면 품목별 값이 아니다. 그걸로 증감률을 내면 안 된다.
+  // 2026-08-03 실제 응답: 사과·포도·무·대파 모두 prvmm_qty 가 5,440,023 으로 동일했다.
+  const baselines = new Set(list.map(i => String(i.prvmm_qty ?? '')))
+  const baselineUsable = list.length <= 1 || baselines.size > 1
+
   const forecast: Record<string, Forecast> = {}
   for (const [standard, aliases] of Object.entries(PRODUCT_ALIASES)) {
-    const hit = list.find(item =>
-      [item.gds_mclsf_nm, item.gds_lclsf_nm].filter(Boolean).some(nm =>
-        nm === standard || aliases.some(a => nm!.includes(a) || a.includes(nm!)),
-      ),
-    )
+    // 중분류(gds_mclsf_nm)만 본다. 대분류(과실류·근채류·조미채소류)는 품목이 아니다.
+    // 부분일치도 쓰지 않는다. 예전에는 '무' 행이 '열무' 에, '토마토' 행이 '방울토마토' 에
+    // 잘못 붙어 서로 다른 품목이 같은 물량으로 표시됐다.
+    const hit = list.find(item => {
+      const name = (item.gds_mclsf_nm ?? '').trim()
+      return Boolean(name) && (name === standard || aliases.includes(name))
+    })
     if (!hit) continue
 
     const predcQty = num(hit.predc_qty)
@@ -137,8 +149,10 @@ async function fetchForecast(serviceKey: string, opts: { marketCode?: string } =
     const base = prvmm > 0 ? prvmm : (num(hit.llmt_predc_qty) + num(hit.uplmt_predc_qty)) / 2
     if (predcQty === 0 && base === 0) continue
 
-    const changeRate = base > 0 ? ((predcQty - base) / base) * 100 : 0
-    const { score, level } = scoreRisk(changeRate)
+    const changeRate = baselineUsable && base > 0 ? ((predcQty - base) / base) * 100 : null
+    const { score, level } = changeRate === null
+      ? { score: 0, level: 'safe' as SupplyRisk }
+      : scoreRisk(changeRate)
 
     forecast[standard] = {
       productName: standard,
@@ -148,7 +162,9 @@ async function fetchForecast(serviceKey: string, opts: { marketCode?: string } =
       changeRate,
       riskScore: score,
       supplyRisk: level,
-      advice: buildAdvice(level, changeRate, base),
+      advice: changeRate === null
+        ? `가락시장이 준 전월 물량이 품목별로 구분되지 않아 증감 비교가 어렵습니다. 예측 물량은 ${Math.round(predcQty).toLocaleString('ko-KR')}${hit.unit_nm ?? ''} 입니다.`
+        : buildAdvice(level, changeRate, base),
       period: hit.predc_prd ?? '',
     }
   }

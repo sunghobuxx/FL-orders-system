@@ -123,7 +123,8 @@ export function SupplyRiskSection({ products }: { products: { name: string; unit
         <div className="space-y-2">
           {matched.map(({ name, fc }) => {
             const style = RISK_STYLE[fc.supplyRisk]
-            const width = fc.prvmmQty > 0 ? Math.min(100, Math.max(8, (fc.predcQty / fc.prvmmQty) * 100)) : 100
+            const width = fc.changeRate !== null && fc.prvmmQty > 0
+              ? Math.min(100, Math.max(8, (fc.predcQty / fc.prvmmQty) * 100)) : 100
             const barColor = fc.supplyRisk === 'critical' || fc.supplyRisk === 'high'
               ? 'bg-red-400' : fc.supplyRisk === 'watch' ? 'bg-yellow-400' : 'bg-green-400'
             return (
@@ -134,12 +135,18 @@ export function SupplyRiskSection({ products }: { products: { name: string; unit
                     <span className="text-sm font-semibold text-gray-800">{name}</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className={`text-xs font-bold ${fc.changeRate < 0 ? 'text-red-500' : 'text-blue-500'}`}>
-                      {fc.changeRate > 0 ? '+' : ''}{fc.changeRate.toFixed(1)}%
+                    {fc.changeRate !== null && (
+                      <span className={`text-xs font-bold ${fc.changeRate < 0 ? 'text-red-500' : 'text-blue-500'}`}>
+                        {fc.changeRate > 0 ? '+' : ''}{fc.changeRate.toFixed(1)}%
+                      </span>
+                    )}
+                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${style.badge}`}>
+                      {fc.changeRate === null ? '비교 불가' : style.label}
                     </span>
-                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${style.badge}`}>{style.label}</span>
                   </div>
                 </div>
+                {/* 전월 물량을 못 믿을 때는 막대그래프를 그리지 않는다. 잘못된 비교로 보인다. */}
+                {fc.changeRate !== null && (
                 <div className="bg-white bg-opacity-60 rounded-lg px-3 py-2 space-y-1.5">
                   <p className="text-xs text-gray-400">서울가락 출하 예측 vs 전월</p>
                   <div className="flex gap-1 items-center">
@@ -155,6 +162,7 @@ export function SupplyRiskSection({ products }: { products: { name: string; unit
                     </div>
                   </div>
                 </div>
+                )}
                 <p className="text-xs text-gray-700 leading-relaxed">{fc.advice}</p>
               </div>
             )
