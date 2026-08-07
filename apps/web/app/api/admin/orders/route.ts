@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSessionUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { syncSpecFromOrders } from '@/lib/specs/sync'
+import { refreshDispatchJobItems } from '@/lib/dispatch/current-items'
 
 interface RawItem {
   product_id?: string
@@ -189,6 +190,15 @@ export async function POST(req: NextRequest) {
       } catch (e) {
         return NextResponse.json(
           { error: `명세서 갱신 실패: ${e instanceof Error ? e.message : String(e)}` }, { status: 500 })
+      }
+
+      // 발주가 바뀌면 공급처별 발주 내역(dispatch_job_items)도 따라가야 한다.
+      // 이게 없으면 02:30 자동발주 뒤에 추가한 품목이 «당일 발주 집계» 에만 뜨고
+      // «공급처별 발주 내역» 에는 빠진다. 이미 있는 job 만 채우고 문자는 보내지 않는다.
+      try {
+        await refreshDispatchJobItems(adminDb, businessDate)
+      } catch (e) {
+        console.error('[orders] 공급처별 발주 내역 갱신 실패', businessDate, e)
       }
     }
 

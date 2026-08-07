@@ -179,6 +179,40 @@ export async function getCurrentDispatchGroups(
   return { batches: batches ?? [], allItems: items, grouped, inactiveGrouped, unmappedItems: [...unmappedMap.values()] }
 }
 
+/**
+ * 이미 만들어져 있는 그날 발주 job 의 품목을 지금 발주 내용에 맞춘다.
+ *
+ * 화면의 «당일 발주 집계» 는 order_items 를 실시간으로 읽는데,
+ * «공급처별 발주 내역» 은 확정 시점에 떠 둔 dispatch_job_items 를 본다.
+ * 그래서 02:30 자동발주 뒤에 품목을 추가하면 집계에는 뜨는데 공급처별 내역에는 없다.
+ * (2026-08-08: 돈마나·돈독푸드에 04:2x 에 추가한 7 건이 신우상회·기타매입처 내역에서 빠졌다)
+ *
+ * job 을 새로 만들지 않고 **이미 있는 것만** 채운다. 문자도 보내지 않는다.
+ * 사람이 고친 수량(qty_overridden)은 syncDispatchJobItems 가 그대로 둔다.
+ */
+export async function refreshDispatchJobItems(adminDb: any, businessDate: string): Promise<number> {
+  const { data: jobs } = await adminDb
+    .from('dispatch_jobs')
+    .select('id, supplier_id')
+    .eq('business_date', businessDate)
+  if (!jobs?.length) return 0
+
+  const { grouped } = await getCurrentDispatchGroups(adminDb, businessDate)
+  let synced = 0
+  for (const job of jobs as { id: string; supplier_id: string }[]) {
+    const items = grouped[job.supplier_id]
+    if (!items?.length) continue
+    try {
+      await syncDispatchJobItems(adminDb, job.id, items)
+      synced++
+    } catch (e) {
+      // 한 곳이 실패해도 나머지는 맞춘다. 발주 저장 자체를 되돌리지는 않는다.
+      console.error('[refreshDispatchJobItems] 동기화 실패', job.supplier_id, businessDate, e)
+    }
+  }
+  return synced
+}
+
 export async function syncDispatchJobItems(
   adminDb: any,
   dispatchJobId: string,
