@@ -1,12 +1,12 @@
 'use client'
 
 import { useState } from 'react'
-import { createClient } from '@supabase/supabase-js'
+import { createClient } from '@/lib/supabase/client'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-)
+// 세션을 물고 가는 브라우저 클라이언트를 쓴다.
+// 예전에는 supabase-js 로 anon 클라이언트를 따로 만들어 로그인 정보가 실리지 않았다.
+// 그러면 스토리지에 익명으로 올리는 셈이라, 아무나 올릴 수 있게 열어 두지 않는 한 막힌다.
+// 업로드 권한은 공지 관리자로 좁혀 두었다(storage 정책 notices_admin_write).
 
 export default function NoticeFileInput() {
   const [fileName, setFileName] = useState<string | null>(null)
@@ -33,6 +33,7 @@ export default function NoticeFileInput() {
 
     // 클라이언트에서 직접 Supabase Storage 업로드
     setUploading(true)
+    const supabase = createClient()
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
     const path = `${Date.now()}_${safeName}`
     const { data, error: uploadError } = await supabase.storage
