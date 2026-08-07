@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSessionUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { syncSpecFromOrders } from '@/lib/specs/sync'
+import { archiveOrderItems } from '@/lib/orders/archive-items'
 
 interface RawItem {
   product_id?: string
@@ -24,8 +25,22 @@ interface CleanItem {
 }
 
 export async function POST(req: NextRequest) {
-  const { user, supabase } = await getSessionUser()
-  if (!user) return NextResponse.json({ error: '로그인이 필요합니다.' }, { status: 401 })
+  const adminDb = createAdminClient()
+  const auth = req.headers.get('Authorization')
+  const token = auth?.startsWith('Bearer ') ? auth.slice(7) : ''
+
+  let userId: string | null = null
+  if (token) {
+    const { data: userData, error: userError } = await adminDb.auth.getUser(token)
+    if (userError || !userData.user) {
+      return NextResponse.json({ error: '로그인이 필요합니다.' }, { status: 401 })
+    }
+    userId = userData.user.id
+  } else {
+    const { user } = await getSessionUser()
+    if (!user) return NextResponse.json({ error: '로그인이 필요합니다.' }, { status: 401 })
+    userId = user.id
+  }
 
   const body = await req.json()
   const { restaurantId, businessDate, batchId: existingBatchId, orderId: existingOrderId, items: rawItems, isSubmit } = body as {
@@ -48,6 +63,20 @@ export async function POST(req: NextRequest) {
   const kstNow = new Date(kstMs)
   const kstToday = kstNow.toISOString().split('T')[0]
   const kstMinutes = kstNow.getUTCHours() * 60 + kstNow.getUTCMinutes()
+
+  // 지난 날짜 발주 차단.
+  // 발주 화면은 오늘 아니면 내일만 만들어 보내므로(member/order/page.tsx) 지난 날짜는
+  // 정상 경로에서 나올 수 없다. 그런데 지난 날짜가 들어오면 그날 배치를 그대로 재사용해
+  // order_items 를 전부 지우고 명세서까지 갈아엎는다. 이미 정산·완납이 끝난 날이어도 막지
+  // 않았다 (2026-07-28 고강점 6/19 사고: 147,200원어치가 어제 발주 10줄로 교체됨).
+  // 과거 날짜를 손봐야 하면 어드민 경로로 해야 한다.
+  if (businessDate < kstToday) {
+    return NextResponse.json(
+      { error: '지난 날짜로는 발주할 수 없습니다.' },
+      { status: 400 },
+    )
+  }
+
   if (kstMinutes >= 240 && businessDate === kstToday) {
     return NextResponse.json({ error: '발주 마감 시간(04:00)이 지났습니다.' }, { status: 403 })
   }
@@ -68,8 +97,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: '발주할 품목을 1개 이상 선택해주세요.' }, { status: 400 })
   }
 
-  const adminDb = createAdminClient()
-
   // 회원이 속한 업체의 식당인지 검증한다. 이 검증 전에 adminDb로 주문을 수정하면 안 된다.
   const { data: restaurant } = await adminDb
     .from('restaurants')
@@ -81,10 +108,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: '식당 정보를 확인할 수 없습니다.' }, { status: 404 })
   }
 
-  const { data: membership } = await supabase
+  const { data: membership } = await adminDb
     .from('memberships')
     .select('organization_id')
-    .eq('user_id', user.id)
+    .eq('user_id', userId)
     .eq('organization_id', restaurant.organization_id)
     .maybeSingle()
 
@@ -207,6 +234,9 @@ export async function POST(req: NextRequest) {
       if (orderError) return NextResponse.json({ error: `주문 생성 실패: ${orderError.message}` }, { status: 500 })
       orderId = order.id
     }
+
+    // 지우기 전에 보관해 둔다. 다른 날 발주를 덮어쓰는 사고가 나도 되살릴 수 있어야 한다.
+    await archiveOrderItems(adminDb, orderId)
 
     // 기존 아이템 삭제 전 FK 제약 해제 (dispatch_job_items, daily_spec_lines)
     const { data: existingItems } = await adminDb
