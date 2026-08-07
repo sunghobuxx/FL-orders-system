@@ -69,6 +69,12 @@ export default async function AdminWorkNotesPage() {
                       <span className="text-xs text-gray-400 shrink-0">
                         {new Date(note.created_at).toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul', month: '2-digit', day: '2-digit' })}
                       </span>
+                      <Link
+                        href={`/admin/inquiries/work-notes/${note.id}/edit`}
+                        className="shrink-0 rounded-lg border border-gray-300 text-gray-600 px-3 py-1 text-xs font-semibold hover:bg-gray-50"
+                      >
+                        수정
+                      </Link>
                     </div>
                     {note.content && (
                       <p className="mt-1.5 text-sm text-gray-600 whitespace-pre-wrap">{note.content}</p>
