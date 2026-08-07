@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { getSessionUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { SupplyRiskSection } from './SupplyRiskSection'
+import SupplyRiskSection from './SupplyRiskSection'
 
 export default async function MemberDashboardPage() {
   const { user, supabase } = await getSessionUser()

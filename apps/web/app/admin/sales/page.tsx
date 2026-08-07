@@ -6,6 +6,7 @@ import { getSessionUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { fetchAll } from '@/lib/supabase/fetch-all'
 import { buildPurchaseCostResolver } from '@/lib/pricing/purchase-cost'
+import MarketPriceSection from './MarketPriceSection'
 import AdminSettlementShell from '@/app/admin/settlement/AdminSettlementShell'
 import { getKstToday } from '@/lib/date-kst'
 
@@ -246,6 +247,9 @@ export default async function AdminSalesPage({ searchParams }: Props) {
             )}
           </div>
         )}
+
+        {/* 시세 추이 — 우리 단가와 가락시장 평균 비교 */}
+        <MarketPriceSection />
 
         {/* Summary cards */}
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
