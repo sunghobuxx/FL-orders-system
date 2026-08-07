@@ -70,7 +70,7 @@ export default async function AdminWorkNotesPage() {
                         {new Date(note.created_at).toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul', month: '2-digit', day: '2-digit' })}
                       </span>
                       <Link
-                        href={`/admin/inquiries/work-notes/${note.id}/edit`}
+                        href={`/admin/inquiries/work-notes/edit?id=${note.id}`}
                         className="shrink-0 rounded-lg border border-gray-300 text-gray-600 px-3 py-1 text-xs font-semibold hover:bg-gray-50"
                       >
                         수정

@@ -57,7 +57,7 @@ export async function updateWorkNote(formData: FormData) {
   const content = String(formData.get('content') ?? '').trim()
 
   function failEdit(message: string): never {
-    redirect(`/admin/inquiries/work-notes/${id}/edit?error=` + encodeURIComponent(message))
+    redirect(`/admin/inquiries/work-notes/edit?id=${id}&error=` + encodeURIComponent(message))
   }
 
   if (!id) fail('전달사항을 찾을 수 없습니다')

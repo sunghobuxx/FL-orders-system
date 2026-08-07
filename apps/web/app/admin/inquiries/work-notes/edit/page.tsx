@@ -5,17 +5,27 @@ import { notFound } from 'next/navigation'
 
 import { requireAuthorizedAdminDb } from '@/lib/admin-member-user'
 import { DRIVER_NOTE_CATEGORY } from '@/lib/driver-api'
-import AdminNoticesShell from '../../../../notices/AdminNoticesShell'
-import { updateWorkNote } from '../../actions'
+import AdminNoticesShell from '../../../notices/AdminNoticesShell'
+import { updateWorkNote } from '../actions'
+
+/**
+ * 전달사항 수정.
+ *
+ * id 를 경로가 아니라 쿼리로 받는다. `[id]/edit` 로 두면 **수정 저장이 404 로 죽는다.**
+ * Cloudflare Pages 에서 대괄호 동적 경로로 가는 서버 액션 POST 가 404 가 되기 때문이다.
+ * 화면을 여는 GET 은 멀쩡해서 눈으로는 멀쩡해 보이고, 저장할 때만 터진다.
+ * (2026-08-08 확인: /work-notes/new 같은 정적 경로의 액션은 정상,
+ *  /work-notes/[id]/edit 은 POST 404 → 화면에 "오류가 발생했습니다")
+ * 같은 이유로 deploy.yml 에도 대괄호 경로 패치 단계가 따로 있다.
+ */
 
 interface Props {
-  params: Promise<{ id: string }>
-  searchParams: Promise<{ error?: string }>
+  searchParams: Promise<{ id?: string; error?: string }>
 }
 
-export default async function EditWorkNotePage({ params, searchParams }: Props) {
-  const { id } = await params
-  const { error } = await searchParams
+export default async function EditWorkNotePage({ searchParams }: Props) {
+  const { id, error } = await searchParams
+  if (!id) notFound()
 
   // 목록은 service role 로 읽기만 하지만 고치는 화면은 권한을 본다.
   const db = await requireAuthorizedAdminDb()
