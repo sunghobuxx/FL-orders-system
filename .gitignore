@@ -37,3 +37,6 @@ pnpm-debug.log*
 
 # Supabase
 supabase/.temp
+
+# 앱 빌드 산출물 (ipa/aab/apk). 170MB 라 리포에 넣지 않는다.
+apps/mobile/builds/

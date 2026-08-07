@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useFocusEffect } from 'expo-router'
 import {
   ActivityIndicator,
   Alert,
@@ -13,10 +14,11 @@ import {
 } from 'react-native'
 
 import { supabase } from '@/lib/supabase'
+import { MEMBER_API_URL } from '@/lib/member-api'
 
-type Product = { id: string; standard_name: string; default_unit: string }
+type Product = { id: string; standard_name: string; default_unit: string; category: string | null }
 type Batch = { id: string; business_date: string; status: string }
-type BatchState = { batch: Batch | null; quantities: Record<string, string> }
+type BatchState = { batch: Batch | null; businessDate: string; quantities: Record<string, string> }
 type BatchItem = { product_name: string; qty: number; unit: string }
 
 const STEPS = [
@@ -44,8 +46,41 @@ const STATUS_COLORS: Record<string, string> = {
   completed: '#6b7280',
 }
 
+const CATEGORY_LABELS: Record<string, string> = {
+  vegetable: '채소',
+  fruit: '과일',
+  grain: '곡류',
+  meat: '육류',
+  seafood: '수산',
+  dairy: '유제품',
+  seasoning: '양념',
+  etc: '기타',
+}
+
+const CATEGORY_EMOJI: Record<string, string> = {
+  vegetable: '🥬',
+  fruit: '🍎',
+  grain: '🌾',
+  meat: '🥩',
+  seafood: '🐟',
+  dairy: '🥛',
+  seasoning: '🧄',
+  etc: '📦',
+}
+
+const CATEGORY_ORDER = ['vegetable', 'fruit', 'grain', 'meat', 'seafood', 'dairy', 'seasoning', 'etc']
+
 function todayKst() {
   return new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().split('T')[0]
+}
+
+function tomorrowKst() {
+  return new Date(Date.now() + 9 * 60 * 60 * 1000 + 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+}
+
+function isAfterOrderCutoff() {
+  const now = new Date(Date.now() + 9 * 60 * 60 * 1000)
+  return now.getUTCHours() * 60 + now.getUTCMinutes() >= 240
 }
 
 function statusStep(status?: string | null) {
@@ -63,9 +98,14 @@ export default function OrderScreen() {
   const [restaurantId, setRestaurantId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [products, setProducts] = useState<Product[]>([])
+  const [selectedCategory, setSelectedCategory] = useState('vegetable')
+  const [unitPrices, setUnitPrices] = useState<Record<string, number>>({})
   const [quantities, setQuantities] = useState<Record<string, string>>({})
   const [submitting, setSubmitting] = useState(false)
   const [todayBatch, setTodayBatch] = useState<Batch | null>(null)
+  const [businessDate, setBusinessDate] = useState(todayKst())
+  const activeBatchRef = useRef<Batch | null>(null)
+  const activeDateRef = useRef(businessDate)
   const [history, setHistory] = useState<Batch[]>([])
   const [refreshing, setRefreshing] = useState(false)
   const [expandedBatch, setExpandedBatch] = useState<string | null>(null)
@@ -75,7 +115,7 @@ export default function OrderScreen() {
   const loadProducts = useCallback(async (restId: string) => {
     const { data: rows } = await supabase
       .from('restaurant_products')
-      .select('products(id, standard_name, default_unit)')
+      .select('products(id, standard_name, default_unit, category)')
       .eq('restaurant_id', restId)
       .order('display_order')
 
@@ -84,21 +124,55 @@ export default function OrderScreen() {
       .filter(Boolean) as Product[]
   }, [])
 
+  const loadUnitPrices = useCallback(async (restId: string, date: string) => {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session?.access_token) return {}
+
+    try {
+      const params = new URLSearchParams({ restaurantId: restId, businessDate: date })
+      const response = await fetch(`${MEMBER_API_URL}/api/member/product-prices?${params}`, {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      })
+      const payload = await response.json() as { prices?: Record<string, number>; error?: string }
+      if (!response.ok) throw new Error(payload.error ?? '단가를 불러오지 못했습니다.')
+      return payload.prices ?? {}
+    } catch (error) {
+      // 단가 API가 잠시 끊겨도 Expo 개발 오류 화면이 발주 화면을 덮지 않게 한다.
+      // 목록은 계속 사용할 수 있고, 새로고침 시 단가를 다시 조회한다.
+      if (__DEV__) console.log('Failed to load unit prices:', error)
+      return {}
+    }
+  }, [])
+
   const loadToday = useCallback(async (restId: string): Promise<BatchState> => {
-    const date = todayKst()
-    const { data: batch } = await supabase
+    const today = todayKst()
+    const { data: currentBatch } = await supabase
       .from('order_batches')
       .select('id, business_date, status')
       .eq('restaurant_id', restId)
-      .eq('business_date', date)
+      .eq('business_date', today)
       .maybeSingle()
 
+    const targetDate =
+      (currentBatch && !['open', 'submitted'].includes(currentBatch.status)) || isAfterOrderCutoff()
+        ? tomorrowKst()
+        : today
+
+    const { data: targetBatch } = targetDate === today
+      ? { data: currentBatch }
+      : await supabase
+        .from('order_batches')
+        .select('id, business_date, status')
+        .eq('restaurant_id', restId)
+        .eq('business_date', targetDate)
+        .maybeSingle()
+
     const qtyMap: Record<string, string> = {}
-    if (batch) {
+    if (targetBatch) {
       const { data: order } = await supabase
         .from('orders')
         .select('id')
-        .eq('batch_id', batch.id)
+        .eq('batch_id', targetBatch.id)
         .maybeSingle()
 
       if (order) {
@@ -113,7 +187,7 @@ export default function OrderScreen() {
       }
     }
 
-    return { batch: batch as Batch | null, quantities: qtyMap }
+    return { batch: targetBatch as Batch | null, businessDate: targetDate, quantities: qtyMap }
   }, [])
 
   const loadHistory = useCallback(async (restId: string) => {
@@ -133,11 +207,34 @@ export default function OrderScreen() {
       loadToday(restId),
       loadHistory(restId),
     ])
+    const prices = await loadUnitPrices(restId, current.businessDate)
     setProducts(productRows)
+    setUnitPrices(prices)
+    activeBatchRef.current = current.batch
+    activeDateRef.current = current.businessDate
     setTodayBatch(current.batch)
+    setBusinessDate(current.businessDate)
     setQuantities(current.quantities)
     setHistory(batches)
-  }, [loadHistory, loadProducts, loadToday])
+  }, [loadHistory, loadProducts, loadToday, loadUnitPrices])
+
+  const syncActiveOrder = useCallback(async (restId: string) => {
+    const current = await loadToday(restId)
+    const previous = activeBatchRef.current
+    const changed =
+      current.businessDate !== activeDateRef.current ||
+      current.batch?.id !== previous?.id ||
+      current.batch?.status !== previous?.status
+
+    if (!changed) return
+
+    activeBatchRef.current = current.batch
+    activeDateRef.current = current.businessDate
+    setTodayBatch(current.batch)
+    setBusinessDate(current.businessDate)
+    setQuantities(current.quantities)
+    setUnitPrices(await loadUnitPrices(restId, current.businessDate))
+  }, [loadToday, loadUnitPrices])
 
   const loadBatchItems = useCallback(async (batchId: string) => {
     if (batchItems[batchId]) return
@@ -204,56 +301,33 @@ export default function OrderScreen() {
 
     setSubmitting(true)
     try {
-      const businessDate = todayKst()
-      const submittedAt = new Date().toISOString()
-      let batchId = todayBatch?.id
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) throw new Error('로그인 세션이 만료되었습니다. 다시 로그인해주세요.')
 
-      if (!batchId) {
-        const { data: newBatch, error } = await supabase
-          .from('order_batches')
-          .insert({ restaurant_id: restaurantId, business_date: businessDate, status: 'open' })
-          .select('id')
-          .single()
-        if (error || !newBatch) throw error
-        batchId = newBatch.id
-      }
-
-      const { data: existingOrder } = await supabase
-        .from('orders')
-        .select('id')
-        .eq('batch_id', batchId)
-        .maybeSingle()
-
-      let orderId = existingOrder?.id
-      if (!orderId) {
-        const { data: order, error } = await supabase
-          .from('orders')
-          .insert({ batch_id: batchId, order_no: `FL-${Date.now()}`, source_type: 'web', version: 1 })
-          .select('id')
-          .single()
-        if (error || !order) throw error
-        orderId = order.id
-      } else {
-        const { error } = await supabase.from('order_items').delete().eq('order_id', orderId)
-        if (error) throw error
-      }
-
-      const rows = selected.map((product) => ({
-        order_id: orderId,
+      const items = selected.map((product) => ({
         product_id: product.id,
         qty: Number(quantities[product.id]),
         unit: product.default_unit,
-        unit_price_snapshot: 0,
+        unit_price_snapshot: unitPrices[product.id] ?? 0,
+        memo: '',
       }))
 
-      const { error: itemError } = await supabase.from('order_items').insert(rows)
-      if (itemError) throw itemError
-
-      const { error: batchError } = await supabase
-        .from('order_batches')
-        .update({ status: 'submitted', submitted_at: submittedAt })
-        .eq('id', batchId)
-      if (batchError) throw batchError
+      const response = await fetch(`${MEMBER_API_URL}/api/member/orders`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          restaurantId,
+          businessDate,
+          batchId: todayBatch?.id ?? null,
+          items,
+          isSubmit: true,
+        }),
+      })
+      const payload = await response.json() as { error?: string }
+      if (!response.ok) throw new Error(payload.error ?? '발주 제출에 실패했습니다.')
 
       Alert.alert('발주 완료', '발주가 제출되었습니다.', [
         {
@@ -264,12 +338,12 @@ export default function OrderScreen() {
           },
         },
       ])
-    } catch {
-      Alert.alert('오류', '발주 제출에 실패했습니다.')
+    } catch (error) {
+      Alert.alert('오류', error instanceof Error ? error.message : '발주 제출에 실패했습니다.')
     } finally {
       setSubmitting(false)
     }
-  }, [products, quantities, reload, restaurantId, todayBatch])
+  }, [businessDate, products, quantities, reload, restaurantId, todayBatch, unitPrices])
 
   useEffect(() => {
     async function init() {
@@ -299,6 +373,30 @@ export default function OrderScreen() {
     init().finally(() => setLoading(false))
   }, [reload])
 
+  useFocusEffect(useCallback(() => {
+    if (!restaurantId) return
+
+    void reload(restaurantId)
+    const interval = setInterval(() => {
+      void syncActiveOrder(restaurantId)
+    }, 30_000)
+
+    return () => clearInterval(interval)
+  }, [reload, restaurantId, syncActiveOrder]))
+
+  const availableCategories = useMemo(() => {
+    const productCategories = [...new Set(products.map((product) => product.category ?? 'etc'))]
+    const known = CATEGORY_ORDER.filter((category) => productCategories.includes(category))
+    const extra = productCategories.filter((category) => !CATEGORY_ORDER.includes(category)).sort()
+    return [...known, ...extra]
+  }, [products])
+
+  useEffect(() => {
+    if (availableCategories.length > 0 && !availableCategories.includes(selectedCategory)) {
+      setSelectedCategory(availableCategories[0])
+    }
+  }, [availableCategories, selectedCategory])
+
   if (loading) {
     return (
       <View style={s.center}>
@@ -311,6 +409,11 @@ export default function OrderScreen() {
     const qty = quantities[product.id]
     return qty && Number(qty) > 0
   })
+  const categoryProducts = products.filter((product) => (product.category ?? 'etc') === selectedCategory)
+  const countInCategory = (category: string) => products.filter((product) => {
+    if ((product.category ?? 'etc') !== category) return false
+    return Number(quantities[product.id] ?? 0) > 0
+  }).length
   const currentStep = statusStep(todayBatch?.status)
   const submittedLocked = !!todayBatch && todayBatch.status !== 'open'
 
@@ -334,14 +437,48 @@ export default function OrderScreen() {
           >
             {submittedLocked && (
               <View style={s.infoBox}>
-                <Text style={s.infoText}>오늘 발주가 이미 제출되었습니다. ({STATUS_LABELS[todayBatch.status]})</Text>
+                <Text style={s.infoText}>{businessDate} 발주가 이미 제출되었습니다. ({STATUS_LABELS[todayBatch.status]})</Text>
               </View>
             )}
 
             <View style={s.card}>
-              <Text style={s.cardTitle}>오늘 발주 입력</Text>
-              <Text style={s.cardSub}>{todayKst()}</Text>
-              {products.length !== 0 ? products.map((product) => (
+              <Text style={s.cardTitle}>{businessDate === todayKst() ? '오늘 발주 입력' : '다음날 발주 입력'}</Text>
+              <Text style={s.cardSub}>{businessDate}</Text>
+              {products.length !== 0 && (
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  style={s.categoryScroll}
+                  contentContainerStyle={s.categoryBar}
+                >
+                  {availableCategories.map((category) => {
+                    const active = category === selectedCategory
+                    const count = countInCategory(category)
+                    return (
+                      <TouchableOpacity
+                        key={category}
+                        style={[s.categoryBtn, active && s.categoryBtnActive]}
+                        onPress={() => setSelectedCategory(category)}
+                        activeOpacity={0.75}
+                      >
+                        <Text style={s.categoryEmoji}>{CATEGORY_EMOJI[category] ?? '📦'}</Text>
+                        <Text style={[s.categoryLabel, active && s.categoryLabelActive]}>
+                          {CATEGORY_LABELS[category] ?? category}
+                        </Text>
+                        {count > 0 && (
+                          <View style={s.categoryBadge}>
+                            <Text style={s.categoryBadgeText}>{count}</Text>
+                          </View>
+                        )}
+                      </TouchableOpacity>
+                    )
+                  })}
+                </ScrollView>
+              )}
+              {products.length !== 0 && categoryProducts.length === 0 && (
+                <Text style={[s.empty, { marginTop: 24, marginBottom: 24 }]}>이 카테고리에 품목이 없습니다.</Text>
+              )}
+              {products.length !== 0 ? categoryProducts.map((product) => (
                 <View key={product.id} style={s.productRow}>
                   <View style={{ flex: 1 }}>
                     <Text style={s.productName}>{product.standard_name}</Text>
@@ -357,6 +494,14 @@ export default function OrderScreen() {
                     editable={!submittedLocked}
                   />
                   <Text style={s.unitLabel}>{product.default_unit}</Text>
+                  <View style={s.priceBox}>
+                    <Text style={s.priceLabel}>단가</Text>
+                    <Text style={s.priceValue}>
+                      {unitPrices[product.id] > 0
+                        ? `${Math.round(unitPrices[product.id]).toLocaleString('ko-KR')}원`
+                        : '-'}
+                    </Text>
+                  </View>
                 </View>
               )) : (
                 <Text style={s.empty}>발주 가능한 품목이 없습니다.{'\n'}관리자에게 문의해주세요.</Text>
@@ -418,7 +563,7 @@ export default function OrderScreen() {
               </View>
             </>
           ) : (
-            <Text style={s.empty}>오늘 제출된 발주가 없습니다.{'\n'}발주 입력 탭에서 발주를 제출해주세요.</Text>
+            <Text style={s.empty}>{businessDate} 제출된 발주가 없습니다.{'\n'}발주 입력 탭에서 발주를 제출해주세요.</Text>
           )}
           <View style={{ height: 40 }} />
         </ScrollView>
@@ -476,12 +621,24 @@ const s = StyleSheet.create({
   card: { backgroundColor: '#fff', margin: 12, borderRadius: 12, padding: 16, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 4, elevation: 2 },
   cardTitle: { fontSize: 16, fontWeight: '700', color: '#111', marginBottom: 4 },
   cardSub: { fontSize: 13, color: '#9ca3af', marginBottom: 16 },
+  categoryScroll: { marginHorizontal: -16, borderTopWidth: 1, borderBottomWidth: 1, borderColor: '#e5e7eb', marginBottom: 4 },
+  categoryBar: { paddingHorizontal: 8 },
+  categoryBtn: { position: 'relative', minWidth: 68, paddingHorizontal: 12, paddingVertical: 10, alignItems: 'center', borderBottomWidth: 2, borderBottomColor: 'transparent' },
+  categoryBtnActive: { backgroundColor: '#f0fdf4', borderBottomColor: '#16a34a' },
+  categoryEmoji: { fontSize: 21, marginBottom: 2 },
+  categoryLabel: { fontSize: 12, fontWeight: '600', color: '#6b7280' },
+  categoryLabelActive: { color: '#15803d', fontWeight: '700' },
+  categoryBadge: { position: 'absolute', top: 5, right: 5, minWidth: 17, height: 17, paddingHorizontal: 4, borderRadius: 9, backgroundColor: '#16a34a', alignItems: 'center', justifyContent: 'center' },
+  categoryBadgeText: { color: '#fff', fontSize: 10, fontWeight: '800' },
   infoBox: { margin: 12, marginBottom: 0, backgroundColor: '#fef3c7', borderRadius: 8, padding: 12 },
   infoText: { fontSize: 13, color: '#92400e' },
   productRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#f3f4f6' },
   productName: { fontSize: 15, fontWeight: '600', color: '#111' },
   productUnit: { fontSize: 12, color: '#9ca3af', marginTop: 2 },
   qtyInput: { width: 64, borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6, fontSize: 16, textAlign: 'center', color: '#111', backgroundColor: '#f9fafb' },
+  priceBox: { width: 82, alignItems: 'flex-end', marginLeft: 8 },
+  priceLabel: { fontSize: 10, color: '#9ca3af', marginBottom: 1 },
+  priceValue: { fontSize: 13, fontWeight: '700', color: '#374151' },
   unitLabel: { fontSize: 13, color: '#6b7280', marginLeft: 6, width: 28 },
   submitBtn: { backgroundColor: '#16a34a', marginHorizontal: 12, marginTop: 12, borderRadius: 12, paddingVertical: 16, alignItems: 'center' },
   submitBtnDisabled: { opacity: 0.5 },

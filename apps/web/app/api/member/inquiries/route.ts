@@ -9,15 +9,38 @@ const MAX_FILES = 5
 const MAX_FILE_SIZE = 10 * 1024 * 1024
 
 export async function POST(req: NextRequest) {
-  const { user, supabase } = await getSessionUser()
-  if (!user) return NextResponse.json({ error: '로그인이 필요합니다.' }, { status: 401 })
+  const db = createAdminClient()
+  const auth = req.headers.get('Authorization')
+  const token = auth?.startsWith('Bearer ') ? auth.slice(7) : ''
 
-  const { data: membership } = await supabase
-    .from('memberships')
-    .select('organization_id')
-    .eq('user_id', user.id)
-    .maybeSingle()
-  if (!membership?.organization_id) {
+  let userId: string | null = null
+  let organizationId: string | null = null
+
+  if (token) {
+    const { data: userData, error: userError } = await db.auth.getUser(token)
+    if (userError || !userData.user) {
+      return NextResponse.json({ error: '로그인이 필요합니다.' }, { status: 401 })
+    }
+    userId = userData.user.id
+    const { data: membership } = await db
+      .from('memberships')
+      .select('organization_id')
+      .eq('user_id', userId)
+      .maybeSingle()
+    organizationId = membership?.organization_id ?? null
+  } else {
+    const { user, supabase } = await getSessionUser()
+    if (!user) return NextResponse.json({ error: '로그인이 필요합니다.' }, { status: 401 })
+    userId = user.id
+    const { data: membership } = await supabase
+      .from('memberships')
+      .select('organization_id')
+      .eq('user_id', user.id)
+      .maybeSingle()
+    organizationId = membership?.organization_id ?? null
+  }
+
+  if (!userId || !organizationId) {
     return NextResponse.json({ error: '업체 정보를 확인할 수 없습니다.' }, { status: 403 })
   }
 
@@ -48,13 +71,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: '첨부파일은 10MB 이하의 이미지만 가능합니다.' }, { status: 400 })
   }
 
-  const db = createAdminClient()
   const imagePaths: string[] = []
   const uploadedPaths: string[] = []
 
   for (const file of files) {
     const safeExt = (file.name.split('.').pop() ?? 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg'
-    const path = `inquiries/${membership.organization_id}/${crypto.randomUUID()}.${safeExt}`
+    const path = `inquiries/${organizationId}/${crypto.randomUUID()}.${safeExt}`
     const { error: uploadError } = await db.storage.from('notices').upload(path, file, {
       contentType: file.type,
       upsert: false,
@@ -68,8 +90,8 @@ export async function POST(req: NextRequest) {
   }
 
   const { error: insertError } = await db.from('inquiries').insert({
-    organization_id: membership.organization_id,
-    user_id: user.id,
+    organization_id: organizationId,
+    user_id: userId,
     category: 'inquiry',
     status: 'open',
     title,

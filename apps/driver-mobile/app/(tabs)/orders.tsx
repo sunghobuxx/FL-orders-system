@@ -4,7 +4,6 @@ import { Alert, Pressable, RefreshControl, ScrollView, Text, View } from 'react-
 
 import { Card, Empty, Field, Loading, Muted, Page, colors } from '../../components'
 import { apiDelete, apiGet, apiPatch, apiPost } from '../../lib/api'
-import { fmtDateTime } from '../../lib/format'
 import { getKstToday } from '../../lib/format'
 
 type OrderRow = {
@@ -131,7 +130,7 @@ export default function OrdersScreen() {
 
               <View style={{ marginTop: 12, gap: 10 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <Text style={{ flex: 1, color: '#94A3B8', fontSize: 12, fontWeight: '700' }}>{fmtDateTime(order.submittedAt)}</Text>
+                  <Text style={{ flex: 1, color: '#64748B', fontSize: 12, fontWeight: '800' }}>배송일 {order.businessDate}</Text>
                   <View style={{ backgroundColor: badge.bg, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5 }}>
                     <Text style={{ color: badge.fg, fontSize: 12, fontWeight: '900' }}>{order.statusLabel}</Text>
                   </View>

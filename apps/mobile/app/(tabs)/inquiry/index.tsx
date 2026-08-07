@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
-import { router } from 'expo-router'
+import { router, useFocusEffect } from 'expo-router'
 import { supabase } from '@/lib/supabase'
 
 interface Inquiry {
@@ -10,8 +10,12 @@ interface Inquiry {
   created_at: string
 }
 
-const STATUS_LABEL: Record<string, string> = { pending: '대기', answered: '답변' }
-const STATUS_COLOR: Record<string, string> = { pending: '#f59e0b', answered: '#16a34a' }
+const STATUS_LABEL: Record<string, string> = {
+  open: '대기', pending: '대기', resolved: '답변', answered: '답변',
+}
+const STATUS_COLOR: Record<string, string> = {
+  open: '#f59e0b', pending: '#f59e0b', resolved: '#16a34a', answered: '#16a34a',
+}
 
 export default function InquiryListScreen() {
   const [loading, setLoading] = useState(true)
@@ -22,23 +26,29 @@ export default function InquiryListScreen() {
     const { data: { session } } = await supabase.auth.getSession()
     if (!session) { router.replace('/login'); return }
 
-    const { data: membership } = await supabase
-      .from('memberships').select('organizations(id)').eq('user_id', session.user.id).single()
-    const orgData = membership?.organizations
-    const org = (Array.isArray(orgData) ? orgData[0] : orgData) as { id: string } | undefined
-    if (!org) { setLoading(false); return }
+    const { data: membership, error: membershipError } = await supabase
+      .from('memberships')
+      .select('organization_id')
+      .eq('user_id', session.user.id)
+      .maybeSingle()
+    if (membershipError || !membership?.organization_id) {
+      if (membershipError) console.error('Failed to load membership:', membershipError)
+      setLoading(false)
+      return
+    }
 
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('inquiries')
       .select('id, title, status, created_at')
-      .eq('organization_id', org.id)
+      .eq('organization_id', membership.organization_id)
       .order('created_at', { ascending: false })
 
+    if (error) console.error('Failed to load inquiries:', error)
     setInquiries(data ?? [])
     setLoading(false)
   }, [])
 
-  useEffect(() => { load() }, [load])
+  useFocusEffect(useCallback(() => { void load() }, [load]))
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true)

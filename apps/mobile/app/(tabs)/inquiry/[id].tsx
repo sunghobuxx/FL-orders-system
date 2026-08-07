@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native'
+import { ActivityIndicator, Image, Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { useLocalSearchParams } from 'expo-router'
 import { supabase } from '@/lib/supabase'
 
@@ -9,12 +9,23 @@ interface Inquiry {
   content: string
   status: string
   created_at: string
-  answer?: string | null
-  answered_at?: string | null
+  reply?: string | null
+  replied_at?: string | null
+  image_paths?: string[] | null
 }
 
-const STATUS_LABEL: Record<string, string> = { pending: '대기중', answered: '답변완료' }
-const STATUS_COLOR: Record<string, string> = { pending: '#f59e0b', answered: '#16a34a' }
+const STATUS_LABEL: Record<string, string> = {
+  open: '대기중',
+  pending: '대기중',
+  resolved: '답변완료',
+  answered: '답변완료',
+}
+const STATUS_COLOR: Record<string, string> = {
+  open: '#f59e0b',
+  pending: '#f59e0b',
+  resolved: '#16a34a',
+  answered: '#16a34a',
+}
 
 export default function InquiryDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>()
@@ -24,10 +35,14 @@ export default function InquiryDetailScreen() {
   useEffect(() => {
     supabase
       .from('inquiries')
-      .select('id, title, content, status, created_at, answer, answered_at')
+      .select('id, title, content, status, created_at, reply, replied_at, image_paths')
       .eq('id', id)
       .single()
-      .then(({ data }) => { setInquiry(data); setLoading(false) })
+      .then(({ data, error }) => {
+        if (error) console.error('Failed to load inquiry:', error)
+        setInquiry(data)
+        setLoading(false)
+      })
   }, [id])
 
   if (loading) return <View style={s.center}><ActivityIndicator color="#16a34a" /></View>
@@ -51,22 +66,31 @@ export default function InquiryDetailScreen() {
         </View>
         <Text style={s.title}>{inquiry.title}</Text>
         <Text style={s.body}>{inquiry.content}</Text>
+        {!!inquiry.image_paths?.length && (
+          <View style={s.imageGrid}>
+            {inquiry.image_paths.map(path => (
+              <TouchableOpacity key={path} onPress={() => void Linking.openURL(path)}>
+                <Image source={{ uri: path }} style={s.image} />
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
       </View>
 
       {/* 답변 */}
-      {inquiry.answer ? (
+      {inquiry.reply ? (
         <View style={[s.card, s.answerCard]}>
           <View style={s.cardHeader}>
             <Text style={s.answerLabel}>📝 관리자 답변</Text>
-            {inquiry.answered_at && (
+            {inquiry.replied_at && (
               <Text style={s.date}>
-                {new Date(inquiry.answered_at).toLocaleDateString('ko-KR', {
+                {new Date(inquiry.replied_at).toLocaleDateString('ko-KR', {
                   timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit',
                 }).replace(/\. $/, '')}
               </Text>
             )}
           </View>
-          <Text style={s.body}>{inquiry.answer}</Text>
+          <Text style={s.body}>{inquiry.reply}</Text>
         </View>
       ) : (
         <View style={s.pendingBox}>
@@ -93,6 +117,8 @@ const s = StyleSheet.create({
   date: { fontSize: 12, color: '#9ca3af' },
   title: { fontSize: 16, fontWeight: '700', color: '#111', lineHeight: 24 },
   body: { fontSize: 14, color: '#374151', lineHeight: 22 },
+  imageGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 },
+  image: { width: 94, height: 94, borderRadius: 10, backgroundColor: '#e5e7eb' },
   answerLabel: { fontSize: 13, fontWeight: '700', color: '#16a34a' },
   pendingBox: {
     backgroundColor: '#fff', borderRadius: 14, borderWidth: 1,

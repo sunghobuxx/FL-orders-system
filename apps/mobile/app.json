@@ -2,7 +2,7 @@
   "expo": {
     "name": "FruitLife",
     "slug": "fruitlife",
-    "version": "1.0.2",
+    "version": "1.0.4",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "splash": {
@@ -13,16 +13,16 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.fruitlife.app",
-      "buildNumber": "2",
+      "buildNumber": "5",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSCameraUsageDescription": "카메라를 사용하지 않습니다.",
-        "NSPhotoLibraryUsageDescription": "사진 라이브러리를 사용하지 않습니다."
+        "NSPhotoLibraryUsageDescription": "문의 사진을 첨부하기 위해 사진 라이브러리에 접근합니다."
       }
     },
     "android": {
       "package": "com.fruitlife.order",
-      "versionCode": 5,
+      "versionCode": 8,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
@@ -35,7 +35,15 @@
     },
     "plugins": [
       "expo-router",
-      "expo-notifications"
+      "expo-notifications",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "문의 사진을 첨부하기 위해 사진 라이브러리에 접근합니다.",
+          "cameraPermission": false,
+          "microphonePermission": false
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

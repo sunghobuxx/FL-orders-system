@@ -1,6 +1,6 @@
 import { useFocusEffect } from 'expo-router'
 import * as Print from 'expo-print'
-import { useCallback, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { Alert, Pressable, RefreshControl, ScrollView, Text, View } from 'react-native'
 
 import { Card, Empty, Loading, Muted, Page, Pill, colors } from '../../components'
@@ -25,6 +25,8 @@ export default function SpecsScreen() {
   const [data, setData] = useState<SpecsResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+  const [printingSpecId, setPrintingSpecId] = useState<string | null>(null)
+  const printLockRef = useRef(false)
 
   const load = useCallback(async () => {
     const next = await apiGet<SpecsResponse>(`/api/driver/specs?mode=${mode}`)
@@ -43,11 +45,20 @@ export default function SpecsScreen() {
   }
 
   async function printSpec(spec: SpecsResponse['specs'][number]) {
+    if (printLockRef.current) return
+
+    printLockRef.current = true
+    setPrintingSpecId(spec.id)
     try {
       await Print.printAsync({ html: createSpecHtml(spec) })
     } catch (error) {
       const message = error instanceof Error ? error.message : '인쇄 화면을 열지 못했습니다.'
+      if (message.includes('Another print request is already in progress')) return
       Alert.alert('명세서 프린트', message)
+    } finally {
+      await new Promise((resolve) => setTimeout(resolve, 800))
+      printLockRef.current = false
+      setPrintingSpecId(null)
     }
   }
 
@@ -83,16 +94,19 @@ export default function SpecsScreen() {
             </View>
             <Pressable
               onPress={() => void printSpec(spec)}
+              disabled={printingSpecId !== null}
               style={({ pressed }) => ({
                 alignItems: 'center',
                 justifyContent: 'center',
                 marginTop: 12,
                 minHeight: 44,
                 borderRadius: 10,
-                backgroundColor: pressed ? '#111827' : '#1F2937',
+                backgroundColor: printingSpecId !== null ? '#9CA3AF' : pressed ? '#111827' : '#1F2937',
               })}
             >
-              <Text style={{ color: '#FFFFFF', fontSize: 14, fontWeight: '900' }}>명세서 프린트</Text>
+              <Text style={{ color: '#FFFFFF', fontSize: 14, fontWeight: '900' }}>
+                {printingSpecId === spec.id ? '인쇄 화면 여는 중...' : '명세서 프린트'}
+              </Text>
             </Pressable>
           </Card>
         ))}

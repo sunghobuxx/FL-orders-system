@@ -8,7 +8,7 @@ import { supabase } from '@/lib/supabase'
 interface Notice {
   id: string
   title: string
-  content: string
+  body: string
   created_at: string
 }
 
@@ -18,8 +18,12 @@ export default function NoticeDetailScreen() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    supabase.from('notices').select('id, title, content, created_at').eq('id', id).single()
-      .then(({ data }) => { setNotice(data); setLoading(false) })
+    supabase.from('notices').select('id, title, body, created_at').eq('id', id).single()
+      .then(({ data, error }) => {
+        if (error) console.error('Failed to load notice:', error)
+        setNotice(data)
+        setLoading(false)
+      })
   }, [id])
 
   if (loading) return <View style={s.center}><ActivityIndicator color="#16a34a" /></View>
@@ -32,7 +36,7 @@ export default function NoticeDetailScreen() {
         <Text style={s.date}>{new Date(notice.created_at).toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' })}</Text>
       </View>
       <View style={s.body}>
-        <Text style={s.content}>{notice.content}</Text>
+        <Text style={s.content}>{notice.body}</Text>
       </View>
     </ScrollView>
   )

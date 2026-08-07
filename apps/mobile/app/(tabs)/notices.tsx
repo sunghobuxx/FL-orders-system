@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import {
   ActivityIndicator,
   FlatList,
@@ -8,7 +8,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native'
-import { router } from 'expo-router'
+import { router, useFocusEffect } from 'expo-router'
 
 import { supabase } from '@/lib/supabase'
 
@@ -27,20 +27,22 @@ export default function NoticesScreen() {
   const [refreshing, setRefreshing] = useState(false)
 
   const fetchNotices = useCallback(async () => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('notices')
       .select('id, title, created_at')
       .order('created_at', { ascending: false })
+    if (error) console.error('Failed to load notices:', error)
     setNotices((data ?? []) as Notice[])
   }, [])
 
   const fetchInquiries = useCallback(async (organizationId?: string | null) => {
     if (!organizationId) return
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('inquiries')
       .select('id, title, status, created_at')
       .eq('organization_id', organizationId)
       .order('created_at', { ascending: false })
+    if (error) console.error('Failed to load inquiries:', error)
     setInquiries((data ?? []) as Inquiry[])
   }, [])
 
@@ -66,9 +68,9 @@ export default function NoticesScreen() {
     setRefreshing(false)
   }, [init])
 
-  useEffect(() => {
-    init().finally(() => setLoading(false))
-  }, [init])
+  useFocusEffect(useCallback(() => {
+    void init().finally(() => setLoading(false))
+  }, [init]))
 
   if (loading) {
     return (
@@ -128,8 +130,8 @@ export default function NoticesScreen() {
               <Text style={s.title} numberOfLines={2}>{item.title}</Text>
               <View style={s.footer}>
                 <Text style={s.date}>{dateText(item.created_at)}</Text>
-                <Text style={[s.badge, item.status === 'answered' ? s.answered : s.pending]}>
-                  {item.status === 'answered' ? '답변완료' : '대기중'}
+                <Text style={[s.badge, ['answered', 'resolved'].includes(item.status) ? s.answered : s.pending]}>
+                  {['answered', 'resolved'].includes(item.status) ? '답변완료' : '대기중'}
                 </Text>
               </View>
             </TouchableOpacity>
