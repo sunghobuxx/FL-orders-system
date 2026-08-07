@@ -54,20 +54,12 @@ export async function createNotice(formData: FormData) {
   redirect(`/admin/notices/${notice.id}`)
 }
 
-export async function deleteNotice(id: string): Promise<{ error?: string }> {
-  const adminDb = await getAuthorizedAdminDb()
-  if (!adminDb) return { error: '권한이 없습니다' }
-  const { error } = await adminDb.from('notices').delete().eq('id', id)
-  if (error) return { error: error.message }
-  revalidatePath('/admin/notices')
-  return {}
-}
-
-export async function updateNotice(id: string, title: string, body: string): Promise<{ error?: string }> {
-  const adminDb = await getAuthorizedAdminDb()
-  if (!adminDb) return { error: '권한이 없습니다' }
-  const { error } = await adminDb.from('notices').update({ title: title.trim(), body: body.trim() }).eq('id', id)
-  if (error) return { error: error.message }
-  revalidatePath(`/admin/notices/${id}`)
-  return {}
-}
+// 공지 수정·삭제는 여기 두지 않는다. PUT/DELETE /api/admin/notices/[id] 를 쓴다.
+//
+// 서버 액션은 그 화면의 주소로 POST 하는데, 공지 상세·수정은 /admin/notices/[id] 라
+// 대괄호 경로다. Cloudflare Pages 에서는 대괄호 경로로 가는 서버 액션 POST 가 404 가
+// 된다. 화면을 여는 GET 은 멀쩡해서 저장을 눌러야 터지고, 브라우저에는
+// "오류가 발생했습니다" 만 뜬다 (2026-08-08 실측: 수정이 404, DB 반영 안 됨).
+//
+// 대괄호 **API 라우트**는 정상이다. 같은 파일의 SMS 발송이 그 방식으로 잘 돌고 있었다.
+// 작성(createNotice)은 /admin/notices/new 라 정적 경로여서 서버 액션 그대로 둔다.
