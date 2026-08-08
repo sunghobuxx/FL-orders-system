@@ -279,6 +279,10 @@ export interface DispatchEditableRow {
   productId: string
   productName: string
   restaurantName: string
+  /** 확인 버튼용. dispatch_job_items.id 가 아니라 발주 품목 id 다. */
+  orderItemId: string
+  /** 0 미확인 / 1 상차확인 / 2 배송확인 */
+  checkStage: number
 }
 
 export async function getDispatchJobItemRows(adminDb: any, jobId: string): Promise<DispatchEditableRow[]> {
@@ -286,7 +290,7 @@ export async function getDispatchJobItemRows(adminDb: any, jobId: string): Promi
     .from('dispatch_job_items')
     // is_excluded 로 거르지 않는다. 제외한 줄도 화면에 0 으로 보여야 되돌릴 수 있다.
     // 문자 본문은 buildLinesFromDispatchJob 이 따로 걸러 만든다.
-    .select('id, qty, qty_overridden, is_excluded, order_items(qty, product_id, unit, products(standard_name), orders(order_batches(restaurants(organizations(name)))))')
+    .select('id, qty, qty_overridden, is_excluded, order_item_id, order_items(qty, product_id, unit, check_stage, products(standard_name), orders(order_batches(status, restaurants(organizations(name)))))')
     .eq('dispatch_job_id', jobId)
 
   return (rows ?? [])
@@ -303,6 +307,8 @@ export async function getDispatchJobItemRows(adminDb: any, jobId: string): Promi
         productId: oi.product_id,
         productName: oi.products?.standard_name ?? '품목',
         restaurantName: oi.orders?.order_batches?.restaurants?.organizations?.name ?? '',
+        orderItemId: row.order_item_id,
+        checkStage: Number(oi.check_stage ?? 0),
       }
     })
 }

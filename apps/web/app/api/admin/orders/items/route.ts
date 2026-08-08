@@ -103,8 +103,8 @@ export async function DELETE(req: NextRequest) {
  * 이 줄의 수량을 발주 수량으로 되돌리지 않는다.
  * qty 를 null 로 보내면 수정을 취소하고 발주 수량으로 돌아간다.
  *
- * 라우트를 따로 두지 않고 여기 붙인 이유: Cloudflare Worker 3 MiB 한계에
- * 걸려 라우트 하나를 더 만들 여유가 없다.
+ * (예전에는 Cloudflare Worker 3 MiB 한계 때문에 라우트를 못 늘렸다. 유료 전환으로
+ * 풀렸으니 새 기능은 라우트를 따로 만들어도 된다.)
  */
 export async function PATCH(req: NextRequest) {
   try {

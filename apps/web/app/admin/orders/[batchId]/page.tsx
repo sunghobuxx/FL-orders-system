@@ -48,12 +48,12 @@ export default async function BatchDetailPage({ params }: Props) {
     .limit(1)
     .maybeSingle()
 
-  type Item = { id: string; product_id: string; qty: number; unit: string; unit_price_snapshot: number; products: { standard_name: string } }
+  type Item = { id: string; product_id: string; qty: number; unit: string; unit_price_snapshot: number; check_stage: number; products: { standard_name: string } }
   let items: Item[] = []
   if (order) {
     const { data } = await adminDb
       .from('order_items')
-      .select('id, product_id, qty, unit, unit_price_snapshot, products(standard_name)')
+      .select('id, product_id, qty, unit, unit_price_snapshot, check_stage, products(standard_name)')
       .eq('order_id', order.id)
     items = (data ?? []) as unknown as Item[]
   }
@@ -93,6 +93,7 @@ export default async function BatchDetailPage({ params }: Props) {
       qty: Number(item.qty),
       unit: item.unit,
       unit_price_snapshot: displayPrice,
+      check_stage: Number(item.check_stage ?? 0),
     }
   })
 

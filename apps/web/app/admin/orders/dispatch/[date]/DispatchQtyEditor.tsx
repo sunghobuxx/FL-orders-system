@@ -33,6 +33,41 @@ export default function DispatchQtyEditor({ groups }: { groups: Group[] }) {
   const [saving, setSaving] = useState<string | null>(null)
   const [error, setError] = useState('')
 
+  // 상차 확인. 배송매니저가 공급처별 내역을 보면서 실으므로 여기서 바로 체크한다.
+  // **1 단계(상차 → 배송중)에만 쓴다.** 배송완료로 넘기는 2 단계 확인은 업체별 발주
+  // 화면에서 한다 — 여기서는 어느 업체 물건인지만 보이고 배송 여부는 알 수 없다.
+  const [checked, setChecked] = useState<Record<string, number>>(
+    Object.fromEntries(groups.flatMap(g => g.rows.map(r => [r.orderItemId, Number(r.checkStage ?? 0)])))
+  )
+  const [checking, setChecking] = useState<string | null>(null)
+
+  async function toggleCheck(row: DispatchEditableRow) {
+    if (checking) return
+    const cur = checked[row.orderItemId] ?? 0
+    // 이미 2 단계까지 간 품목은 여기서 되돌리지 않는다. 배송이 끝난 걸 상차 화면에서
+    // 풀어 버리면 배치 상태와 어긋난다.
+    if (cur >= 2) return
+    const next = cur >= 1 ? 0 : 1
+
+    setChecking(row.orderItemId)
+    setChecked(prev => ({ ...prev, [row.orderItemId]: next }))
+    try {
+      const res = await fetch('/api/admin/orders/check-items', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ itemIds: [row.orderItemId], stage: next }),
+      })
+      const data = await res.json() as { error?: string }
+      if (!res.ok) throw new Error(data.error ?? '확인 처리 실패')
+      router.refresh()
+    } catch (e) {
+      setChecked(prev => ({ ...prev, [row.orderItemId]: cur }))
+      setError(e instanceof Error ? e.message : '확인 처리 실패')
+    } finally {
+      setChecking(null)
+    }
+  }
+
   // 뺀 줄은 0 으로 보여 준다. 0 을 입력하면 문자에서 빠지고, 숫자를 넣으면 되살아난다.
   function qtyOf(row: DispatchEditableRow) {
     return edited[row.id] ?? (row.excluded ? 0 : row.qty)
@@ -126,6 +161,21 @@ export default function DispatchQtyEditor({ groups }: { groups: Group[] }) {
                           : 'border-gray-200 text-gray-700'}`}
                     />
                     <span className="text-xs text-gray-400 w-10">{row.unit}</span>
+
+                    {/* 상차 확인 — 전 품목이 확인되면 그 업체 발주가 «배송중» 이 된다 */}
+                    <button
+                      type="button"
+                      onClick={() => toggleCheck(row)}
+                      disabled={checking === row.orderItemId || (checked[row.orderItemId] ?? 0) >= 2}
+                      title={(checked[row.orderItemId] ?? 0) >= 2 ? '배송까지 확인된 품목입니다' : '상차 확인'}
+                      className={`shrink-0 text-[11px] px-2 py-1 rounded-md font-semibold transition-colors disabled:opacity-60 ${
+                        (checked[row.orderItemId] ?? 0) >= 1
+                          ? 'bg-green-500 text-white'
+                          : 'bg-brand-600 text-white hover:bg-brand-700'
+                      }`}
+                    >
+                      {(checked[row.orderItemId] ?? 0) >= 1 ? '✓' : '확인'}
+                    </button>
                   </div>
                 )
               })}
