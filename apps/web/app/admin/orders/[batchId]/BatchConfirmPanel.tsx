@@ -47,7 +47,9 @@ export function BatchConfirmPanel({
   const [stages, setStages] = useState<Record<string, number>>(
     Object.fromEntries(items.map(i => [i.id, Number(i.check_stage ?? 0)]))
   )
-  const [checkingId, setCheckingId] = useState<string | null>(null)
+  // 처리 중인 품목만 잠근다. 하나가 처리 중이라고 다른 품목 클릭까지 막으면
+  // 빠르게 여러 개를 누를 때 조용히 씹힌다.
+  const [checking, setChecking] = useState<Set<string>>(new Set())
   const [isSaving, setIsSaving] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [saveMsg, setSaveMsg] = useState('')
@@ -123,11 +125,11 @@ export function BatchConfirmPanel({
    * 상태가 바뀌면 새로고침해서 어드민 목록·회원 진행상황과 같은 값을 보게 한다.
    */
   async function toggleItem(itemId: string) {
-    if (checkingId) return
+    if (checking.has(itemId)) return
     const cur = stages[itemId] ?? 0
     const nextStage = cur >= requiredStage ? requiredStage - 1 : requiredStage
 
-    setCheckingId(itemId)
+    setChecking(prev => new Set(prev).add(itemId))
     setStages(prev => ({ ...prev, [itemId]: nextStage }))   // 먼저 반응시키고
     try {
       const res = await fetch('/api/admin/orders/check-items', {
@@ -144,7 +146,7 @@ export function BatchConfirmPanel({
       setStages(prev => ({ ...prev, [itemId]: cur }))       // 실패하면 되돌린다
       setSaveMsg(err instanceof Error ? err.message : '확인 처리 실패')
     } finally {
-      setCheckingId(null)
+      setChecking(prev => { const next = new Set(prev); next.delete(itemId); return next })
     }
   }
 

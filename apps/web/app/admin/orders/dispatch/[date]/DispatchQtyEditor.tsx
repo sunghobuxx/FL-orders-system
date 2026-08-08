@@ -39,17 +39,18 @@ export default function DispatchQtyEditor({ groups }: { groups: Group[] }) {
   const [checked, setChecked] = useState<Record<string, number>>(
     Object.fromEntries(groups.flatMap(g => g.rows.map(r => [r.orderItemId, Number(r.checkStage ?? 0)])))
   )
-  const [checking, setChecking] = useState<string | null>(null)
+  // 처리 중인 품목만 잠근다 (전역 잠금이면 빠르게 여러 개 누를 때 씹힌다)
+  const [checking, setChecking] = useState<Set<string>>(new Set())
 
   async function toggleCheck(row: DispatchEditableRow) {
-    if (checking) return
+    if (checking.has(row.orderItemId)) return
     const cur = checked[row.orderItemId] ?? 0
     // 이미 2 단계까지 간 품목은 여기서 되돌리지 않는다. 배송이 끝난 걸 상차 화면에서
     // 풀어 버리면 배치 상태와 어긋난다.
     if (cur >= 2) return
     const next = cur >= 1 ? 0 : 1
 
-    setChecking(row.orderItemId)
+    setChecking(prev => new Set(prev).add(row.orderItemId))
     setChecked(prev => ({ ...prev, [row.orderItemId]: next }))
     try {
       const res = await fetch('/api/admin/orders/check-items', {
@@ -64,7 +65,7 @@ export default function DispatchQtyEditor({ groups }: { groups: Group[] }) {
       setChecked(prev => ({ ...prev, [row.orderItemId]: cur }))
       setError(e instanceof Error ? e.message : '확인 처리 실패')
     } finally {
-      setChecking(null)
+      setChecking(prev => { const next = new Set(prev); next.delete(row.orderItemId); return next })
     }
   }
 
@@ -166,7 +167,7 @@ export default function DispatchQtyEditor({ groups }: { groups: Group[] }) {
                     <button
                       type="button"
                       onClick={() => toggleCheck(row)}
-                      disabled={checking === row.orderItemId || (checked[row.orderItemId] ?? 0) >= 2}
+                      disabled={checking.has(row.orderItemId) || (checked[row.orderItemId] ?? 0) >= 2}
                       title={(checked[row.orderItemId] ?? 0) >= 2 ? '배송까지 확인된 품목입니다' : '상차 확인'}
                       className={`shrink-0 text-[11px] px-2 py-1 rounded-md font-semibold transition-colors disabled:opacity-60 ${
                         (checked[row.orderItemId] ?? 0) >= 1
