@@ -3,6 +3,8 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 
+import NoticeFileInput from './NoticeFileInput'
+
 export function NoticeSmsButton({ id }: { id: string }) {
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<{ successCount: number; failCount: number; results: { org: string; phone: string; success: boolean; error?: string }[] } | null>(null)
@@ -74,18 +76,26 @@ export function DeleteNoticeButton({ id }: { id: string }) {
   )
 }
 
-export function EditNoticeForm({ id, title, body }: { id: string; title: string; body: string }) {
+export function EditNoticeForm({ id, title, body, filePath }: {
+  id: string; title: string; body: string; filePath?: string | null
+}) {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
+  // 첨부 상태를 받아 둔다. 업로드가 끝나기 전에는 저장을 막고,
+  // 첨부를 뗐으면 null 을 보내 지운다.
+  const [attach, setAttach] = useState<{ url: string | null; blocked: boolean }>({
+    url: filePath ?? null, blocked: false,
+  })
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
+    if (attach.blocked) return
     setLoading(true)
     const fd = new FormData(e.currentTarget)
     const res = await fetch(`/api/admin/notices/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: fd.get('title'), body: fd.get('body') }),
+      body: JSON.stringify({ title: fd.get('title'), body: fd.get('body'), file_path: attach.url }),
     })
     const data = await res.json().catch(() => ({})) as { error?: string }
     if (!res.ok) {
@@ -109,9 +119,16 @@ export function EditNoticeForm({ id, title, body }: { id: string; title: string;
         <textarea name="body" defaultValue={body} required rows={9}
           className="flex-1 bg-gray-100 rounded px-4 py-3 text-sm text-gray-800 resize-none focus:outline-none focus:ring-2 focus:ring-brand-500 border-0" />
       </div>
+      {/* 첨부. 새 글 화면과 같은 컴포넌트를 쓴다 — 저장 버튼은 이 폼 것을 쓰므로
+          withSubmit 은 끄고, 업로드 상태만 받아 저장을 막는다. */}
+      <div className="flex items-center gap-2 px-5 py-4 border-b border-gray-100">
+        <span className="text-sm text-gray-500 shrink-0">첨부:</span>
+        <NoticeFileInput defaultUrl={filePath ?? null} withSubmit={false} onChange={setAttach} />
+      </div>
       <div className="flex justify-end gap-2 px-5 py-4">
-        <button type="submit" disabled={loading}
-          className="rounded-lg bg-brand-600 text-white px-5 py-2 text-sm font-semibold hover:bg-brand-700 disabled:opacity-50">
+        <button type="submit" disabled={loading || attach.blocked}
+          title={attach.blocked ? '파일 업로드가 끝난 뒤에 저장할 수 있습니다' : undefined}
+          className="rounded-lg bg-brand-600 text-white px-5 py-2 text-sm font-semibold hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed">
           {loading ? '저장 중...' : '확인'}
         </button>
         <a href={`/admin/notices/${id}`}

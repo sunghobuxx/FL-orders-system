@@ -17,7 +17,7 @@ export default async function EditNoticePage({ params }: Props) {
 
   const { data: notice } = await db
     .from('notices')
-    .select('id, title, body')
+    .select('id, title, body, file_path')
     .eq('id', id)
     .single()
 
@@ -25,7 +25,7 @@ export default async function EditNoticePage({ params }: Props) {
 
   return (
     <AdminNoticesShell>
-      <EditNoticeForm id={id} title={notice.title} body={notice.body} />
+      <EditNoticeForm id={id} title={notice.title} body={notice.body} filePath={notice.file_path} />
     </AdminNoticesShell>
   )
 }

@@ -42,16 +42,24 @@ export async function PUT(req: NextRequest, context: { params: Promise<{ id: str
     const adminDb = await getAuthorizedAdminDb()
     if (!adminDb) return NextResponse.json({ error: '권한이 없습니다' }, { status: 403 })
 
-    const body = await req.json() as { title?: string; body?: string }
+    const body = await req.json() as { title?: string; body?: string; file_path?: string | null }
     const title = body.title?.trim()
     const content = body.body?.trim()
     if (!title || !content) {
       return NextResponse.json({ error: '제목과 내용을 입력해주세요' }, { status: 400 })
     }
 
+    // file_path 는 보냈을 때만 손댄다. null 을 보내면 첨부를 뗀 것이고,
+    // 아예 안 보내면(옛 화면) 기존 첨부를 그대로 둔다.
+    const update: Record<string, unknown> = { title, body: content }
+    if ('file_path' in body) {
+      const filePath = typeof body.file_path === 'string' ? body.file_path.trim() : ''
+      update.file_path = filePath || null
+    }
+
     const { error } = await adminDb
       .from('notices')
-      .update({ title, body: content })
+      .update(update)
       .eq('id', id)
     if (error) throw error
 
