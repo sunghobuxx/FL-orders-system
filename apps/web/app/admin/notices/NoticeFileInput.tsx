@@ -55,6 +55,12 @@ export default function NoticeFileInput() {
     if (input) input.value = ''
   }
 
+  // 파일을 골랐는데 아직 안 올라간 상태. 이대로 등록하면 첨부 없는 공지가 된다.
+  // 파일명은 고르는 즉시 보이므로 «올라간 것처럼» 보이는 게 문제였다.
+  // (2026-08-08 공지 2건이 이렇게 첨부 없이 저장됐다)
+  const pending = Boolean(fileName) && !uploadedUrl
+  const blocked = uploading || pending
+
   return (
     <div className="flex items-center gap-2 flex-1 min-w-0">
       {/* 업로드된 URL을 hidden input으로 form에 포함 */}
@@ -70,10 +76,14 @@ export default function NoticeFileInput() {
 
       {error && <span className="text-xs text-red-500 truncate">{error}</span>}
 
+      {!error && pending && !uploading && (
+        <span className="text-xs text-red-600 font-semibold shrink-0">업로드 안 됨</span>
+      )}
+
       {!error && preview && (
         <div className="flex items-center gap-2 min-w-0">
           <img src={preview} alt="미리보기" className="h-9 w-9 rounded object-cover border border-gray-200 shrink-0" />
-          <span className="text-xs text-gray-500 truncate">{fileName}</span>
+          <span className="text-xs text-gray-500 truncate">{fileName}{uploadedUrl ? ' ✓' : ''}</span>
           <button type="button" onClick={handleRemove} className="text-gray-400 hover:text-gray-600 shrink-0 text-lg leading-none">×</button>
         </div>
       )}
@@ -86,6 +96,26 @@ export default function NoticeFileInput() {
           <button type="button" onClick={handleRemove} className="text-gray-400 hover:text-gray-600 shrink-0 text-lg leading-none">×</button>
         </div>
       )}
+
+      {/* 등록 버튼을 여기서 함께 그린다.
+          업로드가 끝나기 전이나 실패한 상태에서는 누르지 못하게 막아야 하는데,
+          버튼이 다른 컴포넌트에 있으면 이 상태를 알 수가 없다. */}
+      <div className="flex gap-2 shrink-0 ml-auto">
+        <button
+          type="submit"
+          disabled={blocked}
+          title={blocked ? '파일 업로드가 끝난 뒤에 등록할 수 있습니다' : undefined}
+          className="rounded-lg bg-brand-600 text-white px-5 py-2 text-sm font-semibold hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {uploading ? '업로드 중...' : '확인'}
+        </button>
+        <a
+          href="/admin/notices"
+          className="rounded-lg border border-gray-300 text-gray-700 px-5 py-2 text-sm font-semibold hover:bg-gray-50"
+        >
+          취소
+        </a>
+      </div>
     </div>
   )
 }

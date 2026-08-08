@@ -49,22 +49,11 @@ export default async function NewNoticePage({ searchParams }: Props) {
           </div>
 
           {/* 버튼 */}
+          {/* 등록·취소 버튼은 NoticeFileInput 안에 있다.
+              업로드가 끝나기 전에는 등록을 막아야 하는데, 버튼이 밖에 있으면
+              업로드 상태를 알 수 없어 첨부 없이 저장돼 버린다. */}
           <div className="flex items-center gap-2 px-5 py-4">
             <NoticeFileInput />
-            <div className="flex gap-2 shrink-0">
-              <button
-                type="submit"
-                className="rounded-lg bg-brand-600 text-white px-5 py-2 text-sm font-semibold hover:bg-brand-700"
-              >
-                확인
-              </button>
-              <a
-                href="/admin/notices"
-                className="rounded-lg border border-gray-300 text-gray-700 px-5 py-2 text-sm font-semibold hover:bg-gray-50"
-              >
-                취소
-              </a>
-            </div>
           </div>
         </form>
       </div>
