@@ -11,7 +11,9 @@ export default async function MemberNoticesPage() {
 
   const { data: notices } = await supabase
     .from('notices')
-    .select('id, title, created_at')
+        // file_path 도 읽는다. 목록에서 첨부 있는 공지를 알 수 있어야
+    // 회원이 들어가 볼 이유를 안다.
+    .select('id, title, created_at, file_path')
     .order('created_at', { ascending: false })
 
   return (
@@ -33,7 +35,14 @@ export default async function MemberNoticesPage() {
                 <Link key={n.id} href={`/member/notices/${n.id}`}
                   className="grid grid-cols-[56px_1fr_88px] items-center px-5 py-3.5 hover:bg-gray-50 transition-colors">
                   <span className="text-sm text-gray-500 text-center">{(notices ?? []).length - idx}</span>
-                  <span className="text-sm text-gray-900 truncate">{n.title}</span>
+                  <span className="text-sm text-gray-900 truncate flex items-center gap-1.5">
+                    {n.title}
+                    {n.file_path && (
+                      <span className="shrink-0 text-[11px] text-brand-600 bg-brand-50 border border-brand-200 rounded px-1.5 py-0.5 font-medium">
+                        📎 첨부
+                      </span>
+                    )}
+                  </span>
                   <span className="text-xs text-gray-400 text-center">
                     {new Date(n.created_at).toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul', month: '2-digit', day: '2-digit' })}
                   </span>

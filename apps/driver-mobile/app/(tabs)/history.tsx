@@ -1,9 +1,9 @@
 import { useFocusEffect } from 'expo-router'
 import { useCallback, useState } from 'react'
-import { Alert, RefreshControl, ScrollView, Text, View } from 'react-native'
+import { Alert, Pressable, RefreshControl, ScrollView, Text, View } from 'react-native'
 
 import { Card, Empty, Loading, Muted, Page, Pill, colors } from '../../components'
-import { apiGet } from '../../lib/api'
+import { apiGet, apiPost } from '../../lib/api'
 import { fmtWon, getKstToday } from '../../lib/format'
 
 type DispatchResponse = {
@@ -16,7 +16,14 @@ type DispatchResponse = {
     status: string
     sent: boolean
     autoDispatchExcluded: boolean
-    lines: Array<{ name: string; qty: number; unit: string; qtyText: string; byRestaurantText: string }>
+    lines: Array<{
+      name: string
+      qty: number
+      unit: string
+      qtyText: string
+      byRestaurantText: string
+      rows: Array<{ orderItemId: string; restaurantName: string; qty: number; unit: string; checkStage: number }>
+    }>
   }>
   unmappedItems: Array<{ name: string; qty: number; unit: string; qtyText: string }>
 }
@@ -25,6 +32,7 @@ export default function HistoryScreen() {
   const [data, setData] = useState<DispatchResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+  const [checking, setChecking] = useState<Set<string>>(new Set())
   const targetDate = getKstToday()
 
   const load = useCallback(async () => {
@@ -40,6 +48,29 @@ export default function HistoryScreen() {
     setRefreshing(true)
     await load().catch((error) => Alert.alert('새로고침 실패', error.message))
     setRefreshing(false)
+  }
+
+  async function toggleCheck(supplierId: string, itemId: string, currentStage: number) {
+    if (checking.has(itemId) || currentStage >= 2) return
+    const nextStage = currentStage >= 1 ? 0 : 1
+    setChecking(prev => new Set(prev).add(itemId))
+    try {
+      await apiPost('/api/driver/dispatch', {
+        itemId,
+        supplierId,
+        businessDate: targetDate,
+        stage: nextStage,
+      })
+      await load()
+    } catch (error: any) {
+      Alert.alert('상차 확인 실패', error.message)
+    } finally {
+      setChecking(prev => {
+        const next = new Set(prev)
+        next.delete(itemId)
+        return next
+      })
+    }
   }
 
   if (loading) return <Loading />
@@ -97,6 +128,37 @@ export default function HistoryScreen() {
                     {line.byRestaurantText ? (
                       <Text style={{ marginTop: 3, color: '#94A3B8', fontSize: 12, fontWeight: '700' }}>{line.byRestaurantText}</Text>
                     ) : null}
+                    {line.rows.map(row => {
+                      const checked = row.checkStage >= 1
+                      const delivered = row.checkStage >= 2
+                      return (
+                        <View key={row.orderItemId} style={{ marginTop: 7, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                          <Text numberOfLines={1} style={{ flex: 1, color: '#64748B', fontSize: 12, fontWeight: '700' }}>
+                            {row.restaurantName || '업체 미확인'}
+                          </Text>
+                          <Text style={{ color: '#64748B', fontSize: 12, fontWeight: '800' }}>
+                            {row.qty % 1 === 0 ? row.qty : row.qty.toFixed(1)}{row.unit}
+                          </Text>
+                          <Pressable
+                            onPress={() => toggleCheck(supplier.supplierId, row.orderItemId, row.checkStage)}
+                            disabled={checking.has(row.orderItemId) || delivered}
+                            style={{
+                              minWidth: 48,
+                              alignItems: 'center',
+                              borderRadius: 7,
+                              paddingHorizontal: 9,
+                              paddingVertical: 6,
+                              backgroundColor: checked ? '#22C55E' : '#16A34A',
+                              opacity: checking.has(row.orderItemId) || delivered ? 0.6 : 1,
+                            }}
+                          >
+                            <Text style={{ color: '#FFFFFF', fontSize: 11, fontWeight: '900' }}>
+                              {checking.has(row.orderItemId) ? '처리중' : checked ? '✓' : '확인'}
+                            </Text>
+                          </Pressable>
+                        </View>
+                      )
+                    })}
                   </View>
                 ))}
               </Card>

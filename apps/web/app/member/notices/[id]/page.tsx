@@ -48,13 +48,26 @@ export default async function NoticeDetailPage({ params }: Props) {
                   {notice.body}
                 </p>
                 {notice.file_path && (
+                  // 예전에는 «📎 첨부파일» 한 줄이라 본문에 묻혀 첨부가 있는지도 몰랐다.
+                  // 파일명과 받는 버튼을 같이 보여 준다.
+                  // download 속성을 붙여 새 탭으로 여는 대신 바로 내려받게 한다.
                   <a
                     href={notice.file_path}
+                    download
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="mt-3 inline-flex items-center gap-1 text-sm text-brand-600 hover:text-brand-800"
+                    className="mt-4 flex items-center gap-3 rounded-xl border border-gray-300 bg-white px-4 py-3 hover:border-brand-500 hover:bg-brand-50 transition-colors"
                   >
-                    📎 첨부파일
+                    <span className="text-xl shrink-0">📎</span>
+                    <span className="flex-1 min-w-0">
+                      <span className="block text-sm font-semibold text-gray-800 truncate">
+                        {decodeURIComponent(notice.file_path.split('/').pop() ?? '첨부파일').replace(/^\d+_/, '')}
+                      </span>
+                      <span className="block text-xs text-gray-400 mt-0.5">눌러서 다운로드</span>
+                    </span>
+                    <span className="shrink-0 rounded-lg bg-brand-600 text-white px-3 py-1.5 text-xs font-semibold">
+                      다운로드
+                    </span>
                   </a>
                 )}
               </div>
