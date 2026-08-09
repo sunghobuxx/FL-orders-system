@@ -53,9 +53,11 @@ interface Props {
   existingItems: OrderItem[]
   /** 단가가 없어 담당자 확인을 기다리는 품목 이름 */
   pendingNames: string[]
+  /** 품목별 단가. 명세서·앱과 같은 계산(buildPriceMapByProduct)을 거친 값 */
+  unitPrices: Record<string, number>
 }
 
-export default function OrderForm({ restaurantId, businessDate, batchId, orderId: initialOrderId, products, prices, existingItems, pendingNames }: Props) {
+export default function OrderForm({ restaurantId, businessDate, batchId, orderId: initialOrderId, products, prices, existingItems, pendingNames, unitPrices }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [currentOrderId, setCurrentOrderId] = useState(initialOrderId)
@@ -85,13 +87,15 @@ export default function OrderForm({ restaurantId, businessDate, batchId, orderId
 
   const totalCount = products.filter(p => parseFloat(quantities[p.id] ?? '0') > 0).length
 
+  /**
+   * 단가는 서버가 넘겨준 unitPrices 를 쓴다.
+   *
+   * price_snapshots 를 여기서 직접 고르면 업체별 고정단가(org_product_prices)를 못 봐서
+   * 화면 금액과 청구 금액이 어긋난다. supplier_product_id 만 prices 에서 가져온다.
+   */
   function getPrice(productId: string) {
     const sp = prices.find(p => p.product_id === productId)
-    if (!sp || !sp.price_snapshots.length) return { price: 0, supplierProductId: null }
-    const snap = sp.price_snapshots
-      .filter(s => s.effective_from <= businessDate)
-      .sort((a, b) => b.effective_from.localeCompare(a.effective_from))[0]
-    return { price: snap?.sale_price ?? 0, supplierProductId: sp.id }
+    return { price: Number(unitPrices[productId] ?? 0), supplierProductId: sp?.id ?? null }
   }
 
   function updateQty(productId: string, value: string) {
@@ -221,6 +225,7 @@ export default function OrderForm({ restaurantId, businessDate, batchId, orderId
               const allowedUnits = [...new Set([product.default_unit, ...(product.allowed_units ?? [])])].filter(Boolean)
               const unit = units[product.id] ?? product.default_unit
               const step = ['kg', 'g'].includes(unit) ? 0.1 : 1
+              const unitPrice = Number(unitPrices[product.id] ?? 0)
 
               return (
                 <div
@@ -242,6 +247,11 @@ export default function OrderForm({ restaurantId, businessDate, batchId, orderId
                     ) : (
                       <span className="text-xs text-gray-400">{product.default_unit}</span>
                     )}
+                    {/* 단가 0 은 「0원」이 아니라 「단가 문의」로. 0원으로 보이면 그 값이
+                        맞는 줄 알고 그대로 발주한다. */}
+                    {unitPrice > 0
+                      ? <span className="text-xs text-gray-400"> · {unitPrice.toLocaleString('ko-KR')}원</span>
+                      : <span className="text-xs text-amber-600"> · 단가 문의</span>}
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
                     <button

@@ -3,6 +3,7 @@ export const runtime = 'edge'
 import { redirect } from 'next/navigation'
 import { getSessionUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { buildPriceMapByProduct } from '@/lib/specs/sync'
 import OrderShell from './OrderShell'
 import CutoffBanner from './CutoffBanner'
 import OrderForm from './OrderForm'
@@ -121,6 +122,15 @@ export default async function MemberOrderPage() {
   const productIds = products.map((p: any) => p.id)
   const adminSupabase = createAdminClient()
 
+  // 화면에 찍는 단가.
+  //
+  // 예전에는 price_snapshots 를 화면에서 직접 골라 썼는데, 그 방식은 업체별 고정단가
+  // (org_product_prices)를 못 본다. 명세서·앱·품목추가 화면은 buildPriceMapByProduct 를
+  // 쓰므로, 여기만 다른 값을 보여주면 회원이 보는 금액과 청구 금액이 어긋난다.
+  const { priceMap } = productIds.length > 0
+    ? await buildPriceMapByProduct(adminSupabase, productIds, businessDate, org.id)
+    : { priceMap: {} as Record<string, number> }
+
   // 단가가 없어 담당자 확인을 기다리는 품목. 회원이 "넣었는데 왜 안 보이지" 하지 않게 알린다.
   const { data: pendingRows } = await adminSupabase
     .from('product_requests')
@@ -148,6 +158,7 @@ export default async function MemberOrderPage() {
         prices={prices ?? []}
         existingItems={existingItems}
         pendingNames={pendingNames}
+        unitPrices={priceMap}
       />
     </OrderShell>
   )
