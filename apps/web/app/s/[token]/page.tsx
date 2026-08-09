@@ -2,6 +2,7 @@ export const runtime = 'edge'
 
 import { createAdminClient } from '@/lib/supabase/admin'
 import { fetchAll } from '@/lib/supabase/fetch-all'
+import { getCarryover } from '@/lib/settlement/carryover'
 
 /**
  * 로그인 없이 보는 정산서.
@@ -9,6 +10,14 @@ import { fetchAll } from '@/lib/supabase/fetch-all'
  * 문자·알림톡을 받은 거래처가 그 자리에서 열 수 있어야 한다. 로그인부터 하라고 하면
  * 아무도 안 본다. 대신 명세서 내역이 담기므로 유효기간(7일)으로 노출을 제한한다.
  */
+
+/**
+ * 검색 색인을 막는다. 청구 금액이 담긴 페이지라 링크가 카톡·블로그로 퍼졌을 때
+ * 검색에 잡히면 안 된다.
+ */
+export const metadata = {
+  robots: { index: false, follow: false },
+}
 
 interface Props {
   params: Promise<{ token: string }>
@@ -73,11 +82,17 @@ export default async function SharedStatementPage({ params }: Props) {
     .map(l => ({ date: dateOf.get(l.source_doc_id) ?? '', amount: Number(l.amount ?? 0) }))
     .sort((a, b) => a.date.localeCompare(b.date))
 
-  const { data: recvs } = await db
-    .from('receivables').select('balance, statement_id').eq('restaurant_id', stmt.restaurant_id)
-  const carryover = (recvs ?? [])
-    .filter((r: { statement_id: string }) => r.statement_id !== stmt.id)
+  // 이전 미수금은 getCarryover 하나로만 구한다. 어드민 화면·인쇄·문자가 같은 함수를 쓴다.
+  // 「이 정산서만 빼고 전부 더하기」로 하면 그 뒤에 생긴 정산서까지 이전 미수금으로 잡힌다
+  // (2026-08-02 정직한 푸드 368,500). 거래처가 보는 숫자와 어드민 숫자가 달라지면 안 된다.
+  const { data: recvSelf } = await db
+    .from('receivables').select('balance').eq('statement_id', stmt.id)
+  const currentOutstanding = (recvSelf ?? [])
     .reduce((s: number, r: { balance: number }) => s + Number(r.balance ?? 0), 0)
+
+  const { previous: carryover } = await getCarryover(
+    db, stmt.restaurant_id, stmt.id, currentOutstanding, period?.start_date ?? null,
+  )
 
   const current = Number(stmt.total_amount ?? 0)
 

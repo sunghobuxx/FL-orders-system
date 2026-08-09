@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { sendKakaoAlimtalk } from '@/lib/messaging/kakao'
+import { getCarryover } from '@/lib/settlement/carryover'
 
 /**
  * 정산 확정 통지.
@@ -120,14 +121,24 @@ export async function notifyStatement(
     return { channel, success: false, error: '푸시는 아직 구현하지 않았습니다' }
   }
 
-  // 이전 미수금 = 이 정산서를 뺀 나머지 미수금 합
-  const { data: others } = await db
+  // 이전 미수금은 getCarryover 하나로만 구한다.
+  //
+  // 「이 정산서만 빼고 전부 더하기」로 하면 안 된다. 지난 정산서를 열었을 때 그 뒤에
+  // 생긴 정산서까지 이전 미수금으로 잡힌다 (2026-08-02 정직한 푸드에 368,500 이 떴는데
+  // 전부 다음 주들 금액이었다). 기간을 봐야 한다.
+  //
+  // 어드민 화면·인쇄가 이미 이 함수를 쓴다. 문자에 찍히는 금액이 어드민 화면과 다르면
+  // 거래처가 숫자를 못 믿게 되는데, 그게 바로 이 기능이 막으려는 것이다.
+  const { data: recvSelf } = await db
     .from('receivables')
-    .select('balance, statement_id')
-    .eq('restaurant_id', stmt.restaurant_id)
-  const carryover = (others ?? [])
-    .filter((r: { statement_id: string }) => r.statement_id !== statementId)
+    .select('balance')
+    .eq('statement_id', statementId)
+  const currentOutstanding = (recvSelf ?? [])
     .reduce((s: number, r: { balance: number }) => s + Number(r.balance ?? 0), 0)
+
+  const { previous: carryover } = await getCarryover(
+    db, stmt.restaurant_id, statementId, currentOutstanding, period?.start_date ?? null,
+  )
 
   const current = Number(stmt.total_amount ?? 0)
   const text = buildMessage({
