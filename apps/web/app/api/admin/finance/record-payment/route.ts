@@ -1,8 +1,7 @@
 export const runtime = 'edge'
 
 import { NextResponse } from 'next/server'
-import { createAdminClient } from '@/lib/supabase/admin'
-import { getSessionUser } from '@/lib/supabase/server'
+import { getAuthorizedAdminDb } from '@/lib/admin-member-user'
 
 export async function POST(req: Request) {
   try {
@@ -38,9 +37,10 @@ export async function POST(req: Request) {
       paidAt = `${paidOn}T09:00:00+09:00`
     }
 
-    const { user } = await getSessionUser()
-    if (!user) return NextResponse.json({ error: '인증 필요' }, { status: 401 })
-    const db = createAdminClient()
+    // 로그인만 확인하면 회원 계정으로도 남의 업체 입금이 기록된다.
+    // 다른 어드민 API 와 같이 관리자 권한까지 본다 (2026-08-10 확인된 구멍).
+    const db = await getAuthorizedAdminDb()
+    if (!db) return NextResponse.json({ error: '권한이 없습니다' }, { status: 403 })
 
     // 미납 receivable 전체를 due_date 오름차순으로 조회 (statement_id 포함)
     const { data: receivables } = await db
