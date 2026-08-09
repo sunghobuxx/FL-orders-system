@@ -57,6 +57,12 @@ export default async function AdminProductsPage({ searchParams }: Props) {
   const filtered = categoryParam ? all.filter(p => p.category === categoryParam) : all
   const activeCategory = categoryParam ?? null
 
+  // 회원이 올린 품목 요청. 별도 알림이 없으므로 여기 건수로만 알 수 있다.
+  const { count: pendingCount } = await db
+    .from('product_requests')
+    .select('id', { count: 'exact', head: true })
+    .eq('status', 'pending')
+
   return (
     <div className="p-6">
       <div className="flex items-center justify-between mb-4">
@@ -69,6 +75,16 @@ export default async function AdminProductsPage({ searchParams }: Props) {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <Link
+            href="/admin/products/requests"
+            className={`px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${
+              (pendingCount ?? 0) > 0
+                ? 'bg-amber-50 text-amber-700 border-amber-300 hover:bg-amber-100'
+                : 'text-gray-500 border-gray-300 hover:bg-gray-50'
+            }`}
+          >
+            품목 요청{(pendingCount ?? 0) > 0 ? ` ${pendingCount}` : ''}
+          </Link>
           <Link
             href={`/admin/products?${activeCategory ? `category=${activeCategory}&` : ''}${showInactive ? '' : 'inactive=1'}`}
             className={`px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${
