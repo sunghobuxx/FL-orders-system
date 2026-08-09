@@ -44,21 +44,32 @@ export default function ConfirmPanel({ rows, cycle, periods, selectedPeriodId }:
   }
 
   // 이름을 confirm 으로 지으면 전역 window.confirm 을 가려 버린다.
-  async function runConfirm(ids: string[], resend = false) {
+  async function runConfirm(ids: string[], opts: { resend?: boolean; notify?: boolean } = {}) {
     if (!ids.length) return
-    const label = resend ? '재발송' : '확정·발송'
-    if (!askUser(`${ids.length}건을 ${label}합니다.\n확정하면 금액을 되돌릴 수 없습니다. 계속할까요?`)) return
+    const { resend = false, notify = true } = opts
+    const label = resend ? '재발송' : (notify ? '확정·발송' : '확정')
+
+    const warning = notify
+      ? `${ids.length}건을 ${label}합니다.\n거래처에 문자가 나갑니다. 확정하면 금액을 되돌릴 수 없습니다.\n계속할까요?`
+      : `${ids.length}건의 금액을 확정합니다.\n문자는 보내지 않습니다. 확정하면 금액을 되돌릴 수 없습니다.\n계속할까요?`
+    if (!askUser(warning)) return
+
     setBusy(true); setMsg('')
     try {
       const res = await fetch('/api/admin/settlement/confirm', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ statementIds: ids, resend }),
+        body: JSON.stringify({ statementIds: ids, resend, notify }),
       })
-      const data = await res.json() as { error?: string; results?: Array<{ success: boolean }> }
+      const data = await res.json() as {
+        error?: string
+        results?: Array<{ confirmed: boolean; success: boolean }>
+      }
       if (!res.ok) throw new Error(data.error ?? `${label} 실패`)
-      const ok = (data.results ?? []).filter(r => r.success).length
-      setMsg(`${label} 완료 — ${ids.length}건 중 발송 성공 ${ok}건`)
+      const results = data.results ?? []
+      setMsg(notify
+        ? `${label} 완료 — ${ids.length}건 중 발송 성공 ${results.filter(r => r.success).length}건`
+        : `확정 완료 — ${results.filter(r => r.confirmed).length}건 (발송 안 함)`)
       setPicked(new Set())
       router.refresh()
     } catch (e) {
@@ -129,6 +140,15 @@ export default function ConfirmPanel({ rows, cycle, periods, selectedPeriodId }:
           >
             {allPicked ? '선택 해제' : '전체 선택'}
           </button>
+          {/* 금액만 먼저 굳혀 두고 발송은 넘기는 시간에 맞춰 따로 할 수 있다. */}
+          <button
+            type="button"
+            onClick={() => runConfirm([...picked], { notify: false })}
+            disabled={busy || picked.size === 0}
+            className="rounded-lg border border-gray-300 text-gray-700 px-4 py-2 text-sm font-semibold hover:bg-gray-50 disabled:opacity-50"
+          >
+            확정만
+          </button>
           <button
             type="button"
             onClick={() => runConfirm([...picked])}
@@ -173,16 +193,18 @@ export default function ConfirmPanel({ rows, cycle, periods, selectedPeriodId }:
                   r.notifiedAt
                     ? <span className="text-green-600 font-medium">확정 · 발송완료</span>
                     : (
-                      <span className="text-red-500 font-medium">
-                        확정 · {r.reason || '발송 실패'}
+                      // 「확정만」 한 것과 발송이 실패한 것은 DB 상 구분이 안 된다
+                      // (둘 다 notified_at 이 비어 있다). 실패라고 단정하지 않는다.
+                      <span className="text-amber-600 font-medium">
+                        확정 · {r.reason || '미발송'}
                         {r.sendable && (
                           <button
                             type="button"
-                            onClick={() => runConfirm([r.statementId], true)}
+                            onClick={() => runConfirm([r.statementId], { resend: true })}
                             disabled={busy}
-                            className="ml-2 underline hover:text-red-700"
+                            className="ml-2 underline hover:text-amber-800"
                           >
-                            재발송
+                            발송
                           </button>
                         )}
                       </span>

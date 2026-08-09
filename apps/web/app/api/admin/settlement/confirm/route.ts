@@ -14,6 +14,11 @@ import { notifyStatement } from '@/lib/settlement/notify'
  * 발송 실패는 notified_at 이 비어 있는 것으로 남고 재발송으로 처리한다.
  *
  * resend=true 면 이미 확정된 건에 발송만 다시 한다. 금액은 건드리지 않는다.
+ *
+ * notify=false 면 금액만 잠그고 문자를 보내지 않는다. 금액을 먼저 굳혀 두고 발송은
+ * 넘기는 시간에 맞춰 따로 하고 싶을 때 쓴다. 이때는 공유 링크도 만들지 않는다 —
+ * 유효기간 7일이 발송 전에 흘러가면 정작 보낼 때 이미 지난 링크가 된다.
+ * 나중에 보낼 때는 같은 API 를 resend=true 로 부른다.
  */
 
 const SHARE_DAYS = 7
@@ -27,9 +32,11 @@ function makeToken() {
 
 export async function POST(req: NextRequest) {
   try {
-    const { statementIds, resend } = await req.json() as {
-      statementIds?: string[]; resend?: boolean
+    const { statementIds, resend, notify } = await req.json() as {
+      statementIds?: string[]; resend?: boolean; notify?: boolean
     }
+    // 기본은 보낸다. 안 보내려면 명시적으로 false 를 줘야 한다.
+    const shouldNotify = notify !== false
     if (!Array.isArray(statementIds) || statementIds.length === 0) {
       return NextResponse.json({ error: '확정할 정산서를 선택하세요' }, { status: 400 })
     }
@@ -67,6 +74,13 @@ export async function POST(req: NextRequest) {
         }
       } else if (!resend) {
         results.push({ statementId: id, confirmed: true, channel: '-', success: false, error: '이미 확정됨' })
+        continue
+      }
+
+      if (!shouldNotify) {
+        results.push({
+          statementId: id, confirmed: true, channel: 'none', success: false, error: '발송 안 함',
+        })
         continue
       }
 
