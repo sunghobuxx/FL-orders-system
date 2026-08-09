@@ -20,6 +20,26 @@ export type SpecRow = { id: string; business_date: string; total_amount: number 
 const CARRY_FORWARD_DAYS = 90
 
 /**
+ * 이 날짜보다 앞선 명세서는 이월하지 않는다.
+ *
+ * 「어느 정산서에도 안 담겼다」를 미청구의 근거로 삼는데, 그 근거가 옛 데이터에는
+ * 통하지 않는다. 6월 이전 정산서에는 sales_statement_lines 가 아예 없어서
+ * 청구·수금이 끝난 명세서도 「미청구」로 보인다.
+ *
+ * 그대로 두었더니 2026-08-09 에 5월 명세서들이 그 주 청구서로 딸려 들어갔다 —
+ * 4개 업체 2,249,000원. 청북점은 1,010,100 중 824,100 이 5월 것이었다.
+ *
+ * 사장님 판단: 밀린 옛날 건은 지금 와서 받을 수 없다. 전부 포기한다.
+ * 그래서 이 날짜에 선을 긋는다. 앞으로 늦게 생기는 명세서만 이월한다.
+ */
+const CARRY_FORWARD_FROM = '2026-08-09'
+
+/** 이월해 담아도 되는 명세서인지. 선 이전 것은 포기한 것으로 본다. */
+export function isCarryForwardEligible(businessDate: string): boolean {
+  return businessDate >= CARRY_FORWARD_FROM
+}
+
+/**
  * 담을 명세서를 정한다. db 없이 도는 순수 함수라 그대로 시험할 수 있다.
  *
  * @param inPeriod  이 기간(start~end)의 명세서
@@ -72,7 +92,8 @@ export async function selectSpecsForStatement(
     .eq('source_doc_type', 'daily_spec')
     .in('source_doc_id', olderIds))
   const billedIds = new Set(lines.map(l => l.source_doc_id))
-  const olderUnbilled = older.filter(s => !billedIds.has(s.id))
+  const olderUnbilled = older.filter(
+    s => !billedIds.has(s.id) && isCarryForwardEligible(s.business_date))
 
   // 이 기간 명세서 중 확정 정산서에 이미 담긴 것은 뺀다
   const inPeriodIds = inPeriod.map(s => s.id)

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { pickSpecs, type SpecRow } from './spec-selection'
+import { pickSpecs, isCarryForwardEligible, type SpecRow } from './spec-selection'
 
 const inRange: SpecRow[] = [
   { id: 's1', business_date: '2026-08-03', total_amount: 100 },
@@ -33,5 +33,18 @@ describe('pickSpecs', () => {
     const dup: SpecRow[] = [{ id: 's1', business_date: '2026-08-03', total_amount: 100 }]
     const got = pickSpecs(inRange, dup, new Set())
     expect(got.map(s => s.id)).toEqual(['s1', 's2'])
+  })
+})
+
+describe('isCarryForwardEligible', () => {
+  it('선 이전 명세서는 이월하지 않는다 — 옛 정산서에는 라인이 없어 미청구로 잘못 보인다', () => {
+    expect(isCarryForwardEligible('2026-05-16')).toBe(false)
+    expect(isCarryForwardEligible('2026-06-26')).toBe(false)
+    expect(isCarryForwardEligible('2026-07-13')).toBe(false)
+  })
+
+  it('선 당일과 그 뒤는 이월한다', () => {
+    expect(isCarryForwardEligible('2026-08-09')).toBe(true)
+    expect(isCarryForwardEligible('2026-08-20')).toBe(true)
   })
 })
