@@ -17,7 +17,7 @@ export default async function AdminSettlementStatementPage({ params }: Props) {
 
   const { data: stmt } = await db
     .from('sales_statements')
-    .select('id, total_amount, outstanding_amount, settlement_periods(period_type, start_date, end_date), restaurants(organizations(name))')
+    .select('id, total_amount, outstanding_amount, confirmed_at, confirmed_total, notified_at, settlement_periods(period_type, start_date, end_date), restaurants(organizations(name))')
     .eq('id', statementId)
     .eq('restaurant_id', restaurantId)
     .single()
@@ -106,6 +106,22 @@ export default async function AdminSettlementStatementPage({ params }: Props) {
           @page { size: A4; margin: 10mm; }
         }
       `}</style>
+
+      {/* 확정 후 금액이 바뀌었는지 — 넘긴 청구서와 지금 값이 다르면 알린다.
+          잠금이 뚫리는 경로가 남아 있어도 조용히 지나가지 않고 여기서 드러난다.
+          천호점 435,700 이 3주를 굴러다닌 건 이 대조가 없어서였다.
+          print:hidden 으로 거래처에 나가는 인쇄물에는 안 찍히게 한다. */}
+      {stmt.confirmed_at &&
+       Math.abs(Number(stmt.confirmed_total ?? 0) - Number(stmt.total_amount ?? 0)) >= 0.5 && (
+        <div className="print:hidden rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700 mb-3">
+          ⚠ 넘긴 금액 {Number(stmt.confirmed_total ?? 0).toLocaleString('ko-KR')}원 /
+          현재 금액 {Number(stmt.total_amount ?? 0).toLocaleString('ko-KR')}원 —{' '}
+          {Math.abs(Number(stmt.total_amount ?? 0) - Number(stmt.confirmed_total ?? 0)).toLocaleString('ko-KR')}원 차이
+          <span className="block text-xs text-red-500 mt-1">
+            확정 후 금액이 바뀌었습니다. 거래처에 넘긴 청구서와 다르므로 확인이 필요합니다.
+          </span>
+        </div>
+      )}
 
       {/* 프린트 전용 레이아웃 */}
       <div className="stmt-print-only">
