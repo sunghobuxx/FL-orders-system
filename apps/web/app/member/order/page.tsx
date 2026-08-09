@@ -88,12 +88,14 @@ export default async function MemberOrderPage() {
 
   const { data: whitelist } = await supabase
     .from('restaurant_products')
-    .select('product_id')
+    .select('product_id, added_by')
     .eq('restaurant_id', restaurant.id)
     .order('display_order')
 
   const hasWhitelist = (whitelist ?? []).length > 0
   const whitelistIds = (whitelist ?? []).map(w => w.product_id)
+  // 회원이 직접 넣은 품목에만 화면에서 × 가 붙는다.
+  const addedByOf = new Map((whitelist ?? []).map(w => [w.product_id, w.added_by ?? 'admin']))
 
   let products: any[] = []
   if (hasWhitelist) {
@@ -102,7 +104,10 @@ export default async function MemberOrderPage() {
       .select('id, standard_name, default_unit, allowed_units, is_kg_based, image_path, category')
       .eq('status', 'active')
       .in('id', whitelistIds)
-    products = whitelistIds.map(id => items?.find((p: any) => p.id === id)).filter(Boolean)
+    products = whitelistIds
+      .map(id => items?.find((p: any) => p.id === id))
+      .filter(Boolean)
+      .map((p: any) => ({ ...p, added_by: addedByOf.get(p.id) ?? 'admin' }))
   } else {
     const { data: items } = await supabase
       .from('products')

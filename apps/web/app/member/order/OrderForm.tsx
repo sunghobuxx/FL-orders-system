@@ -3,6 +3,8 @@
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 
+import AddProductPanel from './AddProductPanel'
+
 const CATEGORY_LABELS: Record<string, string> = {
   vegetable: '채소', fruit: '과일', meat: '육류', seafood: '수산',
   grain: '곡류', dairy: '유제품', seasoning: '양념', etc: '기타',
@@ -21,6 +23,8 @@ type Product = {
   is_kg_based: boolean
   image_path: string | null
   category: string
+  /** 'admin' 이면 담당자가 넣어 준 기본 품목이라 회원이 뺄 수 없다 */
+  added_by?: string
 }
 
 type SupplierProduct = {
@@ -92,6 +96,18 @@ export default function OrderForm({ restaurantId, businessDate, batchId, orderId
     setQuantities(prev => ({ ...prev, [productId]: value }))
   }
 
+  /** 회원이 직접 넣은 품목만 뺀다. 담당자가 넣은 기본 품목은 서버에서도 막힌다. */
+  async function removeProduct(product: Product) {
+    if (!window.confirm(
+      `"${product.standard_name}" 을(를) 내 발주 목록에서 뺄까요?\n지난 발주 기록은 그대로 남습니다.`)) return
+    const res = await fetch(
+      `/api/member/products?restaurantId=${restaurantId}&productId=${product.id}`,
+      { method: 'DELETE' })
+    if (res.ok) { router.refresh(); return }
+    const d = await res.json().catch(() => ({})) as { error?: string }
+    window.alert(d.error ?? '빼지 못했습니다.')
+  }
+
   function stepQty(productId: string, delta: number, step: number) {
     const current = parseFloat(quantities[productId] ?? '0')
     const next = Math.max(0, current + delta * step)
@@ -121,6 +137,20 @@ export default function OrderForm({ restaurantId, businessDate, batchId, orderId
           setError('수량을 입력하세요')
           return
         }
+
+        // 단가가 안 잡힌 품목은 그대로 발주되면 명세서가 0 원으로 나간다.
+        // 막지는 않는다 — 급해서 일단 시켜야 하는 경우가 있고, 관리자가 명세서에서 고칠 수 있다.
+        const zeroPriced = items.filter(i => Number(i.unit_price_snapshot) <= 0)
+        if (zeroPriced.length > 0) {
+          const names = zeroPriced
+            .map(i => products.find(p => p.id === i.product_id)?.standard_name ?? '품목')
+            .join(', ')
+          const ok = window.confirm(
+            `단가가 정해지지 않은 품목이 있습니다 — ${names}\n\n` +
+            '그대로 발주하면 금액이 0원으로 잡힙니다. 담당자에게 확인해 주세요.\n계속할까요?')
+          if (!ok) return
+        }
+
         const res = await fetch('/api/member/orders', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -242,12 +272,27 @@ export default function OrderForm({ restaurantId, businessDate, batchId, orderId
                       : <span className="text-gray-200 text-lg">○</span>
                     }
                   </div>
+                  {/* 회원이 직접 넣은 품목만 뺄 수 있다. 담당자가 넣은 기본 품목은 자리만 비운다. */}
+                  <div className="w-5 shrink-0 flex justify-center">
+                    {product.added_by === 'member' && (
+                      <button
+                        type="button"
+                        title="내 목록에서 빼기"
+                        onClick={() => removeProduct(product)}
+                        className="text-lg leading-none text-gray-300 hover:text-red-500"
+                      >
+                        ×
+                      </button>
+                    )}
+                  </div>
                 </div>
               )
             })
           )}
         </div>
       </div>
+
+      <AddProductPanel restaurantId={restaurantId} businessDate={businessDate} />
 
       {/* 요약 + 제출 */}
       <div className="bg-white rounded-xl border border-gray-200 px-4 py-3 flex items-center justify-between">
