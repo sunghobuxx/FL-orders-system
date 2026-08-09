@@ -15,6 +15,9 @@ export function PaymentForm({
   const [error, setError] = useState<string | null>(null)
   const [method, setMethod] = useState<'cash' | 'card'>('cash')
   const inputRef = useRef<HTMLInputElement>(null)
+  // 기본은 오늘. 며칠 지나서 넣을 때만 바꾼다.
+  const kstToday = new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10)
+  const [paidOn, setPaidOn] = useState(kstToday)
 
   function handleCashSubmit() {
     const amount = Number(inputRef.current?.value ?? 0)
@@ -27,7 +30,7 @@ export function PaymentForm({
       const res = await fetch('/api/admin/finance/record-payment', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ restaurantId, amount, method: 'cash' }),
+        body: JSON.stringify({ restaurantId, amount, method: 'cash', paidOn }),
       })
       const data = await res.json()
       if (data.error) {
@@ -91,6 +94,27 @@ export function PaymentForm({
               {isPending ? '처리 중...' : '확인'}
             </button>
           </div>
+
+          {/* 실제 입금일. 며칠 지나서 넣으면 통장 날짜와 어긋나므로 고를 수 있게 둔다. */}
+          <div className="flex items-center gap-2">
+            <label htmlFor="paidOn" className="text-xs text-gray-500 shrink-0">입금일</label>
+            <input
+              id="paidOn"
+              type="date"
+              value={paidOn}
+              max={kstToday}
+              onChange={e => setPaidOn(e.target.value)}
+              className={`border rounded-lg px-3 py-1.5 text-sm focus:outline-none ${
+                paidOn === kstToday
+                  ? 'border-gray-200 text-gray-600 focus:border-gray-400'
+                  : 'border-amber-400 text-amber-700'
+              }`}
+            />
+            {paidOn !== kstToday && (
+              <span className="text-xs text-amber-600">오늘이 아닌 날짜로 기록됩니다</span>
+            )}
+          </div>
+
           {error && <p className="text-xs text-red-500">{error}</p>}
         </div>
       )}

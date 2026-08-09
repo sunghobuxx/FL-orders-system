@@ -15,6 +15,9 @@ export default function RecordPaymentButton({
   const [amount, setAmount] = useState('')
   const [method, setMethod] = useState('cash')
   const [loading, setLoading] = useState(false)
+  // 기본은 오늘. 며칠 지나서 넣을 때만 바꾼다.
+  const kstToday = new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10)
+  const [paidOn, setPaidOn] = useState(kstToday)
 
   async function handleSubmit() {
     const n = parseInt(amount.replace(/,/g, ''), 10)
@@ -24,7 +27,7 @@ export default function RecordPaymentButton({
       const res = await fetch('/api/admin/finance/record-payment', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ restaurantId, amount: n, method }),
+        body: JSON.stringify({ restaurantId, amount: n, method, paidOn }),
       })
       const data = await res.json() as { success?: boolean; error?: string; applied?: number }
       if (!res.ok) throw new Error(data.error ?? '기록 실패')
@@ -48,6 +51,17 @@ export default function RecordPaymentButton({
           value={amount}
           onChange={e => setAmount(e.target.value)}
           className="w-24 text-sm border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-brand-500"
+        />
+        {/* 실제 입금일. 며칠 지나서 넣으면 통장 날짜와 어긋나므로 고를 수 있게 둔다. */}
+        <input
+          type="date"
+          value={paidOn}
+          max={kstToday}
+          onChange={e => setPaidOn(e.target.value)}
+          title="입금일"
+          className={`text-xs border rounded px-1.5 py-1 focus:outline-none ${
+            paidOn === kstToday ? 'border-gray-300 text-gray-600' : 'border-amber-400 text-amber-700'
+          }`}
         />
         <select
           value={method}

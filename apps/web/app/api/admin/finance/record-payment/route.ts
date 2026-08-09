@@ -6,14 +6,37 @@ import { getSessionUser } from '@/lib/supabase/server'
 
 export async function POST(req: Request) {
   try {
-    const { restaurantId, amount, method } = await req.json() as {
+    const { restaurantId, amount, method, paidOn } = await req.json() as {
       restaurantId: string
       amount: number
       method: string
+      /** 실제 입금일 (YYYY-MM-DD). 없으면 지금 시각으로 기록한다. */
+      paidOn?: string
     }
 
     if (!restaurantId) return NextResponse.json({ error: '업체 정보가 없습니다.' }, { status: 400 })
     if (!amount || amount <= 0) return NextResponse.json({ error: '금액을 입력하세요.' }, { status: 400 })
+
+    // 입금일을 따로 받는다.
+    //
+    // 예전에는 paid_at 에 입력한 시각을 그대로 박았다. 며칠 지나서 입력하면 통장 날짜와
+    // 어긋나 대조가 안 된다 — 찬란한 아구 강남은 월요일에 입금받는데 기록은 화·목·토로
+    // 찍혀 있었다(2026-08-10 확인).
+    //
+    // 날짜만 받고 시각은 KST 09:00 으로 둔다. 자정으로 두면 UTC 로 전날이 되어
+    // 날짜별로 묶어 볼 때 하루씩 밀린다.
+    const now = new Date()
+    const kstToday = new Date(now.getTime() + 9 * 3600_000).toISOString().slice(0, 10)
+    let paidAt = now.toISOString()
+    if (paidOn) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(paidOn)) {
+        return NextResponse.json({ error: '입금일이 올바르지 않습니다.' }, { status: 400 })
+      }
+      if (paidOn > kstToday) {
+        return NextResponse.json({ error: '입금일을 미래로 넣을 수 없습니다.' }, { status: 400 })
+      }
+      paidAt = `${paidOn}T09:00:00+09:00`
+    }
 
     const { user } = await getSessionUser()
     if (!user) return NextResponse.json({ error: '인증 필요' }, { status: 401 })
@@ -76,7 +99,7 @@ export async function POST(req: Request) {
       amount: u.applied,
       direction: 'inbound',
       method: method || 'cash',
-      paid_at: new Date().toISOString(),
+      paid_at: paidAt,
     }))
     const { error: payErr } = await db.from('payments').insert(paymentRows)
     if (payErr) {
