@@ -13,6 +13,9 @@
  *  - 여러 번 돌려도 결과가 같다 (이미 있으면 갱신, 없으면 생성)
  */
 
+import { isConfirmed } from '@/lib/settlement/confirm'
+import { selectSpecsForStatement } from '@/lib/settlement/spec-selection'
+
 export type Cycle = 'daily' | 'weekly' | 'monthly'
 
 /**
@@ -91,15 +94,11 @@ export async function generateStatements(
 
     const { start, end } = periodRangeFor(cycle, businessDate)
 
-    // 이 기간의 명세서 합계 — 명세서가 청구의 기준이다
-    const { data: specs } = await db
-      .from('daily_specs')
-      .select('id, total_amount')
-      .eq('restaurant_id', rest.id)
-      .gte('business_date', start)
-      .lte('business_date', end)
+    // 이 기간의 명세서 + 확정 뒤에 생겨 담길 곳이 없어진 지난 명세서.
+    // 그냥 두면 돈이 사라진다 (2026-08-09 천호점 211,900).
+    const specs = await selectSpecsForStatement(db, rest.id, start, end)
 
-    if (!specs?.length) {
+    if (!specs.length) {
       result.skipped++
       continue
     }
@@ -137,6 +136,16 @@ export async function generateStatements(
     let statementId: string
     let action: string
     if (existingStmt) {
+      // 확정된 정산서는 금액을 바꾸지 않는다. 거래처에 넘긴 숫자다.
+      // 완납(skipSettled)과 다르다 — 부분수금 상태에서도 잠겨야 한다.
+      if (await isConfirmed(db, existingStmt.id)) {
+        result.skipped++
+        result.details.push({
+          restaurant: name, cycle, period: `${start}~${end}`,
+          amount: Number(existingStmt.total_amount ?? 0), action: '확정건너뜀',
+        })
+        continue
+      }
       if (options.skipSettled) {
         const { data: rs } = await db
           .from('receivables').select('status').eq('statement_id', existingStmt.id)
