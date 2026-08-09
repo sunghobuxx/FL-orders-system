@@ -1,13 +1,28 @@
 'use client'
 
+import Link from 'next/link'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 
-import type { ConfirmRow } from './page'
+import type { ConfirmRow, PeriodOption } from './page'
 
 const won = (n: number) => Math.round(n).toLocaleString('ko-KR')
 
-export default function ConfirmPanel({ rows }: { rows: ConfirmRow[] }) {
+/** "2026-08-02" ~ "2026-08-08" → "08.02 ~ 08.08" */
+function periodLabel(start: string, end: string) {
+  const [, sm, sd] = start.split('-')
+  const [, em, ed] = end.split('-')
+  return `${sm}.${sd} ~ ${em}.${ed}`
+}
+
+interface Props {
+  rows: ConfirmRow[]
+  cycle: string
+  periods: PeriodOption[]
+  selectedPeriodId: string | null
+}
+
+export default function ConfirmPanel({ rows, cycle, periods, selectedPeriodId }: Props) {
   const router = useRouter()
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const [busy, setBusy] = useState(false)
@@ -58,11 +73,52 @@ export default function ConfirmPanel({ rows }: { rows: ConfirmRow[] }) {
     return typeof window === 'undefined' ? true : window.confirm(text)
   }
 
+  const tabClass = (active: boolean) =>
+    `px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
+      active ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+    }`
+
   return (
     <div className="space-y-3 max-w-4xl">
+      {/* 주기 → 기간 순서로 좁힌다. 마감된 것을 전부 늘어놓으면 이번에 넘길 것을 못 찾는다. */}
+      <div className="rounded-xl border border-gray-200 bg-white p-3 space-y-3">
+        <div className="flex gap-2">
+          <Link href="/admin/settlement/confirm?cycle=weekly" className={tabClass(cycle === 'weekly')}>
+            주정산
+          </Link>
+          <Link href="/admin/settlement/confirm?cycle=monthly" className={tabClass(cycle === 'monthly')}>
+            월정산
+          </Link>
+        </div>
+        {periods.length === 0 ? (
+          <p className="text-sm text-gray-400">마감된 기간이 없습니다</p>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {periods.map(p => (
+              <Link
+                key={p.id}
+                href={`/admin/settlement/confirm?cycle=${cycle}&period=${p.id}`}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                  p.id === selectedPeriodId
+                    ? 'bg-brand-600 text-white'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                {periodLabel(p.start, p.end)}
+                {p.pending > 0 && (
+                  <span className={p.id === selectedPeriodId ? ' opacity-80' : ' text-amber-600'}>
+                    {' '}미확정 {p.pending}
+                  </span>
+                )}
+              </Link>
+            ))}
+          </div>
+        )}
+      </div>
+
       <div className="flex items-center justify-between">
         <div className="text-sm text-gray-500">
-          마감된 기간 {rows.length}건 · 미확정 {pending.length}건
+          {cycle === 'weekly' ? '주정산' : '월정산'} {rows.length}곳 · 미확정 {pending.length}곳
         </div>
         <div className="flex items-center gap-2">
           {msg && <span className="text-sm text-gray-600">{msg}</span>}
@@ -91,6 +147,9 @@ export default function ConfirmPanel({ rows }: { rows: ConfirmRow[] }) {
           <span className="text-right">합계</span><span>상태</span>
         </div>
         <div className="divide-y divide-gray-100">
+          {rows.length === 0 && (
+            <p className="py-12 text-center text-sm text-gray-400">이 기간에 정산서가 없습니다</p>
+          )}
           {rows.map(r => (
             <div key={r.statementId} className="grid grid-cols-[32px_1fr_110px_110px_110px_150px] gap-2 items-center px-4 py-3">
               <input

@@ -120,6 +120,18 @@ export default async function MemberOrderPage() {
 
   const productIds = products.map((p: any) => p.id)
   const adminSupabase = createAdminClient()
+
+  // 단가가 없어 담당자 확인을 기다리는 품목. 회원이 "넣었는데 왜 안 보이지" 하지 않게 알린다.
+  const { data: pendingRows } = await adminSupabase
+    .from('product_requests')
+    .select('products(standard_name)')
+    .eq('restaurant_id', restaurant.id)
+    .eq('status', 'pending')
+  const pendingNames = (pendingRows ?? []).map((r: any) => {
+    const p = Array.isArray(r.products) ? r.products[0] : r.products
+    return p?.standard_name ?? '품목'
+  })
+
   const { data: prices } = productIds.length > 0
     ? await adminSupabase.from('supplier_products').select('id, product_id, price_snapshots').in('product_id', productIds)
     : { data: [] }
@@ -135,6 +147,7 @@ export default async function MemberOrderPage() {
         products={products}
         prices={prices ?? []}
         existingItems={existingItems}
+        pendingNames={pendingNames}
       />
     </OrderShell>
   )

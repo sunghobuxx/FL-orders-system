@@ -3,7 +3,7 @@
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 
-import AddProductPanel from './AddProductPanel'
+import Link from 'next/link'
 
 const CATEGORY_LABELS: Record<string, string> = {
   vegetable: '채소', fruit: '과일', meat: '육류', seafood: '수산',
@@ -51,9 +51,11 @@ interface Props {
   products: Product[]
   prices: SupplierProduct[]
   existingItems: OrderItem[]
+  /** 단가가 없어 담당자 확인을 기다리는 품목 이름 */
+  pendingNames: string[]
 }
 
-export default function OrderForm({ restaurantId, businessDate, batchId, orderId: initialOrderId, products, prices, existingItems }: Props) {
+export default function OrderForm({ restaurantId, businessDate, batchId, orderId: initialOrderId, products, prices, existingItems, pendingNames }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [currentOrderId, setCurrentOrderId] = useState(initialOrderId)
@@ -292,7 +294,20 @@ export default function OrderForm({ restaurantId, businessDate, batchId, orderId
         </div>
       </div>
 
-      <AddProductPanel restaurantId={restaurantId} businessDate={businessDate} />
+      {/* 품목 고르기는 화면을 통째로 쓴다. 휴대폰에서 좁은 접이식 목록은 보기 어렵다. */}
+      <div className="bg-white rounded-xl border border-gray-200 px-4 py-3 space-y-2">
+        {pendingNames.length > 0 && (
+          <p className="text-xs text-amber-600">
+            담당자 확인 중 · {pendingNames.join(', ')}
+          </p>
+        )}
+        <Link
+          href="/member/products/add"
+          className="block w-full rounded-lg border border-dashed border-gray-300 py-3 text-center text-sm font-semibold text-gray-600 hover:bg-gray-50"
+        >
+          + 품목 추가
+        </Link>
+      </div>
 
       {/* 요약 + 제출 */}
       <div className="bg-white rounded-xl border border-gray-200 px-4 py-3 flex items-center justify-between">
