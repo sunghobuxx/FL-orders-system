@@ -81,12 +81,15 @@ export default function AddProductPanel({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ restaurantId, productIds: [...picked] }),
       })
-      const d = await res.json() as { added?: string[]; requested?: string[]; error?: string }
+      const d = await res.json() as {
+        added?: string[]; requested?: string[]; skipped?: number; error?: string
+      }
       if (!res.ok) throw new Error(d.error ?? '추가하지 못했습니다.')
 
       const parts: string[] = []
       if (d.added?.length) parts.push(`${d.added.length}개 추가됐습니다`)
       if (d.requested?.length) parts.push(`${d.requested.length}개는 담당자 확인 중입니다`)
+      if (d.skipped) parts.push(`${d.skipped}개는 이미 들어가 있습니다`)
       setMsg(parts.join(' · '))
 
       // 방금 넣은 것은 목록에서 뺀다. 화면을 새로 그리기 전이라도 두 번 고르지 못하게.

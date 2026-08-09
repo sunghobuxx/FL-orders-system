@@ -124,17 +124,22 @@ export async function POST(req: NextRequest) {
       else requested.push(id)
     }
 
+    // 실제로 넣은 것만 돌려준다. 이미 있는 것까지 세어 돌려주면 화면에
+    // "1개 추가됐습니다" 라고 뜨는데 실제로는 아무 것도 안 들어간 상태가 된다.
+    let addedFresh: string[] = []
+    let requestedFresh: string[] = []
+
     if (added.length) {
       // 이미 열려 있는 품목은 건드리지 않는다. UNIQUE 로 죽으면 나머지도 같이 안 들어간다.
       const { data: exist } = await db
         .from('restaurant_products').select('product_id')
         .eq('restaurant_id', restaurantId).in('product_id', added)
       const have = new Set((exist ?? []).map((r: { product_id: string }) => r.product_id))
-      const fresh = added.filter(id => !have.has(id))
+      addedFresh = added.filter(id => !have.has(id))
 
-      if (fresh.length) {
+      if (addedFresh.length) {
         const { error } = await db.from('restaurant_products').insert(
-          fresh.map(pid => ({
+          addedFresh.map(pid => ({
             restaurant_id: restaurantId,
             product_id: pid,
             added_by: 'member',
@@ -150,11 +155,11 @@ export async function POST(req: NextRequest) {
         .from('product_requests').select('product_id')
         .eq('restaurant_id', restaurantId).eq('status', 'pending').in('product_id', requested)
       const have = new Set((exist ?? []).map((r: { product_id: string }) => r.product_id))
-      const fresh = requested.filter(id => !have.has(id))
+      requestedFresh = requested.filter(id => !have.has(id))
 
-      if (fresh.length) {
+      if (requestedFresh.length) {
         const { error } = await db.from('product_requests').insert(
-          fresh.map(pid => ({
+          requestedFresh.map(pid => ({
             restaurant_id: restaurantId, product_id: pid, requested_by: userId,
           })))
         if (error) {
@@ -163,7 +168,12 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    return NextResponse.json({ added, requested })
+    return NextResponse.json({
+      added: addedFresh,
+      requested: requestedFresh,
+      // 이미 목록에 있거나 이미 요청해 둔 것
+      skipped: (added.length - addedFresh.length) + (requested.length - requestedFresh.length),
+    })
   } catch (e) {
     console.error('[POST /api/member/products]', e)
     return NextResponse.json({ error: '품목을 추가하지 못했습니다.' }, { status: 500 })
