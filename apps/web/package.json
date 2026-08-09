@@ -5,6 +5,8 @@
   "packageManager": "pnpm@10.32.1",
   "scripts": {
     "dev": "next dev",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "build": "VERCEL='' NODE_OPTIONS=--max-old-space-size=4096 next build",
     "build:cf": "VERCEL='' next-on-pages",
     "start": "next start",
