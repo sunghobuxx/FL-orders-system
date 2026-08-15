@@ -1,7 +1,7 @@
 export const runtime = 'edge'
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createAdminClient } from '@/lib/supabase/admin'
+import { getAuthorizedAdminDb } from '@/lib/admin-member-user'
 
 export async function POST(
   req: NextRequest,
@@ -10,7 +10,9 @@ export async function POST(
   const { userId } = await params
   const { restaurantIds } = await req.json() as { restaurantIds: string[] }
 
-  const db = createAdminClient()
+  // 로그인만 봐서는 회원 계정으로도 통과한다. 관리자 권한까지 확인한다.
+  const db = await getAuthorizedAdminDb()
+  if (!db) return NextResponse.json({ error: '권한이 없습니다' }, { status: 403 })
 
   const { error: delError } = await db
     .from('manager_restaurants')
