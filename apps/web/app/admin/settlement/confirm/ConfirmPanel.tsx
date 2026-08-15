@@ -161,17 +161,20 @@ export default function ConfirmPanel({ rows, cycle, periods, selectedPeriodId }:
       </div>
 
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <div className="grid grid-cols-[32px_1fr_110px_110px_110px_150px] gap-2 px-4 py-3 bg-gray-50 border-b border-gray-200 text-xs font-semibold text-gray-500">
+        <div className="grid grid-cols-[32px_1fr_100px_100px_100px_110px_150px] gap-2 px-4 py-3 bg-gray-50 border-b border-gray-200 text-xs font-semibold text-gray-500">
           <span></span><span>업체 · 기간</span>
-          <span className="text-right">당기</span><span className="text-right">이전</span>
-          <span className="text-right">합계</span><span>상태</span>
+          <span className="text-right">당기</span>
+          <span className="text-right">이전</span>
+          <span className="text-right">미수</span>
+          <span className="text-right">받을 금액</span>
+          <span>상태</span>
         </div>
         <div className="divide-y divide-gray-100">
           {rows.length === 0 && (
             <p className="py-12 text-center text-sm text-gray-400">이 기간에 정산서가 없습니다</p>
           )}
           {rows.map(r => (
-            <div key={r.statementId} className="grid grid-cols-[32px_1fr_110px_110px_110px_150px] gap-2 items-center px-4 py-3">
+            <div key={r.statementId} className="grid grid-cols-[32px_1fr_100px_100px_100px_110px_150px] gap-2 items-center px-4 py-3">
               <input
                 type="checkbox"
                 checked={picked.has(r.statementId)}
@@ -196,6 +199,10 @@ export default function ConfirmPanel({ rows, cycle, periods, selectedPeriodId }:
               <span className="text-sm text-gray-700 text-right tabular-nums">{won(r.current)}</span>
               <span className={`text-sm text-right tabular-nums ${r.carryover > 0 ? 'text-amber-600' : 'text-gray-400'}`}>
                 {won(r.carryover)}
+              </span>
+              {/* 아직 안 받은 돈. 0 이면 그 기간은 이미 받은 것이다. */}
+              <span className={`text-sm text-right tabular-nums ${r.outstanding > 0 ? 'text-red-600 font-medium' : 'text-gray-300'}`}>
+                {won(r.outstanding)}
               </span>
               <span className="text-sm font-semibold text-gray-900 text-right tabular-nums">{won(r.total)}</span>
               <div className="text-xs">

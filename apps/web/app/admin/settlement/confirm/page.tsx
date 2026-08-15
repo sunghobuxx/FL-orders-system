@@ -2,6 +2,7 @@ export const runtime = 'edge'
 
 import { requireAuthorizedAdminDb } from '@/lib/admin-member-user'
 import { fetchAll } from '@/lib/supabase/fetch-all'
+import { getCarryover } from '@/lib/settlement/carryover'
 import AdminSettlementShell from '../AdminSettlementShell'
 import ConfirmPanel from './ConfirmPanel'
 
@@ -26,8 +27,13 @@ export interface ConfirmRow {
   cycle: string
   start: string
   end: string
+  /** 당기 청구액 — 이 기간에 청구한 금액 */
   current: number
+  /** 이전 미수금 — 이 기간이 시작되기 전에 끝난 정산서들의 미납 잔액 */
   carryover: number
+  /** 이 정산서에서 아직 안 받은 금액 */
+  outstanding: number
+  /** 지금 실제로 받아야 할 금액 = outstanding + carryover (종이 정산서의 「받을 금액」) */
   total: number
   confirmedAt: string | null
   notifiedAt: string | null
@@ -126,17 +132,28 @@ export default async function SettlementConfirmPage({ searchParams }: Props) {
     if (!phoneOf.has(c.organization_id)) phoneOf.set(c.organization_id, c.phone)
   }
 
-  const rows: ConfirmRow[] = statements.map(s => {
+  const rows: ConfirmRow[] = (await Promise.all(statements.map(async s => {
     const rest = Array.isArray(s.restaurants) ? s.restaurants[0] : s.restaurants
     const org = Array.isArray(rest?.organizations) ? rest.organizations[0] : rest?.organizations
     const period = Array.isArray(s.settlement_periods) ? s.settlement_periods[0] : s.settlement_periods
     const restCycle = rest?.settlement_cycle ?? 'weekly'
     const current = Number(s.total_amount ?? 0)
-    const carryover = receivables
-      .filter(r => r.restaurant_id === s.restaurant_id && r.statement_id !== s.id)
-      .reduce((acc, r) => acc + Number(r.balance ?? 0), 0)
-    const phone = phoneOf.get(rest?.organization_id) ?? null
 
+    // 이 정산서의 남은 미수금
+    const outstanding = receivables
+      .filter(r => r.statement_id === s.id)
+      .reduce((acc, r) => acc + Number(r.balance ?? 0), 0)
+
+    // 이전 미수금은 getCarryover 하나로만 구한다.
+    //
+    // 예전에는 「이 정산서만 빼고 전부 더하기」였다. 그러면 지난 기간을 열었을 때
+    // **그 뒤에 생긴 정산서까지 이전 미수금으로 잡힌다.** 2026-08-15 확인:
+    // 용산점 08-02~08-08(이미 완납) 줄에 127,200 이 떴는데 그건 다음 주 미수금이었다.
+    // 정산서 상세·인쇄·문자는 이미 이 함수를 쓴다. 확정 화면만 옛 방식으로 남아 있었다.
+    const { previous: carryover } = await getCarryover(
+      db, s.restaurant_id, s.id, outstanding, period?.start_date ?? null)
+
+    const phone = phoneOf.get(rest?.organization_id) ?? null
     const sendable = restCycle !== 'daily' && Boolean(phone)
     const reason = restCycle === 'daily' ? '발송 대상 아님(일정산)' : (!phone ? '연락처 없음' : '')
 
@@ -145,11 +162,15 @@ export default async function SettlementConfirmPage({ searchParams }: Props) {
       restaurantId: s.restaurant_id,
       orgName: org?.name ?? '알 수 없음',
       cycle: restCycle, start: period?.start_date ?? '', end: period?.end_date ?? '',
-      current, carryover, total: current + carryover,
+      current,
+      carryover,
+      outstanding,
+      // 이미 받은 돈은 또 달라고 하지 않는다. 종이 정산서·문자와 같은 계산이다.
+      total: outstanding + carryover,
       confirmedAt: s.confirmed_at, notifiedAt: s.notified_at,
       phone: maskPhone(phone), sendable, reason,
     }
-  }).sort((a, b) => a.orgName.localeCompare(b.orgName, 'ko'))
+  }))).sort((a, b) => a.orgName.localeCompare(b.orgName, 'ko'))
 
   return (
     <AdminSettlementShell>
