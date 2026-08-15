@@ -78,7 +78,12 @@ export default async function SettlementConfirmPage({ searchParams }: Props) {
     .from('settlement_periods')
     .select('id, start_date, end_date')
     .eq('period_type', cycle)
-    .lt('end_date', today)
+    // 오늘 끝나는 기간까지 넣는다.
+    //
+    // 예전에는 `< 오늘` 이라 **오늘 마감인 주가 빠졌다.** 주정산은 일~토라 토요일에
+    // 끝나는데, 사장님은 토요일 배송을 마치고 오후 2~3시에 정산서를 넘긴다.
+    // 정작 넘기는 날 화면에 안 떴다 (2026-08-15 확인).
+    .lte('end_date', today)
     .order('end_date', { ascending: false }))
 
   // 정산서가 없는 기간은 고를 이유가 없다.
@@ -177,6 +182,7 @@ export default async function SettlementConfirmPage({ searchParams }: Props) {
       <ConfirmPanel
         rows={rows}
         cycle={cycle}
+        today={today}
         periods={periods.slice(0, 12)}
         selectedPeriodId={selected?.id ?? null}
       />

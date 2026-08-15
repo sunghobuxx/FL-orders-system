@@ -18,11 +18,13 @@ function periodLabel(start: string, end: string) {
 interface Props {
   rows: ConfirmRow[]
   cycle: string
+  /** 오늘(KST). 오늘 마감인 기간을 알려 주는 데 쓴다 */
+  today: string
   periods: PeriodOption[]
   selectedPeriodId: string | null
 }
 
-export default function ConfirmPanel({ rows, cycle, periods, selectedPeriodId }: Props) {
+export default function ConfirmPanel({ rows, cycle, today, periods, selectedPeriodId }: Props) {
   const router = useRouter()
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const [busy, setBusy] = useState(false)
@@ -116,6 +118,12 @@ export default function ConfirmPanel({ rows, cycle, periods, selectedPeriodId }:
                 }`}
               >
                 {periodLabel(p.start, p.end)}
+                {/* 오늘 끝나는 주는 배송이 남아 있을 수 있다. 확정 전에 알아채도록 표시한다. */}
+                {p.end === today && (
+                  <span className={p.id === selectedPeriodId ? ' opacity-80' : ' text-brand-600'}>
+                    {' '}오늘 마감
+                  </span>
+                )}
                 {p.pending > 0 && (
                   <span className={p.id === selectedPeriodId ? ' opacity-80' : ' text-amber-600'}>
                     {' '}미확정 {p.pending}
