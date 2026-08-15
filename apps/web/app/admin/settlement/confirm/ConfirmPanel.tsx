@@ -181,7 +181,17 @@ export default function ConfirmPanel({ rows, cycle, periods, selectedPeriodId }:
               />
               <div className="min-w-0">
                 <div className="text-sm text-gray-900 truncate">{r.orgName}</div>
-                <div className="text-xs text-gray-400">{r.start} ~ {r.end}</div>
+                <div className="text-xs text-gray-400">
+                  {r.start} ~ {r.end}
+                  {/* 넘기기 전에 내역을 볼 수 있어야 한다. 새 탭이라 목록을 잃지 않는다. */}
+                  <Link
+                    href={`/admin/settlement/restaurant/${r.restaurantId}/${r.statementId}`}
+                    target="_blank"
+                    className="ml-2 text-brand-600 hover:underline"
+                  >
+                    내역 보기
+                  </Link>
+                </div>
               </div>
               <span className="text-sm text-gray-700 text-right tabular-nums">{won(r.current)}</span>
               <span className={`text-sm text-right tabular-nums ${r.carryover > 0 ? 'text-amber-600' : 'text-gray-400'}`}>

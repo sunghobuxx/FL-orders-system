@@ -3,6 +3,8 @@ export const runtime = 'edge'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { fetchAll } from '@/lib/supabase/fetch-all'
 import { getCarryover } from '@/lib/settlement/carryover'
+import StatementSheet, { type StatementSheetRow } from '@/components/StatementSheet'
+import PrintButton from './PrintButton'
 
 /**
  * 로그인 없이 보는 정산서.
@@ -22,8 +24,6 @@ export const metadata = {
 interface Props {
   params: Promise<{ token: string }>
 }
-
-const won = (n: number) => `${Math.round(Number(n ?? 0)).toLocaleString('ko-KR')}원`
 
 export default async function SharedStatementPage({ params }: Props) {
   const { token } = await params
@@ -50,7 +50,7 @@ export default async function SharedStatementPage({ params }: Props) {
 
   const { data: stmt } = await db
     .from('sales_statements')
-    .select('id, total_amount, restaurant_id, settlement_periods(start_date, end_date), restaurants(organizations(name))')
+    .select('id, total_amount, restaurant_id, settlement_periods(period_type, start_date, end_date), restaurants(organizations(name))')
     .eq('id', link.statement_id)
     .maybeSingle()
 
@@ -71,16 +71,58 @@ export default async function SharedStatementPage({ params }: Props) {
     .select('amount, source_doc_id')
     .eq('sales_statement_id', stmt.id))
 
-  const specIds = lines.map(l => l.source_doc_id).filter(Boolean)
+  // 금액이 0 인 줄은 빼고 보여준다. 청구하지 않기로 한 옛 명세서가 그렇게 남아 있는데
+  // 거래처 정산서에 「₩ 0」으로 찍히면 무슨 돈인지 묻게 된다.
+  const billed = lines.filter(l => Number(l.amount ?? 0) > 0 && l.source_doc_id)
+
+  const specIds = billed.map(l => l.source_doc_id)
   const specs = specIds.length
     ? await fetchAll<{ id: string; business_date: string; total_amount: number }>(() => db
         .from('daily_specs').select('id, business_date, total_amount').in('id', specIds))
     : []
   const dateOf = new Map(specs.map(s => [s.id, s.business_date]))
 
-  const rows = lines
-    .map(l => ({ date: dateOf.get(l.source_doc_id) ?? '', amount: Number(l.amount ?? 0) }))
-    .sort((a, b) => a.date.localeCompare(b.date))
+  // 납품 내용 — 종이 정산서와 같은 「꽃상추 1box + 곱슬이 1box」 형태
+  type SpecLine = { daily_spec_id: string; qty: number; unit: string; products: { standard_name: string } | null }
+  const specLines = specIds.length
+    ? await fetchAll<SpecLine>(() => db
+        .from('daily_spec_lines')
+        .select('daily_spec_id, qty, unit, products(standard_name)')
+        .in('daily_spec_id', specIds))
+    : []
+  const linesBySpec = new Map<string, SpecLine[]>()
+  for (const raw of specLines) {
+    const l = raw as unknown as SpecLine
+    const arr = linesBySpec.get(l.daily_spec_id) ?? []
+    arr.push(l)
+    linesBySpec.set(l.daily_spec_id, arr)
+  }
+
+  function summarize(specId: string): string {
+    const rows = linesBySpec.get(specId) ?? []
+    if (!rows.length) return '-'
+    return rows.map(l => {
+      const p = Array.isArray(l.products) ? l.products[0] : l.products
+      const name = p?.standard_name ?? '품목'
+      const q = Number(l.qty) % 1 === 0 ? Number(l.qty) : Number(l.qty).toFixed(1)
+      return `${name} ${q}${l.unit}`
+    }).join(' + ')
+  }
+
+  const sheetRows: Array<StatementSheetRow & { sortKey: string }> = billed
+    .map(l => {
+      const date = dateOf.get(l.source_doc_id) ?? ''
+      const [y, m, d] = date.split('-')
+      return {
+        key: l.source_doc_id,
+        sortKey: date,
+        date: date ? `${Number(y)}.${Number(m)}.${Number(d)}` : '-',
+        itemCount: (linesBySpec.get(l.source_doc_id) ?? []).length,
+        summary: summarize(l.source_doc_id),
+        amount: Number(l.amount ?? 0),
+      }
+    })
+    .sort((a, b) => a.sortKey.localeCompare(b.sortKey))
 
   // 이전 미수금은 getCarryover 하나로만 구한다. 어드민 화면·인쇄·문자가 같은 함수를 쓴다.
   // 「이 정산서만 빼고 전부 더하기」로 하면 그 뒤에 생긴 정산서까지 이전 미수금으로 잡힌다
@@ -95,41 +137,44 @@ export default async function SharedStatementPage({ params }: Props) {
   )
 
   const current = Number(stmt.total_amount ?? 0)
+  const paidAmount = Math.max(0, current - currentOutstanding)
+
+  const pStart = period?.start_date ?? ''
+  const pEnd = period?.end_date ?? ''
+  const pYear = Number(pStart.split('-')[0] ?? 0)
+  const pMon = Number(pStart.split('-')[1] ?? 0)
+  const pDay = Number(pStart.split('-')[2] ?? 0)
+  const endDay = Number(pEnd.split('-')[2] ?? 0)
+  const title = period?.period_type === 'monthly'
+    ? `${pMon}월 발주 정산서`
+    : `${pMon}월 ${Math.ceil(pDay / 7)}주 발주 정산서`
+  const issuedOn = pStart ? `${pYear}.${pMon}.${endDay}` : ''
 
   return (
-    <main className="min-h-screen bg-gray-50 py-8 px-4">
-      <div className="max-w-lg mx-auto bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <div className="px-5 py-4 border-b border-gray-100">
-          <p className="text-xs text-gray-400">FruitLife 정산서</p>
-          <p className="text-base font-bold text-gray-900 mt-0.5">{org?.name ?? '거래처'}</p>
-          <p className="text-sm text-gray-500 mt-0.5">
-            {period?.start_date} ~ {period?.end_date}
-          </p>
+    <main className="min-h-screen bg-gray-100 py-6 px-3 print:bg-white print:p-0">
+      <div className="mx-auto max-w-3xl space-y-3">
+        {/* 좁은 화면에서는 표가 눌리지 않게 가로로 넘긴다. 종이와 같은 칸 비율을 지킨다. */}
+        <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white p-4 print:border-0 print:p-0">
+          <div className="min-w-[560px]">
+            <StatementSheet
+              title={title}
+              issuedOn={issuedOn}
+              orgName={org?.name ?? '거래처'}
+              rows={sheetRows}
+              totalAmount={current}
+              carryover={carryover}
+              paidAmount={paidAmount}
+              outstandingAmount={currentOutstanding}
+              totalDue={currentOutstanding + carryover}
+            />
+          </div>
         </div>
 
-        <div className="divide-y divide-gray-100">
-          {rows.map((r, i) => (
-            <div key={`${r.date}-${i}`} className="flex justify-between px-5 py-2.5">
-              <span className="text-sm text-gray-600">{r.date}</span>
-              <span className="text-sm text-gray-800 tabular-nums">{won(r.amount)}</span>
-            </div>
-          ))}
-        </div>
+        <PrintButton />
 
-        <div className="px-5 py-4 bg-gray-50 border-t border-gray-200 space-y-1.5">
-          <div className="flex justify-between text-sm">
-            <span className="text-gray-500">당기 청구</span>
-            <span className="text-gray-800 tabular-nums">{won(current)}</span>
-          </div>
-          <div className="flex justify-between text-sm">
-            <span className="text-gray-500">이전 미수금</span>
-            <span className="text-gray-800 tabular-nums">{won(carryover)}</span>
-          </div>
-          <div className="flex justify-between text-base font-bold pt-1.5 border-t border-gray-200">
-            <span className="text-gray-900">총 청구액</span>
-            <span className="text-gray-900 tabular-nums">{won(current + carryover)}</span>
-          </div>
-        </div>
+        <p className="px-1 text-center text-xs text-gray-400 print:hidden">
+          이 링크는 발송일로부터 7일간 볼 수 있습니다.
+        </p>
       </div>
     </main>
   )

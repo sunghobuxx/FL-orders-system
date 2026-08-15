@@ -20,6 +20,8 @@ import ConfirmPanel from './ConfirmPanel'
 
 export interface ConfirmRow {
   statementId: string
+  /** 정산 내역 화면으로 가려면 식당 id 가 함께 있어야 한다 */
+  restaurantId: string
   orgName: string
   cycle: string
   start: string
@@ -140,6 +142,7 @@ export default async function SettlementConfirmPage({ searchParams }: Props) {
 
     return {
       statementId: s.id,
+      restaurantId: s.restaurant_id,
       orgName: org?.name ?? '알 수 없음',
       cycle: restCycle, start: period?.start_date ?? '', end: period?.end_date ?? '',
       current, carryover, total: current + carryover,

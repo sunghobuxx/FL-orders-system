@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getCarryover } from '@/lib/settlement/carryover'
 import AutoPrint from '@/app/member/spec/print/AutoPrint'
+import StatementSheet, { type StatementSheetRow } from '@/components/StatementSheet'
 
 interface Props {
   params: Promise<{ restaurantId: string; statementId: string }>
@@ -70,8 +71,6 @@ export default async function AdminStatementPrintPage({ params }: Props) {
     }).join(' + ')
   }
 
-  const fmtWon = (n: number) => `₩ ${n.toLocaleString()}`
-
   const pYear = period ? Number(period.start_date.split('-')[0]) : 0
   const pMon  = period ? Number(period.start_date.split('-')[1]) : 0
   const pDay  = period ? Number(period.start_date.split('-')[2]) : 0
@@ -82,104 +81,38 @@ export default async function AdminStatementPrintPage({ params }: Props) {
     : `${pMon}월 ${weekNum}주 발주 정산서`
   const printDate = period ? `${pYear}.${pMon}.${endDay}` : ''
 
+  const sheetRows: StatementSheetRow[] = dailySpecs.map(spec => {
+    const [, sm, sd] = spec.business_date.split('-')
+    return {
+      key: spec.id,
+      date: `${pYear}.${Number(sm)}.${Number(sd)}`,
+      itemCount: (linesBySpec[spec.id] ?? []).length,
+      summary: summarize(spec.id),
+      amount: Number(spec.total_amount),
+    }
+  })
+
   return (
     <>
       <AutoPrint />
       <style>{`
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: 'Malgun Gothic', '맑은 고딕', Arial, sans-serif; font-size: 11pt; padding: 10mm; background: white; }
-        table { width: 100%; border-collapse: collapse; }
-        td, th { border: 1px solid #000; padding: 4px 8px; font-size: 10pt; }
-        .no-b td { border: none; }
-        h2 { text-align: center; font-size: 16pt; font-weight: bold; margin-bottom: 6mm; }
+        body { font-size: 11pt; padding: 10mm; background: white; }
         @media print { @page { size: A4; margin: 10mm; } }
       `}</style>
 
-      <h2>{printTitle}</h2>
-
-      <table className="no-b" style={{marginBottom:'3mm'}}>
-        <tbody>
-          <tr>
-            <td style={{width:'50%', borderBottom:'1px solid #000', paddingBottom:'3px'}}>{printDate}</td>
-            <td style={{width:'50%', textAlign:'right', fontSize:'10pt', lineHeight:'1.9'}}>
-              상호: 커넥티드 &nbsp; 성명: 김성호<br/>
-              사업장 소재지: 인천 남동구 청능대로 559<br/>
-              전화번호: 010-8680-5475
-            </td>
-          </tr>
-        </tbody>
-      </table>
-
-      <div style={{borderBottom:'1px solid #000', fontWeight:'bold', fontSize:'12pt', padding:'4px 0', marginBottom:'3mm'}}>
-        {orgName} 귀하
-      </div>
-      <div style={{fontSize:'10pt', marginBottom:'4mm'}}>아래와 같이 계산합니다.</div>
-
-      <table>
-        <thead>
-          <tr style={{backgroundColor:'#f0f0f0'}}>
-            <th style={{width:'18%', textAlign:'center'}}>납품일자</th>
-            <th style={{width:'10%', textAlign:'center'}}>품목수</th>
-            <th style={{width:'52%', textAlign:'center'}}>내용</th>
-            <th style={{width:'20%', textAlign:'center'}}>금액</th>
-          </tr>
-        </thead>
-        <tbody>
-          {dailySpecs.map(spec => {
-            const [, sm, sd] = spec.business_date.split('-')
-            const lines = linesBySpec[spec.id] ?? []
-            return (
-              <tr key={spec.id}>
-                <td style={{textAlign:'center'}}>{pYear}.{Number(sm)}.{Number(sd)}</td>
-                <td style={{textAlign:'center'}}>{lines.length}</td>
-                <td style={{fontSize:'9pt'}}>{summarize(spec.id)}</td>
-                <td style={{textAlign:'right', fontWeight:'bold'}}>{fmtWon(Number(spec.total_amount))}</td>
-              </tr>
-            )
-          })}
-          {Array.from({length: Math.max(0, 5 - dailySpecs.length)}).map((_, i) => (
-            <tr key={`e${i}`}><td>&nbsp;</td><td></td><td></td><td style={{textAlign:'right'}}>₩ -</td></tr>
-          ))}
-          <tr style={{backgroundColor:'#f9f9f9'}}>
-            <td colSpan={3} style={{textAlign:'right', fontWeight:'bold'}}>당기 합계</td>
-            <td style={{textAlign:'right', fontWeight:'bold', fontSize:'11pt'}}>{fmtWon(totalAmount)}</td>
-          </tr>
-          {carryover > 0 && (
-            <tr style={{backgroundColor:'#fffbf0'}}>
-              <td colSpan={3} style={{textAlign:'right', fontWeight:'bold', color:'#b45309'}}>이전 미수금</td>
-              <td style={{textAlign:'right', fontWeight:'bold', color:'#b45309'}}>{fmtWon(carryover)}</td>
-            </tr>
-          )}
-          {paidAmount > 0 && (
-            <tr>
-              <td colSpan={3} style={{textAlign:'right', color:'#555'}}>납부액</td>
-              <td style={{textAlign:'right', color:'#555'}}>{fmtWon(paidAmount)}</td>
-            </tr>
-          )}
-          <tr style={{backgroundColor:'#fff5f5'}}>
-            <td colSpan={3} style={{textAlign:'right', fontWeight:'bold', color:'#cc0000'}}>미수금</td>
-            <td style={{textAlign:'right', fontWeight:'bold', color:'#cc0000', fontSize:'12pt'}}>{fmtWon(outstandingAmount)}</td>
-          </tr>
-          {carryover > 0 && (
-            <tr style={{backgroundColor:'#fff5f5'}}>
-              <td colSpan={3} style={{textAlign:'right', fontWeight:'bold', color:'#cc0000'}}>받을 금액</td>
-              <td style={{textAlign:'right', fontWeight:'bold', color:'#cc0000', fontSize:'13pt'}}>{fmtWon(totalDue)}</td>
-            </tr>
-          )}
-        </tbody>
-      </table>
-
-      <table style={{marginTop:'4mm'}}>
-        <tbody>
-          <tr>
-            <td style={{backgroundColor:'#f0f0f0', textAlign:'center', fontWeight:'bold', width:'30%'}}>입금 계좌 안내</td>
-            <td style={{fontSize:'10pt', lineHeight:'1.8', padding:'6px 10px'}}>
-              농협 302-1748-8091-81 &nbsp;|&nbsp; 예금주: 차숙희(커넥티드)<br/>
-              문의: 010-8680-5475 (김성호)
-            </td>
-          </tr>
-        </tbody>
-      </table>
+      <StatementSheet
+        title={printTitle}
+        issuedOn={printDate}
+        orgName={orgName}
+        rows={sheetRows}
+        totalAmount={totalAmount}
+        carryover={carryover}
+        paidAmount={paidAmount}
+        outstandingAmount={outstandingAmount}
+        totalDue={totalDue}
+        minRows={5}
+      />
     </>
   )
 }
