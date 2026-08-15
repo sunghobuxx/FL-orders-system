@@ -3,7 +3,7 @@ export const runtime = 'edge'
 import { NextRequest, NextResponse } from 'next/server'
 
 import { createAdminClient } from '@/lib/supabase/admin'
-import { getSessionUser } from '@/lib/supabase/server'
+import { getAdminSession } from '@/lib/admin-member-user'
 
 export async function POST(req: NextRequest) {
   try {
@@ -19,8 +19,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: '상호명, 업체 유형 필수' }, { status: 400 })
     }
 
-    const { user } = await getSessionUser()
-    if (!user) return NextResponse.json({ error: '인증 필요' }, { status: 401 })
+    // 로그인만 보면 회원 계정으로도 통과한다. 관리자 권한까지 확인한다.
+    const session = await getAdminSession()
+    if (!session) return NextResponse.json({ error: '권한이 없습니다' }, { status: 403 })
+    const { user } = session
 
     const adminDb = createAdminClient()
 

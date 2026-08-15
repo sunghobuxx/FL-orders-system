@@ -2,15 +2,17 @@ export const runtime = 'edge'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { getSessionUser } from '@/lib/supabase/server'
+import { getAdminSession } from '@/lib/admin-member-user'
 
 export async function PUT(req: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
     const { id: supplierId } = await context.params
     const { name, dispatch_channel, status, phone } = await req.json()
 
-    const { user } = await getSessionUser()
-    if (!user) return NextResponse.json({ error: '로그인이 필요합니다' }, { status: 401 })
+    // 로그인만 보면 회원 계정으로도 통과한다. 관리자 권한까지 확인한다.
+    const session = await getAdminSession()
+    if (!session) return NextResponse.json({ error: '권한이 없습니다' }, { status: 403 })
+    const { user } = session
     // 데이터 작업은 service role 로 한다. 세션(RLS)으로 쓰면 막혀도 에러가 안 나
     // 조용히 실패하거나 조회가 null 이 되어 엉뚱한 404 가 난다.
     const db = createAdminClient()
@@ -70,8 +72,10 @@ export async function PUT(req: NextRequest, context: { params: Promise<{ id: str
 export async function DELETE(_req: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
     const { id: supplierId } = await context.params
-    const { user } = await getSessionUser()
-    if (!user) return NextResponse.json({ error: '로그인이 필요합니다' }, { status: 401 })
+    // 로그인만 보면 회원 계정으로도 통과한다. 관리자 권한까지 확인한다.
+    const session = await getAdminSession()
+    if (!session) return NextResponse.json({ error: '권한이 없습니다' }, { status: 403 })
+    const { user } = session
     // 데이터 작업은 service role 로 한다. 세션(RLS)으로 쓰면 막혀도 에러가 안 나
     // 조용히 실패하거나 조회가 null 이 되어 엉뚱한 404 가 난다.
     const db = createAdminClient()

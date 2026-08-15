@@ -3,7 +3,7 @@ export const runtime = 'edge'
 import { NextRequest, NextResponse } from 'next/server'
 
 import { createAdminClient } from '@/lib/supabase/admin'
-import { getSessionUser } from '@/lib/supabase/server'
+import { getAdminSession } from '@/lib/admin-member-user'
 
 export async function POST(req: NextRequest) {
   try {
@@ -14,12 +14,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'entityId, productId 누락' }, { status: 400 })
     }
 
-    const { user } = await getSessionUser()
-    if (!user) return NextResponse.json({ error: '로그인이 필요합니다' }, { status: 401 })
+    // 로그인만 보면 회원 계정으로도 통과한다. 관리자 권한까지 확인한다.
+    const session = await getAdminSession()
+    if (!session) return NextResponse.json({ error: '권한이 없습니다' }, { status: 403 })
+    const { user } = session
     // 데이터 작업은 service role 로. 세션(RLS)으로 쓰면 막혀도 에러가 안 나거나
     // 정책이 없으면 통째로 실패한다 (restaurant_products 는 service_role 쓰기만 허용).
     const db = createAdminClient()
-    if (!user) return NextResponse.json({ error: '인증 필요' }, { status: 401 })
 
     if (isSupplier) {
       if (link) {

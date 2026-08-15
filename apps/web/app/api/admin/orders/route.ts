@@ -1,7 +1,7 @@
 export const runtime = 'edge'
 
 import { NextRequest, NextResponse } from 'next/server'
-import { getSessionUser } from '@/lib/supabase/server'
+import { getAdminSession } from '@/lib/admin-member-user'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { syncSpecFromOrders } from '@/lib/specs/sync'
 import { refreshDispatchJobItems } from '@/lib/dispatch/current-items'
@@ -25,8 +25,10 @@ interface CleanItem {
 }
 
 export async function POST(req: NextRequest) {
-  const { user } = await getSessionUser()
-  if (!user) return NextResponse.json({ error: '로그인이 필요합니다.' }, { status: 401 })
+  // 로그인만 보면 회원 계정으로도 통과한다. 관리자 권한까지 확인한다.
+  const session = await getAdminSession()
+  if (!session) return NextResponse.json({ error: '권한이 없습니다' }, { status: 403 })
+  const { user } = session
 
   const body = await req.json()
   const { restaurantId, businessDate, batchId: existingBatchId, orderId: existingOrderId, items: rawItems, isSubmit } = body as {

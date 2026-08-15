@@ -3,7 +3,7 @@ export const runtime = 'edge'
 import { NextRequest, NextResponse } from 'next/server'
 
 import { createAdminClient } from '@/lib/supabase/admin'
-import { getSessionUser } from '@/lib/supabase/server'
+import { getAdminSession } from '@/lib/admin-member-user'
 
 /**
  * 가락시장 경매 실적을 하루치 집계해 market_daily_prices 에 저장한다.
@@ -75,8 +75,10 @@ export async function POST(req: NextRequest) {
     const secret = process.env.PUSH_CRON_SECRET
     const isCron = Boolean(secret) && req.headers.get('Authorization') === `Bearer ${secret}`
     if (!isCron) {
-      const { user } = await getSessionUser()
-      if (!user) return NextResponse.json({ error: '권한이 없습니다' }, { status: 401 })
+      // 로그인만 보면 회원 계정으로도 통과한다. 관리자 권한까지 확인한다.
+      const session = await getAdminSession()
+      if (!session) return NextResponse.json({ error: '권한이 없습니다' }, { status: 403 })
+      const { user } = session
     }
 
     const serviceKey = process.env.PUBLIC_DATA_SERVICE_KEY

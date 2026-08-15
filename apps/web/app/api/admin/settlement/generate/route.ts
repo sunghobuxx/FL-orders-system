@@ -3,7 +3,7 @@ export const runtime = 'edge'
 import { NextRequest, NextResponse } from 'next/server'
 
 import { createAdminClient } from '@/lib/supabase/admin'
-import { getSessionUser } from '@/lib/supabase/server'
+import { getAdminSession } from '@/lib/admin-member-user'
 import { getKstToday } from '@/lib/date-kst'
 import { generateStatements } from '@/lib/settlement/generate'
 import { checkIntegrity } from '@/lib/settlement/integrity'
@@ -25,8 +25,10 @@ export async function POST(req: NextRequest) {
     const isCron = Boolean(CRON_SECRET) && auth === `Bearer ${CRON_SECRET}`
 
     if (!isCron) {
-      const { user } = await getSessionUser()
-      if (!user) return NextResponse.json({ error: '로그인이 필요합니다' }, { status: 401 })
+      // 로그인만 보면 회원 계정으로도 통과한다. 관리자 권한까지 확인한다.
+      const session = await getAdminSession()
+      if (!session) return NextResponse.json({ error: '권한이 없습니다' }, { status: 403 })
+      const { user } = session
     }
 
     const body = await req.json().catch(() => ({})) as {
@@ -60,8 +62,10 @@ export async function POST(req: NextRequest) {
  */
 export async function GET(req: NextRequest) {
   try {
-    const { user } = await getSessionUser()
-    if (!user) return NextResponse.json({ error: '로그인이 필요합니다' }, { status: 401 })
+    // 로그인만 보면 회원 계정으로도 통과한다. 관리자 권한까지 확인한다.
+    const session = await getAdminSession()
+    if (!session) return NextResponse.json({ error: '권한이 없습니다' }, { status: 403 })
+    const { user } = session
 
     const since = new URL(req.url).searchParams.get('since') ?? `${getKstToday().slice(0, 7)}-01`
     const result = await checkIntegrity(createAdminClient(), since)

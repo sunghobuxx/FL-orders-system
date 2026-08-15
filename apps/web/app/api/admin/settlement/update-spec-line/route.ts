@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import { computeOutstanding, syncStatementFinance } from '@/lib/settlement-finance'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { getSessionUser } from '@/lib/supabase/server'
+import { getAdminSession } from '@/lib/admin-member-user'
 
 interface LineUpdate {
   id: string          // daily_spec_lines.id
@@ -32,12 +32,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: '필수 값 누락' }, { status: 400 })
     }
 
-    const { user } = await getSessionUser()
-    if (!user) return NextResponse.json({ error: '로그인이 필요합니다' }, { status: 401 })
+    // 로그인만 보면 회원 계정으로도 통과한다. 관리자 권한까지 확인한다.
+    const session = await getAdminSession()
+    if (!session) return NextResponse.json({ error: '권한이 없습니다' }, { status: 403 })
+    const { user } = session
     // 데이터 작업은 service role 로. 세션(RLS)으로 쓰면 막혀도 에러가 안 나거나
     // 정책이 없으면 통째로 실패한다 (restaurant_products 는 service_role 쓰기만 허용).
     const db = createAdminClient()
-    if (!user) return NextResponse.json({ error: '인증 필요' }, { status: 401 })
     const writeDb = getWriteClient(db as unknown as ReturnType<typeof createAdminClient>)
 
     // 1) daily_specs 존재 확인 + 이전 total 백업

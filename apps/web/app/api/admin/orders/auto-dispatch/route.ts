@@ -12,7 +12,7 @@ import {
 } from '@/lib/dispatch/current-items'
 import { sendKakaoAlimtalk } from '@/lib/messaging/kakao'
 import { getKstToday } from '@/lib/date-kst'
-import { getSessionUser } from '@/lib/supabase/server'
+import { getAdminSession } from '@/lib/admin-member-user'
 
 const CRON_SECRET = process.env.PUSH_CRON_SECRET
 
@@ -27,8 +27,10 @@ export async function POST(req: NextRequest) {
     const auth = req.headers.get('Authorization')
     const isCron = Boolean(CRON_SECRET) && auth === `Bearer ${CRON_SECRET}`
     if (!isCron) {
-      const { user } = await getSessionUser()
-      if (!user) return NextResponse.json({ error: '권한이 없습니다' }, { status: 401 })
+      // 로그인만 보면 회원 계정으로도 통과한다. 관리자 권한까지 확인한다.
+      const session = await getAdminSession()
+      if (!session) return NextResponse.json({ error: '권한이 없습니다' }, { status: 403 })
+      const { user } = session
     }
 
     const body = await req.json().catch(() => ({})) as { businessDate?: string }
