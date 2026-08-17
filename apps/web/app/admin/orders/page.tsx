@@ -7,6 +7,7 @@ import AdminOrderShell from './AdminOrderShell'
 import OrderActionButtons from './OrderActionButtons'
 import StatusButton from './StatusButton'
 import BatchControls from './BatchControls'
+import OrderLiveRefresh from './OrderLiveRefresh'
 import { getKstToday } from '@/lib/date-kst'
 
 interface Props {
@@ -89,6 +90,7 @@ export default async function AdminOrdersPage({ searchParams }: Props) {
 
   return (
     <AdminOrderShell date={targetDate}>
+      <OrderLiveRefresh />
       <div className="space-y-4 max-w-3xl">
         {/* 상단 액션 버튼 */}
         <div className="flex items-center justify-between">

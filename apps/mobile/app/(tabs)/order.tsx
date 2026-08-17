@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useFocusEffect } from 'expo-router'
+import { router, useFocusEffect } from 'expo-router'
 import {
   ActivityIndicator,
   Alert,
@@ -16,7 +16,14 @@ import {
 import { supabase } from '@/lib/supabase'
 import { MEMBER_API_URL } from '@/lib/member-api'
 
-type Product = { id: string; standard_name: string; default_unit: string; category: string | null }
+type Product = {
+  id: string
+  standard_name: string
+  default_unit: string
+  category: string | null
+  added_by: 'admin' | 'member'
+}
+type PendingProduct = { product_id: string; standard_name: string }
 type Batch = { id: string; business_date: string; status: string }
 type BatchState = { batch: Batch | null; businessDate: string; quantities: Record<string, string> }
 type BatchItem = { product_name: string; qty: number; unit: string }
@@ -100,6 +107,7 @@ export default function OrderScreen() {
   const [products, setProducts] = useState<Product[]>([])
   const [selectedCategory, setSelectedCategory] = useState('vegetable')
   const [unitPrices, setUnitPrices] = useState<Record<string, number>>({})
+  const [pendingProducts, setPendingProducts] = useState<PendingProduct[]>([])
   const [quantities, setQuantities] = useState<Record<string, string>>({})
   const [submitting, setSubmitting] = useState(false)
   const [todayBatch, setTodayBatch] = useState<Batch | null>(null)
@@ -115,13 +123,35 @@ export default function OrderScreen() {
   const loadProducts = useCallback(async (restId: string) => {
     const { data: rows } = await supabase
       .from('restaurant_products')
-      .select('products(id, standard_name, default_unit, category)')
+      .select('added_by, products(id, standard_name, default_unit, category)')
       .eq('restaurant_id', restId)
       .order('display_order')
 
     return (rows ?? [])
-      .map((row) => unwrapRelation<Product>(row.products))
+      .map((row) => {
+        const product = unwrapRelation<Omit<Product, 'added_by'>>(row.products)
+        if (!product) return null
+        return { ...product, added_by: row.added_by === 'member' ? 'member' : 'admin' } as Product
+      })
       .filter(Boolean) as Product[]
+  }, [])
+
+  const loadPendingProducts = useCallback(async (restId: string, date: string) => {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session?.access_token) return []
+
+    try {
+      const params = new URLSearchParams({ restaurantId: restId, businessDate: date })
+      const response = await fetch(`${MEMBER_API_URL}/api/member/products?${params}`, {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      })
+      const payload = await response.json() as { pending?: PendingProduct[]; error?: string }
+      if (!response.ok) throw new Error(payload.error ?? '품목 요청 상태를 불러오지 못했습니다.')
+      return payload.pending ?? []
+    } catch (error) {
+      if (__DEV__) console.log('Failed to load pending products:', error)
+      return []
+    }
   }, [])
 
   const loadUnitPrices = useCallback(async (restId: string, date: string) => {
@@ -207,16 +237,20 @@ export default function OrderScreen() {
       loadToday(restId),
       loadHistory(restId),
     ])
-    const prices = await loadUnitPrices(restId, current.businessDate)
+    const [prices, pending] = await Promise.all([
+      loadUnitPrices(restId, current.businessDate),
+      loadPendingProducts(restId, current.businessDate),
+    ])
     setProducts(productRows)
     setUnitPrices(prices)
+    setPendingProducts(pending)
     activeBatchRef.current = current.batch
     activeDateRef.current = current.businessDate
     setTodayBatch(current.batch)
     setBusinessDate(current.businessDate)
     setQuantities(current.quantities)
     setHistory(batches)
-  }, [loadHistory, loadProducts, loadToday, loadUnitPrices])
+  }, [loadHistory, loadPendingProducts, loadProducts, loadToday, loadUnitPrices])
 
   const syncActiveOrder = useCallback(async (restId: string) => {
     const current = await loadToday(restId)
@@ -286,19 +320,8 @@ export default function OrderScreen() {
     setRefreshing(false)
   }, [reload, restaurantId])
 
-  const handleSubmit = useCallback(async () => {
+  const submitOrder = useCallback(async (selected: Product[]) => {
     if (!restaurantId) return
-
-    const selected = products.filter((product) => {
-      const qty = quantities[product.id]
-      return qty && Number(qty) > 0
-    })
-
-    if (selected.length === 0) {
-      Alert.alert('알림', '수량을 입력해주세요.')
-      return
-    }
-
     setSubmitting(true)
     try {
       const { data: { session } } = await supabase.auth.getSession()
@@ -343,7 +366,74 @@ export default function OrderScreen() {
     } finally {
       setSubmitting(false)
     }
-  }, [businessDate, products, quantities, reload, restaurantId, todayBatch, unitPrices])
+  }, [businessDate, quantities, reload, restaurantId, todayBatch, unitPrices])
+
+  const handleSubmit = useCallback(() => {
+    const selected = products.filter((product) => {
+      const qty = quantities[product.id]
+      return qty && Number(qty) > 0
+    })
+
+    if (selected.length === 0) {
+      Alert.alert('알림', '수량을 입력해주세요.')
+      return
+    }
+
+    const missingPriceNames = selected
+      .filter((product) => !unitPrices[product.id] || unitPrices[product.id] <= 0)
+      .map((product) => product.standard_name)
+
+    if (missingPriceNames.length > 0) {
+      Alert.alert(
+        '단가가 정해지지 않은 품목이 있습니다',
+        `${missingPriceNames.join(', ')}\n\n그대로 발주하면 금액이 0원으로 잡힙니다. 담당자에게 확인해 주세요.\n계속할까요?`,
+        [
+          { text: '취소', style: 'cancel' },
+          { text: '계속 발주', style: 'destructive', onPress: () => void submitOrder(selected) },
+        ],
+      )
+      return
+    }
+
+    void submitOrder(selected)
+  }, [products, quantities, submitOrder, unitPrices])
+
+  const removeProduct = useCallback((product: Product) => {
+    if (!restaurantId || product.added_by !== 'member') return
+
+    Alert.alert(
+      '품목 빼기',
+      `“${product.standard_name}”을(를) 내 발주 목록에서 뺄까요?\n지난 발주 기록은 그대로 남습니다.`,
+      [
+        { text: '취소', style: 'cancel' },
+        {
+          text: '빼기',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const { data: { session } } = await supabase.auth.getSession()
+              if (!session?.access_token) throw new Error('로그인 세션이 만료되었습니다. 다시 로그인해주세요.')
+              const params = new URLSearchParams({ restaurantId, productId: product.id })
+              const response = await fetch(`${MEMBER_API_URL}/api/member/products?${params}`, {
+                method: 'DELETE',
+                headers: { Authorization: `Bearer ${session.access_token}` },
+              })
+              const payload = await response.json() as { error?: string }
+              if (!response.ok) throw new Error(payload.error ?? '품목을 빼지 못했습니다.')
+              setQuantities((prev) => {
+                const next = { ...prev }
+                delete next[product.id]
+                return next
+              })
+              await reload(restaurantId)
+            } catch (error) {
+              Alert.alert('오류', error instanceof Error ? error.message : '품목을 빼지 못했습니다.')
+            }
+          },
+        },
+      ],
+    )
+  }, [reload, restaurantId])
 
   useEffect(() => {
     async function init() {
@@ -444,6 +534,13 @@ export default function OrderScreen() {
             <View style={s.card}>
               <Text style={s.cardTitle}>{businessDate === todayKst() ? '오늘 발주 입력' : '다음날 발주 입력'}</Text>
               <Text style={s.cardSub}>{businessDate}</Text>
+              {pendingProducts.length > 0 && (
+                <View style={s.pendingBox}>
+                  <Text style={s.pendingText}>
+                    담당자 확인 중 · {pendingProducts.map((product) => product.standard_name).join(', ')}
+                  </Text>
+                </View>
+              )}
               {products.length !== 0 && (
                 <ScrollView
                   horizontal
@@ -481,7 +578,19 @@ export default function OrderScreen() {
               {products.length !== 0 ? categoryProducts.map((product) => (
                 <View key={product.id} style={s.productRow}>
                   <View style={{ flex: 1 }}>
-                    <Text style={s.productName}>{product.standard_name}</Text>
+                    <View style={s.productNameRow}>
+                      <Text style={s.productName}>{product.standard_name}</Text>
+                      {product.added_by === 'member' && (
+                        <TouchableOpacity
+                          style={s.removeBtn}
+                          onPress={() => removeProduct(product)}
+                          accessibilityRole="button"
+                          accessibilityLabel={`${product.standard_name} 품목 빼기`}
+                        >
+                          <Text style={s.removeBtnText}>×</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
                     <Text style={s.productUnit}>{product.default_unit}</Text>
                   </View>
                   <TextInput
@@ -506,6 +615,15 @@ export default function OrderScreen() {
               )) : (
                 <Text style={s.empty}>발주 가능한 품목이 없습니다.{'\n'}관리자에게 문의해주세요.</Text>
               )}
+              <TouchableOpacity
+                style={s.addProductBtn}
+                onPress={() => router.push({
+                  pathname: '../products/add',
+                  params: { restaurantId, businessDate },
+                })}
+              >
+                <Text style={s.addProductBtnText}>+ 품목 추가</Text>
+              </TouchableOpacity>
             </View>
 
             <TouchableOpacity
@@ -621,6 +739,8 @@ const s = StyleSheet.create({
   card: { backgroundColor: '#fff', margin: 12, borderRadius: 12, padding: 16, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 4, elevation: 2 },
   cardTitle: { fontSize: 16, fontWeight: '700', color: '#111', marginBottom: 4 },
   cardSub: { fontSize: 13, color: '#9ca3af', marginBottom: 16 },
+  pendingBox: { borderWidth: 1, borderColor: '#fde68a', backgroundColor: '#fffbeb', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 12 },
+  pendingText: { fontSize: 12, lineHeight: 18, color: '#a16207' },
   categoryScroll: { marginHorizontal: -16, borderTopWidth: 1, borderBottomWidth: 1, borderColor: '#e5e7eb', marginBottom: 4 },
   categoryBar: { paddingHorizontal: 8 },
   categoryBtn: { position: 'relative', minWidth: 68, paddingHorizontal: 12, paddingVertical: 10, alignItems: 'center', borderBottomWidth: 2, borderBottomColor: 'transparent' },
@@ -633,13 +753,18 @@ const s = StyleSheet.create({
   infoBox: { margin: 12, marginBottom: 0, backgroundColor: '#fef3c7', borderRadius: 8, padding: 12 },
   infoText: { fontSize: 13, color: '#92400e' },
   productRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#f3f4f6' },
+  productNameRow: { flexDirection: 'row', alignItems: 'center' },
   productName: { fontSize: 15, fontWeight: '600', color: '#111' },
+  removeBtn: { width: 26, height: 26, borderRadius: 13, marginLeft: 5, alignItems: 'center', justifyContent: 'center', backgroundColor: '#fef2f2' },
+  removeBtnText: { color: '#ef4444', fontSize: 20, lineHeight: 22, fontWeight: '500' },
   productUnit: { fontSize: 12, color: '#9ca3af', marginTop: 2 },
   qtyInput: { width: 64, borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6, fontSize: 16, textAlign: 'center', color: '#111', backgroundColor: '#f9fafb' },
   priceBox: { width: 82, alignItems: 'flex-end', marginLeft: 8 },
   priceLabel: { fontSize: 10, color: '#9ca3af', marginBottom: 1 },
   priceValue: { fontSize: 13, fontWeight: '700', color: '#374151' },
   unitLabel: { fontSize: 13, color: '#6b7280', marginLeft: 6, width: 28 },
+  addProductBtn: { marginTop: 16, borderWidth: 1, borderColor: '#16a34a', borderRadius: 10, paddingVertical: 12, alignItems: 'center', backgroundColor: '#f0fdf4' },
+  addProductBtnText: { color: '#15803d', fontSize: 14, fontWeight: '700' },
   submitBtn: { backgroundColor: '#16a34a', marginHorizontal: 12, marginTop: 12, borderRadius: 12, paddingVertical: 16, alignItems: 'center' },
   submitBtnDisabled: { opacity: 0.5 },
   submitBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },

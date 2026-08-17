@@ -4,6 +4,7 @@ import { Alert, Pressable, RefreshControl, ScrollView, Text, View } from 'react-
 
 import { Card, Empty, Field, Loading, Muted, Page, colors } from '../../components'
 import { apiDelete, apiGet, apiPatch, apiPost } from '../../lib/api'
+import { fmtDateTime } from '../../lib/format'
 import { getKstToday } from '../../lib/format'
 
 type OrderRow = {
@@ -19,9 +20,6 @@ type OrderRow = {
 
 type OrdersResponse = {
   date: string
-  from: string
-  to: string
-  mode: 'today' | 'history'
   orders: OrderRow[]
 }
 
@@ -41,7 +39,6 @@ const NEXT_STATUS: Record<string, { label: string; next: string; primary?: boole
 }
 
 export default function OrdersScreen() {
-  const [mode, setMode] = useState<'today' | 'history'>('today')
   const [data, setData] = useState<OrdersResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -49,12 +46,14 @@ export default function OrdersScreen() {
   const [newDate, setNewDate] = useState(getKstToday())
 
   const load = useCallback(async () => {
-    const next = await apiGet<OrdersResponse>(`/api/driver/orders?mode=${mode}`)
+    const next = await apiGet<OrdersResponse>('/api/driver/orders?mode=today')
     setData(next)
-  }, [mode])
+  }, [])
 
   useFocusEffect(useCallback(() => {
     load().catch((error) => Alert.alert('당일 주문', error.message)).finally(() => setLoading(false))
+    const interval = setInterval(() => void load().catch(() => undefined), 5000)
+    return () => clearInterval(interval)
   }, [load]))
 
   async function refresh() {
@@ -103,18 +102,7 @@ export default function OrdersScreen() {
           <Text style={{ color: '#64748B', fontSize: 13, fontWeight: '800' }}>총 {data?.orders.length ?? 0}개 업체</Text>
         </View>
 
-        <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
-          <ModeButton active={mode === 'today'} label="당일 주문" onPress={() => setMode('today')} />
-          <ModeButton active={mode === 'history'} label="주문 내역" onPress={() => setMode('history')} />
-        </View>
-
-        {mode === 'history' ? (
-          <Text style={{ color: '#94A3B8', fontSize: 12, fontWeight: '700', marginBottom: 10 }}>
-            최근 30일 · 담당 업체 주문만 표시
-          </Text>
-        ) : null}
-
-        {!data?.orders.length ? <Empty message={mode === 'today' ? '오늘 담당 업체 주문이 없습니다.' : '최근 30일 담당 업체 주문이 없습니다.'} /> : data.orders.map((order) => {
+        {!data?.orders.length ? <Empty message="발주 없음" /> : data.orders.map((order) => {
           const badge = STATUS_COLORS[order.status] ?? STATUS_COLORS.open
           const next = NEXT_STATUS[order.status]
           const isEditingDate = editingDateId === order.id
@@ -130,7 +118,7 @@ export default function OrdersScreen() {
 
               <View style={{ marginTop: 12, gap: 10 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <Text style={{ flex: 1, color: '#64748B', fontSize: 12, fontWeight: '800' }}>배송일 {order.businessDate}</Text>
+                  <Text style={{ flex: 1, color: '#94A3B8', fontSize: 12, fontWeight: '700' }}>{fmtDateTime(order.submittedAt)}</Text>
                   <View style={{ backgroundColor: badge.bg, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5 }}>
                     <Text style={{ color: badge.fg, fontSize: 12, fontWeight: '900' }}>{order.statusLabel}</Text>
                   </View>
@@ -177,22 +165,6 @@ function SmallButton({ label, tone = 'gray', onPress }: { label: string; tone?: 
   return (
     <Pressable onPress={onPress} style={{ borderRadius: 8, paddingHorizontal: 10, paddingVertical: 7, backgroundColor: style.bg }}>
       <Text style={{ color: style.fg, fontSize: 12, fontWeight: '900' }}>{label}</Text>
-    </Pressable>
-  )
-}
-
-function ModeButton({ active, label, onPress }: { active: boolean; label: string; onPress: () => void }) {
-  return (
-    <Pressable
-      onPress={onPress}
-      style={{
-        borderRadius: 999,
-        paddingHorizontal: 16,
-        paddingVertical: 10,
-        backgroundColor: active ? colors.green : '#F3F4F6',
-      }}
-    >
-      <Text style={{ color: active ? '#FFFFFF' : '#64748B', fontSize: 13, fontWeight: '900' }}>{label}</Text>
     </Pressable>
   )
 }

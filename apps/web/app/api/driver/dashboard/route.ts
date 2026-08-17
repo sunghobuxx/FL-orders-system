@@ -2,7 +2,6 @@ export const runtime = 'edge'
 
 import { NextResponse } from 'next/server'
 
-import { buildDispatchLines, getCurrentDispatchGroups } from '@/lib/dispatch/current-items'
 import { addDays, applyAssignedFilter, getKstToday, orgNameFromRestaurant, requireDriverUser, DRIVER_NOTE_CATEGORY } from '@/lib/driver-api'
 
 export async function GET(req: Request) {
@@ -11,6 +10,8 @@ export async function GET(req: Request) {
 
   const today = getKstToday()
   const tomorrow = addDays(today, 1)
+  const todayStart = `${today}T00:00:00+09:00`
+  const tomorrowStart = `${tomorrow}T00:00:00+09:00`
   const assignedQuery = applyAssignedFilter(
     ctx.db
       .from('order_batches')
@@ -21,7 +22,7 @@ export async function GET(req: Request) {
     ctx.assignedRestaurantIds,
   )
 
-  const [ordersRes, allOrdersRes, specsRes, notesRes, inquiriesRes, dispatchGroups] = await Promise.all([
+  const [ordersRes, allOrdersRes, specsRes, notesRes, inquiriesRes, dispatchesRes] = await Promise.all([
     assignedQuery,
     ctx.db
       .from('order_batches')
@@ -38,6 +39,8 @@ export async function GET(req: Request) {
       .from('inquiries')
       .select('id, title, content, status, created_at, organizations(name)')
       .eq('category', DRIVER_NOTE_CATEGORY)
+      .gte('created_at', todayStart)
+      .lt('created_at', tomorrowStart)
       .order('created_at', { ascending: false })
       .limit(5),
     ctx.db
@@ -47,7 +50,10 @@ export async function GET(req: Request) {
       .neq('category', DRIVER_NOTE_CATEGORY)
       .order('created_at', { ascending: false })
       .limit(5),
-    getCurrentDispatchGroups(ctx.db, today),
+    ctx.db
+      .from('dispatch_jobs')
+      .select('id, status, business_date, suppliers(organizations(name)), dispatch_job_items(qty, order_items(unit, products(standard_name)))')
+      .in('business_date', [today, tomorrow]),
   ])
 
   const orders = (ordersRes.data ?? []).map((batch: any) => ({
@@ -60,57 +66,33 @@ export async function GET(req: Request) {
     submittedAt: batch.submitted_at ?? batch.created_at,
   }))
 
-  const dispatchGroupEntries = [
-    ...Object.entries(dispatchGroups.grouped).map(([supplierId, items]) => ({ supplierId, items, inactive: false })),
-    ...Object.entries(dispatchGroups.inactiveGrouped).map(([supplierId, items]) => ({ supplierId, items, inactive: true })),
-  ]
-  const supplierIds = dispatchGroupEntries.map(group => group.supplierId)
-  const [supplierRowsRes, dispatchJobsRes] = await Promise.all([
-    supplierIds.length
-      ? ctx.db.from('suppliers').select('id, organizations(name)').in('id', supplierIds)
-      : Promise.resolve({ data: [] }),
-    supplierIds.length
-      ? ctx.db.from('dispatch_jobs').select('id, supplier_id, status').eq('business_date', today).in('supplier_id', supplierIds)
-      : Promise.resolve({ data: [] }),
-  ])
-  const supplierNameMap = new Map(
-    (supplierRowsRes.data ?? []).map((supplier: any) => {
-      const organization = Array.isArray(supplier.organizations) ? supplier.organizations[0] : supplier.organizations
-      return [supplier.id as string, organization?.name ?? '알 수 없음'] as [string, string]
-    }),
-  )
-  const jobMap = new Map(
-    (dispatchJobsRes.data ?? []).map((job: any) => [job.supplier_id as string, job]),
-  )
-  const dispatches = dispatchGroupEntries.map(group => {
-    const job = jobMap.get(group.supplierId)
+  const dispatches = (dispatchesRes.data ?? []).map((job: any) => {
+    const supplier = Array.isArray(job.suppliers?.organizations)
+      ? job.suppliers?.organizations[0]
+      : job.suppliers?.organizations
+    const itemMap = new Map<string, { name: string; qty: number; unit: string }>()
+
+    for (const item of job.dispatch_job_items ?? []) {
+      const product = Array.isArray(item.order_items?.products)
+        ? item.order_items?.products[0]
+        : item.order_items?.products
+      const name = product?.standard_name ?? '품목'
+      const unit = item.order_items?.unit ?? ''
+      const key = `${name}-${unit}`
+      const prev = itemMap.get(key) ?? { name, qty: 0, unit }
+      prev.qty += Number(item.qty ?? 0)
+      itemMap.set(key, prev)
+    }
+
     return {
-      id: job?.id ?? `${today}-${group.supplierId}`,
-      supplierName: supplierNameMap.get(group.supplierId) ?? '알 수 없음',
-      businessDate: today,
-      status: group.inactive ? 'inactive' : (job?.status ?? 'pending'),
-      sent: !group.inactive && ['sent', 'completed'].includes(job?.status ?? ''),
-      items: buildDispatchLines(group.items).map(line => ({
-        name: line.name,
-        qty: line.qty,
-        unit: line.unit,
-      })),
+      id: job.id,
+      supplierName: supplier?.name ?? '알 수 없음',
+      businessDate: job.business_date,
+      status: job.status,
+      sent: ['sent', 'completed'].includes(job.status),
+      items: [...itemMap.values()],
     }
   })
-  if (dispatchGroups.unmappedItems.length) {
-    dispatches.push({
-      id: `${today}-unmapped`,
-      supplierName: '공급처 미배정',
-      businessDate: today,
-      status: 'pending',
-      sent: false,
-      items: dispatchGroups.unmappedItems.map(line => ({
-        name: line.name,
-        qty: line.qty,
-        unit: line.unit,
-      })),
-    })
-  }
 
   const specs = (specsRes.data ?? []).map((spec: any) => ({
     id: spec.id,

@@ -1,5 +1,5 @@
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router'
-import { useCallback, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { Alert, Pressable, RefreshControl, ScrollView, Text, TextInput, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
@@ -36,18 +36,24 @@ export default function OrderDetailScreen() {
   const [qtys, setQtys] = useState<Record<string, string>>({})
   const [prices, setPrices] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
+  const hasDraft = useRef(false)
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (preserveDraft = false) => {
     if (!batchId) return
     const next = await apiGet<DetailResponse>(`/api/driver/orders/${batchId}`)
     setData(next)
-    setQtys(Object.fromEntries(next.items.map(item => [item.id, String(item.qty)])))
-    setPrices(Object.fromEntries(next.items.map(item => [item.id, String(item.unitPrice)])))
+    if (!preserveDraft || !hasDraft.current) {
+      setQtys(Object.fromEntries(next.items.map(item => [item.id, String(item.qty)])))
+      setPrices(Object.fromEntries(next.items.map(item => [item.id, String(item.unitPrice)])))
+      hasDraft.current = false
+    }
     if (DONE.includes(next.batch.status)) setConfirmed(new Set())
   }, [batchId])
 
   useFocusEffect(useCallback(() => {
     load().catch((error) => Alert.alert('발주 상세', error.message)).finally(() => setLoading(false))
+    const interval = setInterval(() => void load(true).catch(() => undefined), 5000)
+    return () => clearInterval(interval)
   }, [load]))
 
   async function refresh() {
@@ -84,6 +90,7 @@ export default function OrderDetailScreen() {
         })),
       })
       Alert.alert('저장 완료', '수량·단가가 저장됐습니다.')
+      hasDraft.current = false
       await load()
     } catch (error: any) {
       Alert.alert('저장 실패', error.message)
@@ -175,7 +182,7 @@ export default function OrderDetailScreen() {
                   <View style={{ flex: 1.1, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                     <TextInput
                       value={qtys[item.id] ?? ''}
-                      onChangeText={value => setQtys(prev => ({ ...prev, [item.id]: value }))}
+                      onChangeText={value => { hasDraft.current = true; setQtys(prev => ({ ...prev, [item.id]: value })) }}
                       keyboardType="decimal-pad"
                       style={{ flex: 1, minHeight: 36, borderWidth: 1, borderColor: '#D1D5DB', borderRadius: 8, textAlign: 'center', color: '#111827', fontWeight: '800' }}
                     />
@@ -183,7 +190,7 @@ export default function OrderDetailScreen() {
                   </View>
                   <TextInput
                     value={prices[item.id] ?? ''}
-                    onChangeText={value => setPrices(prev => ({ ...prev, [item.id]: value }))}
+                    onChangeText={value => { hasDraft.current = true; setPrices(prev => ({ ...prev, [item.id]: value })) }}
                     keyboardType="number-pad"
                     style={{ flex: 1, minHeight: 36, borderWidth: 1, borderColor: '#D1D5DB', borderRadius: 8, textAlign: 'center', color: '#111827', fontWeight: '800' }}
                   />
