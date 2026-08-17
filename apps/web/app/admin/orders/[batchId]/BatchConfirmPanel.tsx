@@ -53,6 +53,8 @@ export function BatchConfirmPanel({
   const [isSaving, setIsSaving] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [saveMsg, setSaveMsg] = useState('')
+  /** 체크를 풀었을 때처럼, 오류는 아니지만 알려 줘야 하는 것 */
+  const [checkNotice, setCheckNotice] = useState('')
 
   // 수량·단가는 상태와 무관하게 언제든 수정 가능 (수정 시 정산 금액에 즉시 반영)
   const canEdit = true
@@ -139,8 +141,20 @@ export function BatchConfirmPanel({
       })
       const data = await res.json() as { error?: string; batchStatus?: string }
       if (!res.ok) throw new Error(data.error ?? '확인 처리 실패')
+
       if (data.batchStatus && data.batchStatus !== currentStatus) {
+        setCheckNotice('')
         startTransition(() => router.refresh())
+      } else if (nextStage < cur) {
+        // 체크를 풀어도 진행 표시는 뒤로 가지 않는다.
+        //
+        // 이미 「배송중·배송완료」로 넘어간 배치를 체크 하나 풀었다고 되돌리면,
+        // 회원 화면의 진행 상황과 기사님께 나간 알림이 앞뒤로 흔들린다.
+        // 그런데 화면에는 아무 반응이 없어 눌러도 안 먹는 것처럼 보였다
+        // (2026-08-17 확인). 그래서 무슨 일이 있었는지 말해 준다.
+        setCheckNotice('체크를 해제했습니다. 진행 표시는 뒤로 가지 않습니다.')
+      } else {
+        setCheckNotice('')
       }
     } catch (err) {
       setStages(prev => ({ ...prev, [itemId]: cur }))       // 실패하면 되돌린다
@@ -272,6 +286,11 @@ export function BatchConfirmPanel({
               style={{ width: total > 0 ? `${(confirmedCount / total) * 100}%` : '0%' }}
             />
           </div>
+
+          {/* 체크를 풀었을 때. 오류가 아니라 안내라 회색으로 둔다. */}
+          {checkNotice && (
+            <p className="mt-2 text-xs text-gray-500">{checkNotice}</p>
+          )}
         </div>
       </div>
 
