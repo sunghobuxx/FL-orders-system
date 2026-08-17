@@ -29,11 +29,22 @@ export async function requireDriverUser(req: Request) {
 
   const { data: membership } = await db
     .from('memberships')
-    .select('role')
+    .select('role, organizations(organization_type)')
     .eq('user_id', userData.user.id)
     .maybeSingle()
 
-  if (!membership || !['owner', 'admin', 'manager'].includes(membership.role)) {
+  // 'owner' 는 운영사 오너와 **식당 사장님**이 함께 쓰는 역할명이다.
+  // 역할만 보고 열면 식당 사장님이 전 업체 배송 데이터를 보게 되므로 조직 타입까지 확인한다.
+  // 2026-08-17 확인: role='owner' 계정 47개 중 46개가 식당이다.
+  const organization = Array.isArray(membership?.organizations)
+    ? membership.organizations[0]
+    : membership?.organizations
+  const isOperatorOwner = membership?.role === 'owner' &&
+    ['platform', 'operator'].includes(
+      (organization as { organization_type: string } | null)?.organization_type ?? '',
+    )
+
+  if (!membership || !(['admin', 'manager'].includes(membership.role) || isOperatorOwner)) {
     return { error: NextResponse.json({ error: 'Forbidden' }, { status: 403 }) }
   }
 
