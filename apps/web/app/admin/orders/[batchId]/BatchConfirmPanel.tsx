@@ -65,15 +65,26 @@ export function BatchConfirmPanel({
     Object.fromEntries(items.map(i => [i.id, String(i.unit_price_snapshot)]))
   )
 
-  // ⚠️ router.refresh() 후 items prop 이 새로 들어왔는데 state 는 옛 값이 남아
-  const itemsKey = items.map(i => `${i.id}:${i.qty}:${i.unit_price_snapshot}`).join('|')
+  // router.refresh() 로 items prop 이 새로 들어오면 화면 값을 서버 값에 맞춘다.
+  //
+  // 키에 check_stage 를 넣는다. 빠져 있으면 체크만 바뀐 새로고침에서 키가 그대로라
+  // 갱신이 안 되고, 반대로 currentStatus 가 같이 걸려 있어 5 초 자동 새로고침 때마다
+  // 이 블록이 다시 돌면서 **누른 체크를 서버 옛 값으로 되돌렸다** (2026-08-18 확인).
+  //
+  // 저장이 아직 진행 중인 품목(checking)은 건드리지 않는다. 눌러 놓은 것이 풀리면 안 된다.
+  const itemsKey = items
+    .map(i => `${i.id}:${i.qty}:${i.unit_price_snapshot}:${i.check_stage ?? 0}`)
+    .join('|')
   useEffect(() => {
     setEditQtys(Object.fromEntries(items.map(i => [i.id, String(i.qty)])))
     setEditPrices(Object.fromEntries(items.map(i => [i.id, String(i.unit_price_snapshot)])))
-    setStages(Object.fromEntries(items.map(i => [i.id, Number(i.check_stage ?? 0)])))
+    setStages(prev => Object.fromEntries(items.map(i => [
+      i.id,
+      checking.has(i.id) ? (prev[i.id] ?? Number(i.check_stage ?? 0)) : Number(i.check_stage ?? 0),
+    ])))
     setSaveMsg('')
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [itemsKey, currentStatus])
+  }, [itemsKey])
 
   const total = items.length
   // 지금 받아야 할 단계. 배송중으로 넘어가면 2 가 되어 버튼이 다시 «확인» 으로 돌아온다.
@@ -188,8 +199,12 @@ export function BatchConfirmPanel({
     })
   }
 
+  // 저장이 도는 동안에는 자동 새로고침을 멈춘다(OrderLiveRefresh 가 이 표시를 본다).
+  // 저장 응답이 오기 전에 새로고침이 끼면 방금 누른 값이 옛 값으로 되돌아간다.
+  const busy = checking.size > 0 || isSaving || deletingId !== null
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" {...(busy ? { 'data-live-refresh': 'pause' } : {})}>
       {/* 수정 안내 */}
       <div className="rounded-lg bg-blue-50 border border-blue-200 px-4 py-2.5 text-sm text-blue-700">
         수량·단가는 언제든 수정 가능합니다. <strong>수정 저장</strong> 시 명세서·정산 금액에 즉시 반영됩니다.
