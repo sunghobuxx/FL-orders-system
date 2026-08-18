@@ -98,18 +98,24 @@ export default async function DispatchDatePage({ params }: Props) {
     (priceRows ?? []).map((r: { id: string; unit_price_snapshot: number }) => [r.id, Number(r.unit_price_snapshot ?? 0)])
   )
 
-  // 당일 발주 집계 (품목별 합계)
+  // 당일 발주 집계 (품목 + 단위별 합계)
+  //
+  // 품목 id 만으로 묶으면 안 된다. 한 품목에 단위가 둘인 경우가 있다 —
+  // 양파는 kg 과 bag 을 같이 쓴다. 예전에는 처음 만난 줄의 단위만 남기고 수량을
+  // 그대로 더해서, bag 으로 시킨 수량이 kg 으로 둔갑해 나왔다
+  // (2026-08-18 양파: bag 과 kg 이 11 로 합산). 단위가 다르면 줄을 따로 세운다.
   const productTotals = new Map<string, { name: string; qty: number; unit: string; amount: number }>()
   for (const item of allItems) {
     const name = item.products?.standard_name ?? '알 수 없음'
     const unitPrice = priceMap.get(item.id) ?? 0
     const lineAmount = Number(item.qty) * unitPrice
-    const existing = productTotals.get(item.product_id)
+    const key = `${item.product_id}:${item.unit}`
+    const existing = productTotals.get(key)
     if (existing) {
       existing.qty += Number(item.qty)
       existing.amount += lineAmount
     } else {
-      productTotals.set(item.product_id, { name, qty: Number(item.qty), unit: item.unit, amount: lineAmount })
+      productTotals.set(key, { name, qty: Number(item.qty), unit: item.unit, amount: lineAmount })
     }
   }
   const totalsSorted = [...productTotals.values()].sort((a, b) => b.amount - a.amount || a.name.localeCompare(b.name, 'ko'))
