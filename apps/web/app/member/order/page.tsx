@@ -57,7 +57,7 @@ export default async function MemberOrderPage() {
     .maybeSingle()
 
   const businessDate =
-    todayBatch?.status === 'dispatched' || todayBatch?.status === 'completed' || afterCutoff
+    (todayBatch && !['open', 'submitted'].includes(todayBatch.status)) || afterCutoff
       ? tomorrow
       : today
 

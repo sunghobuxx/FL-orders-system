@@ -90,10 +90,6 @@ function isAfterOrderCutoff() {
   return now.getUTCHours() * 60 + now.getUTCMinutes() >= 240
 }
 
-function isDeliveryComplete(status?: string | null) {
-  return status === 'dispatched' || status === 'completed'
-}
-
 function statusStep(status?: string | null) {
   if (!status) return -1
   return STEPS.findIndex((step) => step.key === status)
@@ -188,7 +184,7 @@ export default function OrderScreen() {
       .maybeSingle()
 
     const targetDate =
-      isDeliveryComplete(currentBatch?.status) || isAfterOrderCutoff()
+      (currentBatch && !['open', 'submitted'].includes(currentBatch.status)) || isAfterOrderCutoff()
         ? tomorrowKst()
         : today
 
@@ -473,7 +469,7 @@ export default function OrderScreen() {
     void reload(restaurantId)
     const interval = setInterval(() => {
       void syncActiveOrder(restaurantId)
-    }, 10_000)
+    }, 30_000)
 
     return () => clearInterval(interval)
   }, [reload, restaurantId, syncActiveOrder]))
