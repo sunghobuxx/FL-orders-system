@@ -49,8 +49,13 @@ export default async function OrderHistoryPage({ searchParams }: Props) {
   }
 
   // DB 함수로 batch_id별 주문금액 합산 (URL 길이 제한 우회)
+  //
+  // rpc 는 실패해도 예외를 던지지 않고 data 만 비워서 돌려준다. 함수가 DB 에 없던 동안
+  // 화면이 아무 표시 없이 **전부 0원**으로 보였다 (2026-08-18). 그래서 error 를 본다.
   const amountByBatch: Record<string, number> = {}
-  const { data: amountRows } = await adminDb.rpc('get_batch_amounts', { from_date: from, to_date: to })
+  const { data: amountRows, error: amountError } =
+    await adminDb.rpc('get_batch_amounts', { from_date: from, to_date: to })
+  if (amountError) console.error('[orders/history] 주문금액 조회 실패', amountError)
   for (const row of amountRows ?? []) {
     amountByBatch[(row as { batch_id: string; total_amount: number }).batch_id] =
       Number((row as { batch_id: string; total_amount: number }).total_amount)
