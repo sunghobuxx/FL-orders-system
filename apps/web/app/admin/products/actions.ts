@@ -3,6 +3,7 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getKstToday } from '@/lib/date-kst'
 import { computeOutstanding, syncStatementFinance } from '@/lib/settlement-finance'
+import { splitVat } from '@/lib/specs/vat'
 
 export async function upsertOrgProductPrice(
   productId: string,
@@ -47,10 +48,11 @@ export async function upsertOrgProductPrice(
   const taxable = (productMeta as { taxable_flag: boolean } | null)?.taxable_flag ?? false
 
   for (const line of specLines as { id: string; daily_spec_id: string; qty: number }[]) {
-    const newVat = taxable ? Math.round(Number(line.qty) * unitPrice * 0.1) : 0
+    // 넣은 단가는 부가세 포함 금액이다. 위에 얹지 않고 그 안에서 나눈다.
+    const split = splitVat(taxable, Number(line.qty), unitPrice)
     await db
       .from('daily_spec_lines')
-      .update({ unit_price: unitPrice, vat_amount: newVat, price_overridden: true })
+      .update({ unit_price: split.unitPrice, vat_amount: split.vat, price_overridden: true })
       .eq('id', line.id)
   }
 

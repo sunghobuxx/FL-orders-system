@@ -4,6 +4,7 @@ import { computeOutstanding, syncStatementFinance } from '@/lib/settlement-finan
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getAdminSession } from '@/lib/admin-member-user'
+import { splitVat } from '@/lib/specs/vat'
 
 export async function POST(req: Request) {
   try {
@@ -138,10 +139,11 @@ export async function POST(req: Request) {
 
       // unit_price + vat_amount 동시 업데이트
       for (const line of specLines ?? []) {
-        const newVat = taxable ? Math.round(Number(line.qty) * body.sale_price * 0.1) : 0
+        // 단가는 부가세 포함 금액이다. 위에 얹지 않고 그 안에서 나눈다.
+        const split = splitVat(taxable, Number(line.qty), body.sale_price)
         await adminDb
           .from('daily_spec_lines')
-          .update({ unit_price: body.sale_price, vat_amount: newVat })
+          .update({ unit_price: split.unitPrice, vat_amount: split.vat })
           .eq('id', line.id)
       }
 

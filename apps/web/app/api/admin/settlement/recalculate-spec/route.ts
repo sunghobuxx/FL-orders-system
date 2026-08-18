@@ -5,6 +5,7 @@ import { NextResponse } from 'next/server'
 import { computeOutstanding, syncStatementFinance } from '@/lib/settlement-finance'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getAdminSession } from '@/lib/admin-member-user'
+import { splitVat } from '@/lib/specs/vat'
 
 export async function POST(req: Request) {
   try {
@@ -99,14 +100,14 @@ export async function POST(req: Request) {
         ? Number(line.unit_price)
         : (priceMap[line.product_id] ?? Number(line.unit_price))
 
-      const amount = Number(line.qty) * unitPrice
-      const vat = taxableMap[line.product_id] ? Math.round(amount * 0.1) : 0
-      totalAmount += amount + vat
-      totalVat += vat
+      // 단가는 부가세 포함 금액이다. 위에 얹지 않고 그 안에서 나눈다.
+      const split = splitVat(Boolean(taxableMap[line.product_id]), Number(line.qty), unitPrice)
+      totalAmount += split.gross
+      totalVat += split.vat
 
       if (!line.price_overridden) {
         await db.from('daily_spec_lines')
-          .update({ unit_price: unitPrice, vat_amount: vat })
+          .update({ unit_price: split.unitPrice, vat_amount: split.vat })
           .eq('daily_spec_id', specId)
           .eq('id', line.id)
       }

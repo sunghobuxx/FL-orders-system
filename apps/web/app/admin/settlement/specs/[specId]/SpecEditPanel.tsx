@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { splitVat } from '@/lib/specs/vat'
 
 interface Line {
   id: string
@@ -38,9 +39,8 @@ export default function SpecEditPanel({ specId, lines }: { specId: string; lines
   function calcAmount(lineId: string, line: Line) {
     const qty = parseFloat(editQtys[lineId] ?? String(line.qty)) || 0
     const price = parseInt(editPrices[lineId] ?? String(line.unit_price), 10) || 0
-    const base = qty * price
-    const vat = line.taxable_flag ? Math.round(base * 0.1) : 0
-    return base + vat
+    // 넣은 단가는 부가세 포함이다. 위에 10% 를 얹으면 화면 금액이 실제 청구액보다 커진다.
+    return splitVat(Boolean(line.taxable_flag), qty, price).gross
   }
 
   const totalAmount = lines.reduce((s, l) => s + calcAmount(l.id, l), 0)

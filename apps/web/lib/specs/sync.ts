@@ -17,6 +17,7 @@
  */
 
 import { generateStatements } from '@/lib/settlement/generate'
+import { splitVat } from '@/lib/specs/vat'
 
 /** 단가 우선순위: 업체 고정단가 → 당일단가 → 고정단가 품목 → carry-forward */
 export async function buildPriceMapByProduct(
@@ -151,8 +152,9 @@ export async function syncSpecFromOrders(
     .from('products').select('id, taxable_flag').in('id', productIds)
   const taxable = new Map(
     (taxRows ?? []).map((p: { id: string; taxable_flag: boolean | null }) => [p.id, Boolean(p.taxable_flag)]))
-  const vatOf = (productId: string, qty: number, unitPrice: number) =>
-    taxable.get(productId) ? Math.round(qty * unitPrice * 0.1) : 0
+  // 품목 마스터 단가는 부가세 포함 금액이다. 위에 10% 를 얹지 않고 그 안에서 나눈다.
+  const splitOf = (productId: string, qty: number, unitPrice: number) =>
+    splitVat(Boolean(taxable.get(productId)), qty, unitPrice)
 
   // maybeSingle() 을 쓰지 않는다. 같은 식당·날짜에 명세서가 둘이면 에러 후 null 이 되어
   // 명세서를 하나 더 만들고, 중복이 계속 늘어난다. 가장 오래된 것을 기준으로 삼는다.
@@ -195,14 +197,15 @@ export async function syncSpecFromOrders(
           price_overridden: true,
         }
       }
-      const unitPrice = priceMap[item.product_id] ?? 0
+      const entered = priceMap[item.product_id] ?? 0
+      const split = splitOf(item.product_id, Number(item.qty), entered)
       return {
         order_item_id: item.id,
         product_id: item.product_id,
         qty: item.qty,
         unit: item.unit,
-        unit_price: unitPrice,
-        vat_amount: vatOf(item.product_id, Number(item.qty), unitPrice),
+        unit_price: split.unitPrice,
+        vat_amount: split.vat,
         price_overridden: orgOverrides.has(item.product_id),
       }
     })

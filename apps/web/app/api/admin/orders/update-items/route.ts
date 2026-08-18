@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { computeOutstanding, syncStatementFinance } from '@/lib/settlement-finance'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getAdminSession } from '@/lib/admin-member-user'
+import { splitVat } from '@/lib/specs/vat'
 
 interface ItemUpdate {
   id: string
@@ -52,7 +53,8 @@ export async function POST(req: NextRequest) {
           .eq('id', specLine.product_id)
           .single()
         const isTaxable = product?.taxable_flag ?? false
-        const newVat = isTaxable ? Math.round(item.qty * item.unit_price_snapshot * 0.1) : 0
+      // 단가는 부가세 포함 금액이다. 위에 얹지 않고 그 안에서 나눈다.
+        const split = splitVat(isTaxable, item.qty, item.unit_price_snapshot)
 
         // price_overridden 은 "단가를 손으로 지정했다" 는 표시다.
         // 예전에는 수량만 고쳐도 무조건 true 를 박았다. 그러면 그 줄이 단가 자동 반영
@@ -66,7 +68,7 @@ export async function POST(req: NextRequest) {
 
         await db
           .from('daily_spec_lines')
-          .update({ qty: item.qty, unit_price: item.unit_price_snapshot, vat_amount: newVat, price_overridden: nextOverridden })
+          .update({ qty: item.qty, unit_price: split.unitPrice, vat_amount: split.vat, price_overridden: nextOverridden })
           .eq('id', specLine.id)
 
         // daily_specs 합계 재계산

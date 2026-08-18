@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { computeOutstanding, syncStatementFinance } from '@/lib/settlement-finance'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getAdminSession } from '@/lib/admin-member-user'
+import { splitVat } from '@/lib/specs/vat'
 
 interface LineUpdate {
   id: string          // daily_spec_lines.id
@@ -79,13 +80,13 @@ export async function POST(req: NextRequest) {
       if (!meta) continue
 
       const isTaxable = taxableMap[meta.product_id] ?? false
-      const newAmount = upd.qty * upd.unit_price
-      const newVat = isTaxable ? Math.round(newAmount * 0.1) : 0
+      // 손으로 넣는 단가도 부가세 포함 금액이다. 위에 얹지 않고 그 안에서 나눈다.
+      const split = splitVat(isTaxable, upd.qty, upd.unit_price)
 
       // amount는 generated column (qty * unit_price 자동계산) → 직접 업데이트 불가
       const { error: lineError } = await db
         .from('daily_spec_lines')
-        .update({ qty: upd.qty, unit_price: upd.unit_price, vat_amount: newVat, price_overridden: true })
+        .update({ qty: upd.qty, unit_price: split.unitPrice, vat_amount: split.vat, price_overridden: true })
         .eq('id', upd.id)
         .eq('daily_spec_id', specId)
 

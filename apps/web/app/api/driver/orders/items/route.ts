@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server'
 
 import { computeOutstanding, syncStatementFinance } from '@/lib/settlement-finance'
 import { requireBatchAccess, requireDriverUser } from '@/lib/driver-api'
+import { splitVat } from '@/lib/specs/vat'
 
 interface ItemUpdate {
   id: string
@@ -42,11 +43,12 @@ export async function POST(req: Request) {
         .eq('id', specLine.product_id)
         .single()
       const isTaxable = product?.taxable_flag ?? false
-      const newVat = isTaxable ? Math.round(item.qty * item.unit_price_snapshot * 0.1) : 0
+      // 단가는 부가세 포함 금액이다. 위에 얹지 않고 그 안에서 나눈다.
+      const split = splitVat(isTaxable, item.qty, item.unit_price_snapshot)
 
       await ctx.db
         .from('daily_spec_lines')
-        .update({ qty: item.qty, unit_price: item.unit_price_snapshot, vat_amount: newVat, price_overridden: true })
+        .update({ qty: item.qty, unit_price: split.unitPrice, vat_amount: split.vat, price_overridden: true })
         .eq('id', specLine.id)
 
       await syncSpecAndStatements(ctx.db, specLine.daily_spec_id)
