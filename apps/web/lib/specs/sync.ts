@@ -27,12 +27,8 @@ import { splitVat } from '@/lib/specs/vat'
  * (2026-08-18: 1 bag 에 2,000원). price_snapshots 에는 원래 unit 이 있었는데
  * 조회가 무시하고 최신 한 줄만 집어 왔다.
  *
- * `unitOf` 를 안 주면 그 품목의 **기본 단위**(products.default_unit)로 본다.
- * 예전처럼 최신 스냅샷을 그냥 집으면, 양파에 bag 단가를 새로 넣은 순간 kg 로 시킨
- * 화면까지 17,000원으로 보인다 (2026-08-18).
- *
- * 그 단위 단가가 아예 없으면 단위를 안 가리고 다시 찾는다. 단위별 단가를 안 넣은
- * 품목은 지금까지와 똑같이 동작한다.
+ * `unitOf` 를 안 주면 단위를 가리지 않는다 — 예전과 같은 동작(최신 단가).
+ * 그 단위 단가가 아예 없을 때도 단위를 안 가리고 다시 찾는다.
  */
 export async function buildPriceMapByProduct(
   adminDb: any,
@@ -43,10 +39,25 @@ export async function buildPriceMapByProduct(
 ): Promise<{ priceMap: Record<string, number>; orgOverrides: Set<string> }> {
   if (!productIds.length) return { priceMap: {}, orgOverrides: new Set() }
 
-  // 원하는 단위 — 주어진 값이 우선, 없으면 그 품목의 기본 단위.
-  const defaultUnitOf: Record<string, string> = {}
+  // 원하는 단위. **주문 단위를 명시했을 때만** 가린다.
+  //
+  // 한때 기본 단위(products.default_unit)로도 걸렀는데, 단위 표기가 제각각이라
+  // 사고가 났다 — 미나리는 품목이 'box' 인데 단가는 7월 말부터 '박스' 로 등록돼
+  // 있었다. 그래서 'box' 최신값(7/24 22,000)에 멈춰, 8/19 명세서가 36,000 대신
+  // 22,000 으로 나갔다 (2026-08-19, 25개 품목이 같은 상태였다).
+  //
+  // 기본 단위로 거르는 건 이득보다 위험이 크다. 단위별 단가가 필요한 품목은
+  // 발주 단위가 함께 들어오므로 unitOf 로 충분하다.
+  // 단위가 둘 이상인 품목에서만 단위를 가린다.
+  //
+  // 단위가 하나뿐인 품목까지 가리면, 표기가 다를 때 옛 단가에 멈춘다.
+  // 미나리는 품목이 'box' 인데 단가는 7월 말부터 '박스' 로 등록돼 있어서
+  // 8/19 명세서가 36,000 대신 22,000 으로 나갔다 (2026-08-19).
+  // 단위가 하나면 어차피 고를 것도 없으므로 가릴 이유가 없다.
+  const multiUnitProducts = new Set<string>()
   const unitOk = (productId: string, snapUnit: string | null) => {
-    const want = unitOf?.[productId] ?? defaultUnitOf[productId]
+    if (!multiUnitProducts.has(productId)) return true
+    const want = unitOf?.[productId]
     return want === undefined || snapUnit === want
   }
 
@@ -75,11 +86,12 @@ export async function buildPriceMapByProduct(
     (spRows as Array<{ id: string; product_id: string }>).map(r => [r.id, r.product_id]))
 
   const { data: products } = await adminDb
-    .from('products').select('id, is_fixed_price, default_unit').in('id', productIds)
+    .from('products').select('id, is_fixed_price, default_unit, allowed_units').in('id', productIds)
   const fixedMap = Object.fromEntries(
     (products ?? []).map((p: { id: string; is_fixed_price: boolean }) => [p.id, p.is_fixed_price]))
-  for (const p of (products ?? []) as Array<{ id: string; default_unit: string | null }>) {
-    if (p.default_unit) defaultUnitOf[p.id] = p.default_unit
+  for (const p of (products ?? []) as Array<{ id: string; default_unit: string | null; allowed_units: string[] | null }>) {
+    const units = new Set([p.default_unit, ...(p.allowed_units ?? [])].filter(Boolean))
+    if (units.size > 1) multiUnitProducts.add(p.id)
   }
 
   const { data: exactSnaps } = await adminDb
