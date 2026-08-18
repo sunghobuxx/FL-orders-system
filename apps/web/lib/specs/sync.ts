@@ -27,8 +27,12 @@ import { splitVat } from '@/lib/specs/vat'
  * (2026-08-18: 1 bag 에 2,000원). price_snapshots 에는 원래 unit 이 있었는데
  * 조회가 무시하고 최신 한 줄만 집어 왔다.
  *
- * 그 단위 단가가 없으면 단위를 안 가리고 다시 찾는다. 즉 **기본 단가로 되돌아간다** —
- * 단위별 단가를 안 넣은 품목은 지금까지와 똑같이 동작한다.
+ * `unitOf` 를 안 주면 그 품목의 **기본 단위**(products.default_unit)로 본다.
+ * 예전처럼 최신 스냅샷을 그냥 집으면, 양파에 bag 단가를 새로 넣은 순간 kg 로 시킨
+ * 화면까지 17,000원으로 보인다 (2026-08-18).
+ *
+ * 그 단위 단가가 아예 없으면 단위를 안 가리고 다시 찾는다. 단위별 단가를 안 넣은
+ * 품목은 지금까지와 똑같이 동작한다.
  */
 export async function buildPriceMapByProduct(
   adminDb: any,
@@ -39,10 +43,10 @@ export async function buildPriceMapByProduct(
 ): Promise<{ priceMap: Record<string, number>; orgOverrides: Set<string> }> {
   if (!productIds.length) return { priceMap: {}, orgOverrides: new Set() }
 
-  // 그 품목에 원하는 단위인지. unitOf 가 없으면 단위를 안 가린다(예전 동작).
-  const wantUnit = (productId: string) => unitOf?.[productId]
+  // 원하는 단위 — 주어진 값이 우선, 없으면 그 품목의 기본 단위.
+  const defaultUnitOf: Record<string, string> = {}
   const unitOk = (productId: string, snapUnit: string | null) => {
-    const want = wantUnit(productId)
+    const want = unitOf?.[productId] ?? defaultUnitOf[productId]
     return want === undefined || snapUnit === want
   }
 
@@ -71,9 +75,12 @@ export async function buildPriceMapByProduct(
     (spRows as Array<{ id: string; product_id: string }>).map(r => [r.id, r.product_id]))
 
   const { data: products } = await adminDb
-    .from('products').select('id, is_fixed_price').in('id', productIds)
+    .from('products').select('id, is_fixed_price, default_unit').in('id', productIds)
   const fixedMap = Object.fromEntries(
     (products ?? []).map((p: { id: string; is_fixed_price: boolean }) => [p.id, p.is_fixed_price]))
+  for (const p of (products ?? []) as Array<{ id: string; default_unit: string | null }>) {
+    if (p.default_unit) defaultUnitOf[p.id] = p.default_unit
+  }
 
   const { data: exactSnaps } = await adminDb
     .from('price_snapshots').select('supplier_product_id, sale_price, unit')
