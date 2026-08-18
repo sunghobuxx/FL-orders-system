@@ -131,6 +131,26 @@ export default async function MemberOrderPage() {
     ? await buildPriceMapByProduct(adminSupabase, productIds, businessDate, org.id)
     : { priceMap: {} as Record<string, number> }
 
+  // 단위가 둘 이상인 품목은 단위마다 단가가 다르다 (양파 kg 2,000 / bag 17,000).
+  // 회원이 단위를 바꾸면 화면 단가도 따라가야 하므로 `품목:단위` 로 미리 만들어 둔다.
+  // 단위가 하나뿐인 품목은 조회하지 않는다 — 137개를 다 도는 건 낭비다.
+  const multiUnit = products.filter((p: any) =>
+    [...new Set([p.default_unit, ...(p.allowed_units ?? [])])].filter(Boolean).length > 1)
+  const unitPriceMap: Record<string, number> = {}
+  if (multiUnit.length > 0) {
+    const multiIds = multiUnit.map((p: any) => p.id)
+    const allUnits = [...new Set(multiUnit.flatMap((p: any) =>
+      [...new Set([p.default_unit, ...(p.allowed_units ?? [])])].filter(Boolean)))] as string[]
+    for (const unit of allUnits) {
+      const { priceMap: byUnit } = await buildPriceMapByProduct(
+        adminSupabase, multiIds, businessDate, org.id,
+        Object.fromEntries(multiIds.map((id: string) => [id, unit])))
+      for (const id of multiIds) {
+        if (byUnit[id] !== undefined) unitPriceMap[`${id}:${unit}`] = Number(byUnit[id])
+      }
+    }
+  }
+
   // 단가가 없어 담당자 확인을 기다리는 품목. 회원이 "넣었는데 왜 안 보이지" 하지 않게 알린다.
   const { data: pendingRows } = await adminSupabase
     .from('product_requests')
@@ -159,6 +179,7 @@ export default async function MemberOrderPage() {
         existingItems={existingItems}
         pendingNames={pendingNames}
         unitPrices={priceMap}
+        unitPriceMap={unitPriceMap}
       />
     </OrderShell>
   )

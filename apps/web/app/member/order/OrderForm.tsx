@@ -55,9 +55,11 @@ interface Props {
   pendingNames: string[]
   /** 품목별 단가. 명세서·앱과 같은 계산(buildPriceMapByProduct)을 거친 값 */
   unitPrices: Record<string, number>
+  /** `품목id:단위` 별 단가. 단위가 둘 이상인 품목만 들어 있다 */
+  unitPriceMap: Record<string, number>
 }
 
-export default function OrderForm({ restaurantId, businessDate, batchId, orderId: initialOrderId, products, prices, existingItems, pendingNames, unitPrices }: Props) {
+export default function OrderForm({ restaurantId, businessDate, batchId, orderId: initialOrderId, products, prices, existingItems, pendingNames, unitPrices, unitPriceMap }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [currentOrderId, setCurrentOrderId] = useState(initialOrderId)
@@ -93,9 +95,17 @@ export default function OrderForm({ restaurantId, businessDate, batchId, orderId
    * price_snapshots 를 여기서 직접 고르면 업체별 고정단가(org_product_prices)를 못 봐서
    * 화면 금액과 청구 금액이 어긋난다. supplier_product_id 만 prices 에서 가져온다.
    */
+  /** 그 품목을 그 단위로 시켰을 때의 단가. 단위별 값이 없으면 기본 단가를 쓴다. */
+  function priceFor(productId: string, unit: string) {
+    const byUnit = unitPriceMap[`${productId}:${unit}`]
+    return Number(byUnit ?? unitPrices[productId] ?? 0)
+  }
+
   function getPrice(productId: string) {
     const sp = prices.find(p => p.product_id === productId)
-    return { price: Number(unitPrices[productId] ?? 0), supplierProductId: sp?.id ?? null }
+    const product = products.find(p => p.id === productId)
+    const unit = units[productId] ?? product?.default_unit ?? ''
+    return { price: priceFor(productId, unit), supplierProductId: sp?.id ?? null }
   }
 
   function updateQty(productId: string, value: string) {
@@ -225,7 +235,7 @@ export default function OrderForm({ restaurantId, businessDate, batchId, orderId
               const allowedUnits = [...new Set([product.default_unit, ...(product.allowed_units ?? [])])].filter(Boolean)
               const unit = units[product.id] ?? product.default_unit
               const step = ['kg', 'g'].includes(unit) ? 0.1 : 1
-              const unitPrice = Number(unitPrices[product.id] ?? 0)
+              const unitPrice = priceFor(product.id, unit)
 
               return (
                 <div

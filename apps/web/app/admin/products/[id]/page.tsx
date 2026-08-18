@@ -154,6 +154,10 @@ export default async function AdminProductEditPage({ params }: Props) {
                     supplierProductId={sp.id}
                     snapshots={snapshots}
                     defaultUnit={sp.purchase_unit || product.default_unit}
+                    productUnits={[...new Set([
+                      product.default_unit,
+                      ...(product.allowed_units ?? []),
+                    ])].filter(Boolean) as string[]}
                   />
                 </div>
               )

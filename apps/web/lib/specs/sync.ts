@@ -19,14 +19,32 @@
 import { generateStatements } from '@/lib/settlement/generate'
 import { splitVat } from '@/lib/specs/vat'
 
-/** 단가 우선순위: 업체 고정단가 → 당일단가 → 고정단가 품목 → carry-forward */
+/**
+ * 단가 우선순위: 업체 고정단가 → 당일단가 → 고정단가 품목 → carry-forward
+ *
+ * `unitOf` 를 주면 **품목+단위**로 찾는다. 한 품목에 단위가 둘인 경우가 있다 —
+ * 양파는 kg 과 bag 을 같이 쓰는데, 단위를 안 보면 bag 으로 시켜도 kg 단가가 붙었다
+ * (2026-08-18: 1 bag 에 2,000원). price_snapshots 에는 원래 unit 이 있었는데
+ * 조회가 무시하고 최신 한 줄만 집어 왔다.
+ *
+ * 그 단위 단가가 없으면 단위를 안 가리고 다시 찾는다. 즉 **기본 단가로 되돌아간다** —
+ * 단위별 단가를 안 넣은 품목은 지금까지와 똑같이 동작한다.
+ */
 export async function buildPriceMapByProduct(
   adminDb: any,
   productIds: string[],
   businessDate: string,
   organizationId: string | null,
+  unitOf?: Record<string, string>,
 ): Promise<{ priceMap: Record<string, number>; orgOverrides: Set<string> }> {
   if (!productIds.length) return { priceMap: {}, orgOverrides: new Set() }
+
+  // 그 품목에 원하는 단위인지. unitOf 가 없으면 단위를 안 가린다(예전 동작).
+  const wantUnit = (productId: string) => unitOf?.[productId]
+  const unitOk = (productId: string, snapUnit: string | null) => {
+    const want = wantUnit(productId)
+    return want === undefined || snapUnit === want
+  }
 
   const priceMap: Record<string, number> = {}
   const orgOverrides = new Set<string>()
@@ -58,13 +76,18 @@ export async function buildPriceMapByProduct(
     (products ?? []).map((p: { id: string; is_fixed_price: boolean }) => [p.id, p.is_fixed_price]))
 
   const { data: exactSnaps } = await adminDb
-    .from('price_snapshots').select('supplier_product_id, sale_price')
+    .from('price_snapshots').select('supplier_product_id, sale_price, unit')
     .in('supplier_product_id', spIds)
     .eq('effective_from', businessDate)
     .order('created_at', { ascending: false })
-  for (const snap of exactSnaps ?? []) {
-    const pid = spToProduct[snap.supplier_product_id]
-    if (pid && priceMap[pid] === undefined) priceMap[pid] = Number(snap.sale_price)
+  // 1) 원하는 단위 먼저, 2) 없으면 단위를 안 가리고 (기본 단가로 되돌아감)
+  for (const pass of [true, false]) {
+    for (const snap of exactSnaps ?? []) {
+      const pid = spToProduct[snap.supplier_product_id]
+      if (!pid || priceMap[pid] !== undefined) continue
+      if (pass && !unitOk(pid, snap.unit)) continue
+      priceMap[pid] = Number(snap.sale_price)
+    }
   }
 
   // 고정단가 품목도 등록일(effective_from)을 지킨다.
@@ -76,14 +99,18 @@ export async function buildPriceMapByProduct(
     .filter(r => fixedNeedIds.includes(r.product_id)).map(r => r.id)
   if (fixedSpIds.length) {
     const { data: fixedSnaps } = await adminDb
-      .from('price_snapshots').select('supplier_product_id, sale_price')
+      .from('price_snapshots').select('supplier_product_id, sale_price, unit')
       .in('supplier_product_id', fixedSpIds)
       .lte('effective_from', businessDate)
       .order('effective_from', { ascending: false })
       .order('created_at', { ascending: false })
-    for (const snap of fixedSnaps ?? []) {
-      const pid = spToProduct[snap.supplier_product_id]
-      if (pid && priceMap[pid] === undefined) priceMap[pid] = Number(snap.sale_price)
+    for (const pass of [true, false]) {
+      for (const snap of fixedSnaps ?? []) {
+        const pid = spToProduct[snap.supplier_product_id]
+        if (!pid || priceMap[pid] !== undefined) continue
+        if (pass && !unitOk(pid, snap.unit)) continue
+        priceMap[pid] = Number(snap.sale_price)
+      }
     }
   }
 
@@ -91,14 +118,18 @@ export async function buildPriceMapByProduct(
     .filter(r => priceMap[r.product_id] === undefined).map(r => r.id)
   if (remainSpIds.length) {
     const { data: carrySnaps } = await adminDb
-      .from('price_snapshots').select('supplier_product_id, sale_price')
+      .from('price_snapshots').select('supplier_product_id, sale_price, unit')
       .in('supplier_product_id', remainSpIds)
       .lte('effective_from', businessDate)
       .order('effective_from', { ascending: false })
       .order('created_at', { ascending: false })
-    for (const snap of carrySnaps ?? []) {
-      const pid = spToProduct[snap.supplier_product_id]
-      if (pid && priceMap[pid] === undefined) priceMap[pid] = Number(snap.sale_price)
+    for (const pass of [true, false]) {
+      for (const snap of carrySnaps ?? []) {
+        const pid = spToProduct[snap.supplier_product_id]
+        if (!pid || priceMap[pid] !== undefined) continue
+        if (pass && !unitOk(pid, snap.unit)) continue
+        priceMap[pid] = Number(snap.sale_price)
+      }
     }
   }
 
@@ -140,8 +171,17 @@ export async function syncSpecFromOrders(
   }
 
   const productIds = [...new Set(items.map((i: { product_id: string }) => i.product_id))] as string[]
+
+  // 주문한 단위로 단가를 찾는다. 같은 품목이라도 kg 과 bag 은 값이 다르다.
+  // 한 품목을 두 단위로 시킨 경우는 첫 줄의 단위를 쓴다 — 그럴 땐 어차피 줄마다
+  // 손으로 단가를 맞추게 된다.
+  const unitOf: Record<string, string> = {}
+  for (const i of items as Array<{ product_id: string; unit: string }>) {
+    if (i.unit && unitOf[i.product_id] === undefined) unitOf[i.product_id] = i.unit
+  }
+
   const { priceMap, orgOverrides } = await buildPriceMapByProduct(
-    adminDb, productIds, businessDate, organizationId)
+    adminDb, productIds, businessDate, organizationId, unitOf)
 
   // 과세 여부를 보고 부가세를 계산한다.
   // 예전에는 vat_amount 를 무조건 0 으로 넣었다. 그래서 발주로 새로 만들어진 명세서 줄은
