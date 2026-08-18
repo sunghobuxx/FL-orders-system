@@ -4,8 +4,8 @@ export const runtime = 'edge'
 
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
+import { UNITS, unitLabel } from '@/lib/units'
 
-const UNITS = ['kg', 'g', '박스', '팩', '단', '통', '판', '포', '망', 'ea', 'bag', 'pack', 'bottle', 'box']
 const CATEGORIES = [
   { value: 'vegetable', label: '채소' },
   { value: 'fruit', label: '과일' },
@@ -103,7 +103,7 @@ export default function AdminProductNewPage() {
             className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
           >
             <option value="">선택하세요</option>
-            {UNITS.map(u => <option key={u} value={u}>{u}</option>)}
+            {UNITS.map(u => <option key={u} value={u}>{unitLabel(u)}</option>)}
           </select>
         </FieldWrapper>
 
@@ -112,7 +112,7 @@ export default function AdminProductNewPage() {
             {UNITS.map(u => (
               <label key={u} className="flex items-center gap-1.5 text-sm cursor-pointer">
                 <input type="checkbox" name="allowed_units" value={u} className="rounded" />
-                {u}
+                {unitLabel(u)}
               </label>
             ))}
           </div>

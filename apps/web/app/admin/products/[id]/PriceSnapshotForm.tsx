@@ -2,8 +2,8 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { UNITS, unitLabel } from '@/lib/units'
 
-const UNITS = ['kg', 'g', '박스', '팩', '단', '통', '판', '포', '망', 'ea', 'bag', 'pack', 'bottle', 'box']
 
 interface Snapshot {
   id: string
@@ -175,12 +175,12 @@ export default function PriceSnapshotForm({
               >
                 {productUnits.length > 0 && (
                   <optgroup label="이 품목의 단위">
-                    {productUnits.map(u => <option key={`p-${u}`} value={u}>{u}</option>)}
+                    {productUnits.map(u => <option key={`p-${u}`} value={u}>{unitLabel(u)}</option>)}
                   </optgroup>
                 )}
                 <optgroup label="그 외">
                   {UNITS.filter(u => !productUnits.includes(u))
-                    .map(u => <option key={u} value={u}>{u}</option>)}
+                    .map(u => <option key={u} value={u}>{unitLabel(u)}</option>)}
                 </optgroup>
               </select>
             </div>

@@ -2,8 +2,8 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { UNITS, unitLabel } from '@/lib/units'
 
-const UNITS = ['kg', 'g', '박스', '팩', '단', '통', '판', '포', '망', 'ea', 'bag', 'pack', 'bottle', 'box']
 
 interface SupplierOption {
   id: string
@@ -96,7 +96,7 @@ export default function AddSupplierProductForm({
           className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
         >
           <option value="">선택하세요</option>
-          {UNITS.map(u => <option key={u} value={u}>{u}</option>)}
+          {UNITS.map(u => <option key={u} value={u}>{unitLabel(u)}</option>)}
         </select>
       </div>
 

@@ -18,6 +18,7 @@
 
 import { generateStatements } from '@/lib/settlement/generate'
 import { splitVat } from '@/lib/specs/vat'
+import { normalizeUnit } from '@/lib/units'
 
 /**
  * 단가 우선순위: 업체 고정단가 → 당일단가 → 고정단가 품목 → carry-forward
@@ -196,7 +197,9 @@ export async function syncSpecFromOrders(
   // 손으로 단가를 맞추게 된다.
   const unitOf: Record<string, string> = {}
   for (const i of items as Array<{ product_id: string; unit: string }>) {
-    if (i.unit && unitOf[i.product_id] === undefined) unitOf[i.product_id] = i.unit
+    // 과거 발주엔 '박스' 같은 한글 단위가 남아 있어, 코드로 맞춰야 단가를 찾는다.
+    const u = normalizeUnit(i.unit)
+    if (u && unitOf[i.product_id] === undefined) unitOf[i.product_id] = u
   }
 
   const { priceMap, orgOverrides } = await buildPriceMapByProduct(
