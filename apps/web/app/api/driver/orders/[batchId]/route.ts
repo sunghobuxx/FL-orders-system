@@ -44,7 +44,7 @@ export async function GET(req: Request, { params }: Props) {
   if (order) {
     const { data } = await ctx.db
       .from('order_items')
-      .select('id, product_id, qty, unit, unit_price_snapshot, products(standard_name)')
+      .select('id, product_id, qty, unit, unit_price_snapshot, check_stage, products(standard_name)')
       .eq('order_id', order.id)
     items = data ?? []
   }
@@ -90,6 +90,7 @@ export async function GET(req: Request, { params }: Props) {
         qty: Number(item.qty),
         unit: item.unit,
         unitPrice: savedPrice > 0 ? savedPrice : (priceMap[item.product_id] ?? 0),
+        check_stage: Number(item.check_stage ?? 0),
       }
     }),
   })

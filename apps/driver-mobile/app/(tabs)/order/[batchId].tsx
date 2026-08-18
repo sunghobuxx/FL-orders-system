@@ -21,6 +21,8 @@ type DetailResponse = {
     qty: number
     unit: string
     unitPrice: number
+    check_stage?: number
+    checkStage?: number
   }>
 }
 
@@ -36,6 +38,8 @@ export default function OrderDetailScreen() {
   const [qtys, setQtys] = useState<Record<string, string>>({})
   const [prices, setPrices] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
+  const [checkingIds, setCheckingIds] = useState<Set<string>>(new Set())
+  const [completing, setCompleting] = useState(false)
   const hasDraft = useRef(false)
 
   const load = useCallback(async (preserveDraft = false) => {
@@ -47,7 +51,9 @@ export default function OrderDetailScreen() {
       setPrices(Object.fromEntries(next.items.map(item => [item.id, String(item.unitPrice)])))
       hasDraft.current = false
     }
-    if (DONE.includes(next.batch.status)) setConfirmed(new Set())
+    setConfirmed(new Set(next.items
+      .filter(item => Number(item.check_stage ?? item.checkStage ?? 0) >= 1)
+      .map(item => item.id)))
   }, [batchId])
 
   useFocusEffect(useCallback(() => {
@@ -63,18 +69,23 @@ export default function OrderDetailScreen() {
   }
 
   async function toggle(itemId: string) {
-    if (!data) return
-    const next = new Set(confirmed)
-    if (next.has(itemId)) {
-      next.delete(itemId)
-    } else {
-      next.add(itemId)
-      if (next.size === 1 && !['ordered', 'dispatched', 'completed'].includes(data.batch.status)) {
-        await apiPost('/api/driver/orders/status', { batchId: data.batch.id, newStatus: 'ordered' })
-        await load()
-      }
+    if (!data || checkingIds.has(itemId)) return
+    const stage = confirmed.has(itemId) ? 0 : 1
+    setCheckingIds(prev => new Set(prev).add(itemId))
+    try {
+      await apiPost('/api/driver/orders/check-items', {
+        batchId: data.batch.id,
+        itemIds: [itemId],
+        stage,
+      })
+      await load(true)
+    } finally {
+      setCheckingIds(prev => {
+        const next = new Set(prev)
+        next.delete(itemId)
+        return next
+      })
     }
-    setConfirmed(next)
   }
 
   async function save() {
@@ -120,10 +131,19 @@ export default function OrderDetailScreen() {
   }
 
   async function completeDelivery() {
-    if (!data) return
-    await apiPost('/api/driver/orders/status', { batchId: data.batch.id, newStatus: 'dispatched' })
-    Alert.alert('완료', '배송완료 처리됐습니다.')
-    await load()
+    if (!data || completing || data.items.length === 0) return
+    setCompleting(true)
+    try {
+      await apiPost('/api/driver/orders/check-items', {
+        batchId: data.batch.id,
+        itemIds: data.items.map(item => item.id),
+        stage: 2,
+      })
+      await load(true)
+      Alert.alert('완료', '배송완료 처리됐습니다.')
+    } finally {
+      setCompleting(false)
+    }
   }
 
   if (loading) return <Loading />
@@ -175,6 +195,7 @@ export default function OrderDetailScreen() {
 
           {data.items.map(item => {
             const isConfirmed = confirmed.has(item.id)
+            const isChecking = checkingIds.has(item.id)
             return (
               <View key={item.id} style={{ gap: 8, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#EEF2F7' }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -196,9 +217,10 @@ export default function OrderDetailScreen() {
                   />
                   <Pressable
                     onPress={() => toggle(item.id).catch((error) => Alert.alert('확인 실패', error.message))}
-                    style={{ width: 56, alignItems: 'center', borderRadius: 8, paddingVertical: 9, backgroundColor: isConfirmed ? '#22C55E' : '#16A34A' }}
+                    disabled={isChecking}
+                    style={{ width: 56, alignItems: 'center', borderRadius: 8, paddingVertical: 9, backgroundColor: isConfirmed ? '#22C55E' : '#16A34A', opacity: isChecking ? 0.5 : 1 }}
                   >
-                    <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '900' }}>{isConfirmed ? '✓' : '확인'}</Text>
+                    <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '900' }}>{isChecking ? '처리 중' : isConfirmed ? '✓' : '확인'}</Text>
                   </Pressable>
                 </View>
                 <View style={{ alignItems: 'flex-end' }}>
@@ -230,8 +252,8 @@ export default function OrderDetailScreen() {
               <Text style={{ color: '#16A34A', fontWeight: '900' }}>배송완료 처리됨</Text>
             </View>
           ) : allConfirmed ? (
-            <Pressable onPress={() => completeDelivery().catch((error) => Alert.alert('배송완료 실패', error.message))} style={{ backgroundColor: '#16A34A', borderRadius: 10, paddingHorizontal: 18, paddingVertical: 12 }}>
-              <Text style={{ color: '#FFFFFF', fontWeight: '900' }}>② 배송완료</Text>
+            <Pressable disabled={completing} onPress={() => completeDelivery().catch((error) => Alert.alert('배송완료 실패', error.message))} style={{ backgroundColor: '#16A34A', borderRadius: 10, paddingHorizontal: 18, paddingVertical: 12, opacity: completing ? 0.5 : 1 }}>
+              <Text style={{ color: '#FFFFFF', fontWeight: '900' }}>{completing ? '처리 중...' : '② 배송완료'}</Text>
             </Pressable>
           ) : (
             <View style={{ borderRadius: 10, borderWidth: 1, borderColor: '#D1D5DB', paddingHorizontal: 18, paddingVertical: 12 }}>
