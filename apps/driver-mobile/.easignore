@@ -1,5 +1,6 @@
 node_modules/
 .expo/
 dist/
+android/
 .DS_Store
 **/* 2.tsx
