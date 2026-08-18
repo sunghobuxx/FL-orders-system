@@ -7,6 +7,7 @@ import { getKstToday, getKstDateOffset } from '@/lib/date-kst'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { fetchAll } from '@/lib/supabase/fetch-all'
 import { getSessionUser } from '@/lib/supabase/server'
+import { normalizeUnit } from '@/lib/units'
 
 export default async function AdminDashboardPage() {
   const db = createAdminClient()
@@ -159,15 +160,19 @@ export default async function AdminDashboardPage() {
       const name = (job.suppliers as { organizations: { name: string } | null } | null)?.organizations?.name ?? '-'
       type DJItem = { qty: number; order_item_id?: string; order_items: { unit: string; products: { standard_name: string } } | null }
       const djItems = (job.dispatch_job_items as DJItem[]) ?? []
-      // 품목명 기준으로 합산 + breakdown
-      const itemMap = new Map<string, { qty: number; unit: string; breakdown: ItemBreakdown[] }>()
+      // 품목 + **단위** 기준으로 합산.
+      //
+      // 품목명만으로 묶으면 단위가 다른 발주가 한 덩어리가 된다 — 양파 0.5kg 과
+      // 1bag 이 "1.5kg" 으로 나와, 공급처에 kg 으로 주문이 나갔다 (2026-08-19).
+      const itemMap = new Map<string, { name: string; qty: number; unit: string; breakdown: ItemBreakdown[] }>()
       for (const i of djItems) {
         const pName = i.order_items?.products?.standard_name ?? '-'
-        const unit = i.order_items?.unit ?? ''
+        const unit = normalizeUnit(i.order_items?.unit) ?? ''
         const qty = Number(i.qty)
         const restaurantName = i.order_item_id ? (oiBatchMap[i.order_item_id] ?? '-') : '-'
-        if (!itemMap.has(pName)) itemMap.set(pName, { qty: 0, unit, breakdown: [] })
-        const entry = itemMap.get(pName)!
+        const key = `${pName}|${unit}`
+        if (!itemMap.has(key)) itemMap.set(key, { name: pName, qty: 0, unit, breakdown: [] })
+        const entry = itemMap.get(key)!
         entry.qty += qty
         const existing = entry.breakdown.find(b => b.restaurantName === restaurantName)
         if (existing) existing.qty += qty
@@ -176,7 +181,7 @@ export default async function AdminDashboardPage() {
       return {
         supplierName: name,
         sent: job.status === 'sent',
-        items: [...itemMap.entries()].map(([name, v]) => ({ name, ...v })),
+        items: [...itemMap.values()],
       }
     })
   } else if (batchIds.length > 0) {
@@ -217,14 +222,16 @@ export default async function AdminDashboardPage() {
         const batchId = (item.orders as unknown as { batch_id: string }).batch_id
         const restaurantName = batchToRestaurant.get(batchId) ?? '알 수 없음'
         const qty = Number(item.qty)
-        const existing = grouped[sid].find(i => i.name === pName)
+        const unit = normalizeUnit(item.unit) ?? ''
+        // 단위까지 봐야 한다 — 위 dispatch_job_items 쪽과 같은 이유.
+        const existing = grouped[sid].find(i => i.name === pName && i.unit === unit)
         if (existing) {
           existing.qty += qty
           const rb = existing.breakdown.find(b => b.restaurantName === restaurantName)
           if (rb) rb.qty += qty
           else existing.breakdown.push({ restaurantName, qty })
         } else {
-          grouped[sid].push({ name: pName, qty, unit: item.unit, breakdown: [{ restaurantName, qty }] })
+          grouped[sid].push({ name: pName, qty, unit, breakdown: [{ restaurantName, qty }] })
         }
       }
 

@@ -11,6 +11,7 @@ import {
 } from '@/lib/dispatch/current-items'
 import { getKstToday } from '@/lib/date-kst'
 import { requireDriverUser } from '@/lib/driver-api'
+import { normalizeUnit } from '@/lib/units'
 
 function fmtQty(qty: number) {
   return qty % 1 === 0 ? String(qty) : qty.toFixed(1)
@@ -64,12 +65,16 @@ export async function GET(req: Request) {
     const name = item.products?.standard_name ?? '알 수 없음'
     const unitPrice = priceMap.get(item.id) ?? 0
     const lineAmount = Number(item.qty) * unitPrice
-    const existing = productTotals.get(item.product_id)
+    // 품목 + **단위**. product_id 만으로 묶으면 양파 0.5kg 과 1bag 이
+    // "1.5kg" 한 줄이 된다 (2026-08-19, 어드민 대시보드도 같은 버그였다).
+    const unit = normalizeUnit(item.unit) ?? ''
+    const key = `${item.product_id}:${unit}`
+    const existing = productTotals.get(key)
     if (existing) {
       existing.qty += Number(item.qty)
       existing.amount += lineAmount
     } else {
-      productTotals.set(item.product_id, { name, qty: Number(item.qty), unit: item.unit, amount: lineAmount })
+      productTotals.set(key, { name, qty: Number(item.qty), unit, amount: lineAmount })
     }
   }
 
