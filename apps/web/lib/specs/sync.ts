@@ -62,8 +62,31 @@ export async function buildPriceMapByProduct(
     return want === undefined || snapUnit === want
   }
 
+  // 단위를 지정한 다단위 품목은 **다른 단위 단가로 폴백하지 않는다.**
+  //
+  // 폴백이 그대로 오청구가 됐다. 8/22 에 팽이버섯 box 14,000 만 등록됐는데
+  // 개당(ea) 발주가 그 값을 집어 5개 = 70,000 원이 나갔다 (정상 2,000).
+  // 반대로 7/07 에는 ea 400 만 등록돼 있어 box 발주 한 박스가 400 원이 됐다.
+  // 단위가 다른 단가는 그 단위의 가격이 아니다. 못 찾으면 다음 후보로 넘긴다.
+  const unitPinned = (productId: string) =>
+    multiUnitProducts.has(productId) && unitOf?.[productId] !== undefined
+
   const priceMap: Record<string, number> = {}
   const orgOverrides = new Set<string>()
+
+  type Snap = { supplier_product_id: string; sale_price: number; unit: string | null }
+  // 1) 원하는 단위 먼저, 2) 없으면 단위를 안 가린다 — 단, 단위를 지정한 품목은 제외.
+  const applySnaps = (snaps: Snap[] | null) => {
+    for (const pass of [true, false]) {
+      for (const snap of snaps ?? []) {
+        const pid = spToProduct[snap.supplier_product_id]
+        if (!pid || priceMap[pid] !== undefined) continue
+        if (pass) { if (!unitOk(pid, snap.unit)) continue }
+        else if (unitPinned(pid)) continue
+        priceMap[pid] = Number(snap.sale_price)
+      }
+    }
+  }
 
   if (organizationId) {
     const { data: orgPrices } = await adminDb
@@ -100,15 +123,7 @@ export async function buildPriceMapByProduct(
     .in('supplier_product_id', spIds)
     .eq('effective_from', businessDate)
     .order('created_at', { ascending: false })
-  // 1) 원하는 단위 먼저, 2) 없으면 단위를 안 가리고 (기본 단가로 되돌아감)
-  for (const pass of [true, false]) {
-    for (const snap of exactSnaps ?? []) {
-      const pid = spToProduct[snap.supplier_product_id]
-      if (!pid || priceMap[pid] !== undefined) continue
-      if (pass && !unitOk(pid, snap.unit)) continue
-      priceMap[pid] = Number(snap.sale_price)
-    }
-  }
+  applySnaps(exactSnaps as Snap[] | null)
 
   // 고정단가 품목도 등록일(effective_from)을 지킨다.
   // 예전에는 effective_from 을 무시하고 최신값을 가져왔다. 그래서 단가를 새로 넣으면
@@ -124,14 +139,7 @@ export async function buildPriceMapByProduct(
       .lte('effective_from', businessDate)
       .order('effective_from', { ascending: false })
       .order('created_at', { ascending: false })
-    for (const pass of [true, false]) {
-      for (const snap of fixedSnaps ?? []) {
-        const pid = spToProduct[snap.supplier_product_id]
-        if (!pid || priceMap[pid] !== undefined) continue
-        if (pass && !unitOk(pid, snap.unit)) continue
-        priceMap[pid] = Number(snap.sale_price)
-      }
-    }
+  applySnaps(fixedSnaps as Snap[] | null)
   }
 
   const remainSpIds = (spRows as Array<{ id: string; product_id: string }>)
@@ -143,14 +151,7 @@ export async function buildPriceMapByProduct(
       .lte('effective_from', businessDate)
       .order('effective_from', { ascending: false })
       .order('created_at', { ascending: false })
-    for (const pass of [true, false]) {
-      for (const snap of carrySnaps ?? []) {
-        const pid = spToProduct[snap.supplier_product_id]
-        if (!pid || priceMap[pid] !== undefined) continue
-        if (pass && !unitOk(pid, snap.unit)) continue
-        priceMap[pid] = Number(snap.sale_price)
-      }
-    }
+  applySnaps(carrySnaps as Snap[] | null)
   }
 
   return { priceMap, orgOverrides }
