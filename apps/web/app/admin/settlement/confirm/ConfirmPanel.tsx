@@ -33,6 +33,12 @@ export default function ConfirmPanel({ rows, cycle, today, periods, selectedPeri
   const pending = rows.filter(r => !r.confirmedAt)
   const allPicked = pending.length > 0 && pending.every(r => picked.has(r.statementId))
 
+  // 이 기간에 실제로 받아야 할 금액. 종이 정산서의 「받을 금액」과 같은 계산이다.
+  const sum = (list: ConfirmRow[], k: 'current' | 'total') =>
+    list.reduce((acc, r) => acc + Number(r[k] ?? 0), 0)
+  const selectedPeriod = periods.find(p => p.id === selectedPeriodId) ?? null
+  const ongoing = selectedPeriod?.ongoing ?? false
+
   function toggle(id: string) {
     setPicked(prev => {
       const next = new Set(prev)
@@ -51,9 +57,14 @@ export default function ConfirmPanel({ rows, cycle, today, periods, selectedPeri
     const { resend = false, notify = true } = opts
     const label = resend ? '재발송' : (notify ? '확정·발송' : '확정')
 
-    const warning = notify
-      ? `${ids.length}건을 ${label}합니다.\n거래처에 문자가 나갑니다. 확정하면 금액을 되돌릴 수 없습니다.\n계속할까요?`
-      : `${ids.length}건의 금액을 확정합니다.\n문자는 보내지 않습니다. 확정하면 금액을 되돌릴 수 없습니다.\n계속할까요?`
+    // 아직 안 끝난 기간은 배송이 남아 있어 금액이 더 붙는다. 확정하면 그대로 잠긴다.
+    const ongoingNote = ongoing
+      ? '\n\n※ 아직 끝나지 않은 기간입니다. 남은 날짜의 발주가 이 정산서에 반영되지 않습니다.'
+      : ''
+    const warning = (notify
+      ? `${ids.length}건을 ${label}합니다.\n거래처에 문자가 나갑니다. 확정하면 금액을 되돌릴 수 없습니다.`
+      : `${ids.length}건의 금액을 확정합니다.\n문자는 보내지 않습니다. 확정하면 금액을 되돌릴 수 없습니다.`
+    ) + ongoingNote + '\n계속할까요?'
     if (!askUser(warning)) return
 
     setBusy(true); setMsg('')
@@ -118,6 +129,12 @@ export default function ConfirmPanel({ rows, cycle, today, periods, selectedPeri
                 }`}
               >
                 {periodLabel(p.start, p.end)}
+                {/* 아직 안 끝난 기간. 금액이 더 늘 수 있으니 눈에 띄게 알린다. */}
+                {p.ongoing && (
+                  <span className={p.id === selectedPeriodId ? ' opacity-80' : ' text-blue-600'}>
+                    {' '}진행 중
+                  </span>
+                )}
                 {/* 오늘 끝나는 주는 배송이 남아 있을 수 있다. 확정 전에 알아채도록 표시한다. */}
                 {p.end === today && (
                   <span className={p.id === selectedPeriodId ? ' opacity-80' : ' text-brand-600'}>
@@ -132,6 +149,37 @@ export default function ConfirmPanel({ rows, cycle, today, periods, selectedPeri
               </Link>
             ))}
           </div>
+        )}
+      </div>
+
+      {/* 이 기간에 받을 금액 총합. 한 곳씩 더해 보지 않아도 되게 위에 둔다. */}
+      <div className="rounded-xl border border-gray-200 bg-white px-4 py-3 flex flex-wrap items-center gap-x-6 gap-y-2">
+        <div>
+          <span className="text-xs text-gray-500">받을 금액 합계</span>
+          <p className="text-xl font-bold text-gray-900 tabular-nums">{won(sum(rows, 'total'))}원</p>
+        </div>
+        <div>
+          <span className="text-xs text-gray-500">당기 청구</span>
+          <p className="text-sm font-semibold text-gray-700 tabular-nums">{won(sum(rows, 'current'))}원</p>
+        </div>
+        {pending.length > 0 && (
+          <div>
+            <span className="text-xs text-gray-500">미확정 {pending.length}곳</span>
+            <p className="text-sm font-semibold text-amber-600 tabular-nums">{won(sum(pending, 'total'))}원</p>
+          </div>
+        )}
+        {picked.size > 0 && (
+          <div>
+            <span className="text-xs text-gray-500">선택 {picked.size}곳</span>
+            <p className="text-sm font-semibold text-brand-600 tabular-nums">
+              {won(sum(rows.filter(r => picked.has(r.statementId)), 'total'))}원
+            </p>
+          </div>
+        )}
+        {ongoing && (
+          <p className="text-xs text-blue-600 ml-auto">
+            아직 진행 중인 기간입니다. 금액이 더 늘어날 수 있습니다.
+          </p>
         )}
       </div>
 

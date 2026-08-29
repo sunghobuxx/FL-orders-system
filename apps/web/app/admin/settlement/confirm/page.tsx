@@ -48,6 +48,8 @@ export interface PeriodOption {
   end: string
   count: number
   pending: number
+  /** 아직 안 끝난 기간(종료일이 오늘보다 뒤). 금액이 더 늘 수 있다. */
+  ongoing: boolean
 }
 
 interface Props {
@@ -78,12 +80,13 @@ export default async function SettlementConfirmPage({ searchParams }: Props) {
     .from('settlement_periods')
     .select('id, start_date, end_date')
     .eq('period_type', cycle)
-    // 오늘 끝나는 기간까지 넣는다.
+    // **시작한 기간**은 아직 안 끝났어도 넣는다.
     //
-    // 예전에는 `< 오늘` 이라 **오늘 마감인 주가 빠졌다.** 주정산은 일~토라 토요일에
-    // 끝나는데, 사장님은 토요일 배송을 마치고 오후 2~3시에 정산서를 넘긴다.
-    // 정작 넘기는 날 화면에 안 떴다 (2026-08-15 확인).
-    .lte('end_date', today)
+    // 예전에는 `end_date <= 오늘` 이라 진행 중인 기간이 통째로 빠졌다. 월정산은
+    // 말일에 끝나므로 그 달 내내 화면에 없었다 — 8월 중에 8월 월정산을 볼 수 없었다
+    // (2026-08-29 지적). 중간에 얼마나 쌓였는지 보려면 보여야 한다.
+    // 진행 중인 기간은 `ongoing` 으로 표시해 확정 전에 알아채게 한다.
+    .lte('start_date', today)
     .order('end_date', { ascending: false }))
 
   // 정산서가 없는 기간은 고를 이유가 없다.
@@ -104,6 +107,7 @@ export default async function SettlementConfirmPage({ searchParams }: Props) {
         end: p.end_date,
         count: mine.length,
         pending: mine.filter(c => !c.confirmed_at).length,
+        ongoing: p.end_date > today,
       }
     })
     .filter(p => p.count > 0)
