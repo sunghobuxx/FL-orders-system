@@ -3,8 +3,9 @@ export const runtime = 'edge'
 import { NextRequest, NextResponse } from 'next/server'
 import { getAdminSession } from '@/lib/admin-member-user'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { syncSpecFromOrders } from '@/lib/specs/sync'
+import { syncSpecFromOrders, buildPriceMapByProduct } from '@/lib/specs/sync'
 import { refreshDispatchJobItems } from '@/lib/dispatch/current-items'
+import { normalizeUnit } from '@/lib/units'
 
 interface RawItem {
   product_id?: string
@@ -92,31 +93,27 @@ export async function POST(req: NextRequest) {
       if (!productToSp[sp.product_id]) productToSp[sp.product_id] = sp.id
     }
 
-    const spIds = Object.values(productToSp)
-    const priceBySp: Record<string, number> = {}
-    if (spIds.length > 0) {
-      const { data: snaps } = await adminDb
-        .from('price_snapshots')
-        .select('supplier_product_id, sale_price, effective_from')
-        .in('supplier_product_id', spIds)
-        .lte('effective_from', businessDate)
-        .order('effective_from', { ascending: false })
-        .order('created_at', { ascending: false })
-      for (const s of snaps ?? []) {
-        if (priceBySp[s.supplier_product_id] === undefined) {
-          priceBySp[s.supplier_product_id] = Number(s.sale_price)
-        }
-      }
-    }
+    // 단가는 명세서와 **같은 규칙**으로 구한다.
+    //
+    // 예전에는 여기서 price_snapshots 만 뒤져, 업체별 고정단가(org_product_prices)를
+    // 통째로 무시했다. 용산점 두절콩나물이 14,000 으로 등록돼 있는데 발주는 13,500 으로
+    // 잡혀, 사장님이 명세서를 매번 손으로 고치고 계셨다 (2026-08-29).
+    const { data: rest } = await adminDb
+      .from('restaurants').select('organization_id').eq('id', restaurantId).maybeSingle()
+    const { priceMap } = await buildPriceMapByProduct(
+      adminDb, productIds, businessDate,
+      (rest as { organization_id: string } | null)?.organization_id ?? null,
+      Object.fromEntries(items.filter(i => i.unit).map(i => [i.product_id, normalizeUnit(i.unit) as string])),
+    )
 
     for (const item of items) {
       if (!item.supplier_product_id) {
         const spId = productToSp[item.product_id]
         if (spId) item.supplier_product_id = spId
       }
-      if (item.unit_price_snapshot <= 0 && item.supplier_product_id) {
-        const price = priceBySp[item.supplier_product_id]
-        if (price !== undefined) item.unit_price_snapshot = price
+      if (item.unit_price_snapshot <= 0) {
+        const price = priceMap[item.product_id]
+        if (price !== undefined) item.unit_price_snapshot = Number(price)
       }
     }
   }
