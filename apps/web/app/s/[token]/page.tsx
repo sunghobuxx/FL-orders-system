@@ -151,12 +151,13 @@ export default async function SharedStatementPage({ params }: Props) {
   const issuedOn = pStart ? `${pYear}.${pMon}.${endDay}` : ''
 
   return (
-    <main className="min-h-screen bg-gray-100 py-6 px-3 print:bg-white print:p-0">
+    <main className="min-h-screen bg-gray-100 py-4 px-2 sm:py-6 sm:px-3 print:bg-white print:p-0">
       <div className="mx-auto max-w-3xl space-y-3">
-        {/* 좁은 화면에서는 표가 눌리지 않게 가로로 넘긴다. 종이와 같은 칸 비율을 지킨다. */}
-        <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white p-4 print:border-0 print:p-0">
-          <div className="min-w-[560px]">
+        {/* 화면 폭에 맞춘다. 예전에는 min-w-[560px] 이라 휴대폰에서 가로로 밀어야 했다. */}
+        <div className="rounded-xl border border-gray-200 bg-white p-3 sm:p-4 print:border-0 print:p-0">
+          <div>
             <StatementSheet
+              compact
               title={title}
               issuedOn={issuedOn}
               orgName={org?.name ?? '거래처'}

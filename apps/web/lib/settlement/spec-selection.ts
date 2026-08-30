@@ -95,22 +95,30 @@ export async function selectSpecsForStatement(
   const olderUnbilled = older.filter(
     s => !billedIds.has(s.id) && isCarryForwardEligible(s.business_date))
 
-  // 이 기간 명세서 중 확정 정산서에 이미 담긴 것은 뺀다
+  // 이 기간 명세서 중 **다른 정산서**에 이미 담긴 것은 뺀다.
+  //
+  // 예전에는 「확정된」 정산서만 걸렀다. 그래서 주기를 주→월로 바꾸면 옛 주정산
+  // 정산서(미확정)가 그대로 남아 있는데 월정산이 같은 명세서를 또 담았다 —
+  // 강남·공덕 8/24~25 가 두 정산서에 걸려 이중 청구가 됐다 (2026-08-29).
+  // 확정 여부와 상관없이, 지금 만드는 기간이 아닌 정산서에 이미 들어갔으면 뺀다.
   const inPeriodIds = inPeriod.map(s => s.id)
   const lockedSpecIds = new Set<string>()
   if (inPeriodIds.length) {
-    const periodLines = await fetchAll<{ source_doc_id: string; sales_statement_id: string }>(() => db
+    const periodLines = await fetchAll<{
+      source_doc_id: string
+      sales_statement_id: string
+      sales_statements: { settlement_periods: { start_date: string; end_date: string } | null } | null
+    }>(() => db
       .from('sales_statement_lines')
-      .select('source_doc_id, sales_statement_id')
+      .select('source_doc_id, sales_statement_id, sales_statements!inner(settlement_periods!inner(start_date, end_date))')
       .eq('source_doc_type', 'daily_spec')
       .in('source_doc_id', inPeriodIds))
-    const stmtIds = [...new Set(periodLines.map(l => l.sales_statement_id))]
-    if (stmtIds.length) {
-      const { confirmedStatementIds } = await import('@/lib/settlement/confirm')
-      const confirmed = await confirmedStatementIds(db, stmtIds)
-      for (const l of periodLines) {
-        if (confirmed.has(l.sales_statement_id)) lockedSpecIds.add(l.source_doc_id)
-      }
+    for (const l of periodLines) {
+      const stmt = Array.isArray(l.sales_statements) ? l.sales_statements[0] : l.sales_statements
+      const per = Array.isArray(stmt?.settlement_periods) ? stmt?.settlement_periods[0] : stmt?.settlement_periods
+      // 지금 만드는 그 기간의 정산서면 건너뛴다 — 라인을 다시 짜는 중이다.
+      if (per?.start_date === start && per?.end_date === end) continue
+      lockedSpecIds.add(l.source_doc_id)
     }
   }
 

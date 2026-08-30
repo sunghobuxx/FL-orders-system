@@ -40,6 +40,13 @@ export interface StatementSheetProps {
   totalDue: number
   /** 종이 균형을 위해 빈 줄을 채운다. 링크 화면에서는 0 */
   minRows?: number
+  /**
+   * 좁은 화면(문자로 받는 링크)에 맞춰 줄인다.
+   *
+   * 인쇄(A4)는 이 값을 켜지 않는다 — 같은 양식을 쓰되 종이 쪽 배치는 그대로 둔다.
+   * 켜도 640px 이하에서만 달라지므로 데스크톱 미리보기는 종전과 같다.
+   */
+  compact?: boolean
 }
 
 const fmtWon = (n: number) => `₩ ${Math.round(Number(n ?? 0)).toLocaleString('ko-KR')}`
@@ -47,18 +54,37 @@ const fmtWon = (n: number) => `₩ ${Math.round(Number(n ?? 0)).toLocaleString('
 export default function StatementSheet({
   title, issuedOn, orgName, rows,
   totalAmount, carryover, paidAmount, outstandingAmount, totalDue,
-  minRows = 0,
+  minRows = 0, compact = false,
 }: StatementSheetProps) {
   const filler = Math.max(0, minRows - rows.length)
 
   return (
-    <div className="stmt-sheet">
+    <div className={compact ? 'stmt-sheet compact' : 'stmt-sheet'}>
       <style>{`
         .stmt-sheet { font-family: 'Malgun Gothic', '맑은 고딕', Arial, sans-serif; color: #000; }
         .stmt-sheet h2 { text-align: center; font-size: 16pt; font-weight: bold; margin: 0 0 6mm; }
         .stmt-sheet table { width: 100%; border-collapse: collapse; }
         .stmt-sheet td, .stmt-sheet th { border: 1px solid #000; padding: 4px 8px; font-size: 10pt; }
         .stmt-sheet .no-b td { border: none; }
+
+        /* 문자로 받는 화면. 휴대폰 폭에 맞춘다 — 가로로 밀지 않고 한눈에 본다. */
+        @media (max-width: 640px) {
+          .stmt-sheet.compact h2 { font-size: 13pt; margin-bottom: 3mm; }
+          .stmt-sheet.compact td,
+          .stmt-sheet.compact th { padding: 3px 4px; font-size: 8.5pt; }
+          /* 상호·주소는 오른쪽에 몰면 눌린다. 위아래로 편다. */
+          .stmt-sheet.compact .no-b td { display: block; width: 100% !important; text-align: left !important; }
+          .stmt-sheet.compact .no-b td + td { font-size: 8pt !important; line-height: 1.5 !important; padding-top: 2mm; }
+          /* 내용은 길어도 칸 안에 들어오게 한다.
+             break-all 로 하면 "2box" 가 "2b / ox" 로 잘려 읽기 나쁘다.
+             낱말은 붙여 두고, 정 안 되면 그때만 끊는다. */
+          .stmt-sheet.compact .col-summary {
+            font-size: 8pt; word-break: keep-all; overflow-wrap: break-word;
+          }
+          /* "품목수" 가 두 줄로 쪼개지지 않게 한다. */
+          .stmt-sheet.compact th { white-space: nowrap; }
+          .stmt-sheet.compact .amt { font-size: 9pt !important; }
+        }
       `}</style>
 
       <h2>{title}</h2>
@@ -95,8 +121,8 @@ export default function StatementSheet({
             <tr key={r.key}>
               <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>{r.date}</td>
               <td style={{ textAlign: 'center' }}>{r.itemCount}</td>
-              <td style={{ fontSize: '9pt' }}>{r.summary}</td>
-              <td style={{ textAlign: 'right', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{fmtWon(r.amount)}</td>
+              <td className="col-summary" style={{ fontSize: '9pt' }}>{r.summary}</td>
+              <td className="amt" style={{ textAlign: 'right', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{fmtWon(r.amount)}</td>
             </tr>
           ))}
           {Array.from({ length: filler }).map((_, i) => (
@@ -105,7 +131,7 @@ export default function StatementSheet({
 
           <tr style={{ backgroundColor: '#f9f9f9' }}>
             <td colSpan={3} style={{ textAlign: 'right', fontWeight: 'bold' }}>당기 합계</td>
-            <td style={{ textAlign: 'right', fontWeight: 'bold', fontSize: '11pt', whiteSpace: 'nowrap' }}>{fmtWon(totalAmount)}</td>
+            <td style={{ textAlign: 'right', fontWeight: 'bold', fontSize: '11pt', whiteSpace: 'nowrap' }} className="amt">{fmtWon(totalAmount)}</td>
           </tr>
           {carryover > 0 && (
             <tr style={{ backgroundColor: '#fffbf0' }}>
@@ -121,12 +147,12 @@ export default function StatementSheet({
           )}
           <tr style={{ backgroundColor: '#fff5f5' }}>
             <td colSpan={3} style={{ textAlign: 'right', fontWeight: 'bold', color: '#cc0000' }}>미수금</td>
-            <td style={{ textAlign: 'right', fontWeight: 'bold', color: '#cc0000', fontSize: '12pt', whiteSpace: 'nowrap' }}>{fmtWon(outstandingAmount)}</td>
+            <td style={{ textAlign: 'right', fontWeight: 'bold', color: '#cc0000', fontSize: '12pt', whiteSpace: 'nowrap' }} className="amt">{fmtWon(outstandingAmount)}</td>
           </tr>
           {carryover > 0 && (
             <tr style={{ backgroundColor: '#fff5f5' }}>
               <td colSpan={3} style={{ textAlign: 'right', fontWeight: 'bold', color: '#cc0000' }}>받을 금액</td>
-              <td style={{ textAlign: 'right', fontWeight: 'bold', color: '#cc0000', fontSize: '13pt', whiteSpace: 'nowrap' }}>{fmtWon(totalDue)}</td>
+              <td style={{ textAlign: 'right', fontWeight: 'bold', color: '#cc0000', fontSize: '13pt', whiteSpace: 'nowrap' }} className="amt">{fmtWon(totalDue)}</td>
             </tr>
           )}
         </tbody>
