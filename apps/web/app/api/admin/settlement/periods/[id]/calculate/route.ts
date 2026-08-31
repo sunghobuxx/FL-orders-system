@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getAdminSession } from '@/lib/admin-member-user'
 import { computeOutstanding, syncStatementFinance } from '@/lib/settlement-finance'
+import { selectSpecsForStatement } from '@/lib/settlement/spec-selection'
 
 export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -61,9 +62,20 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
 
     let count = 0
     let skippedCycle = 0
-    for (const [restaurantId, { total, specIds }] of byRestaurant) {
+    for (const [restaurantId] of byRestaurant) {
       if (cycleMap[restaurantId] !== period.period_type) { skippedCycle++; continue }
       const organizationId = orgMap[restaurantId]
+
+      // 담을 명세서는 **자동 생성과 같은 규칙**으로 고른다.
+      //
+      // 예전에는 기간 안의 명세서를 전부 담았다. 그래서 다른 정산서에 이미 들어간
+      // 명세서까지 다시 담겼다 — 맛승 부천의 8/19~22 가 완납된 주정산에 있는데도
+      // 월정산에 또 들어가 714,000 이 이중 청구됐다 (2026-08-31).
+      // selectSpecsForStatement 는 지금 만드는 기간이 아닌 정산서에 담긴 것을 걸러 준다.
+      const picked = await selectSpecsForStatement(db, restaurantId, period.start_date, period.end_date)
+      const total = picked.reduce((sum, s) => sum + Number(s.total_amount ?? 0), 0)
+      const specIds = picked.map(s => s.id)
+      const amountOf = new Map(picked.map(s => [s.id, Number(s.total_amount ?? 0)]))
 
       // upsert sales_statement
       const { data: stmt, error: stmtErr } = await db
@@ -89,7 +101,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
           sales_statement_id: stmt.id,
           source_doc_type: 'daily_spec',
           source_doc_id: specId,
-          amount: specs.find(s => s.id === specId)?.total_amount ?? 0,
+          amount: amountOf.get(specId) ?? 0,
         }))
       )
 

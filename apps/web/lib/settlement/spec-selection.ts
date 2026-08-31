@@ -82,18 +82,24 @@ export async function selectSpecsForStatement(
 
   const inPeriod = specs.filter(s => s.business_date >= start)
   const older = specs.filter(s => s.business_date < start)
-  if (!older.length) return pickSpecs(inPeriod, [], new Set())
 
-  // 이미 어느 정산서엔가 담긴 명세서는 이월 대상이 아니다
+  // 이미 어느 정산서엔가 담긴 명세서는 이월 대상이 아니다.
+  //
+  // 예전에는 older 가 비면 여기서 바로 반환했다. 그러면 **아래 중복 검사를 통째로
+  // 건너뛴다.** 맛승 부천은 7월 이전 명세서가 없어 그 길로 빠졌고, 완납된 주정산에
+  // 있는 8/19~22 가 월정산에 또 담겨 714,000 이 이중 청구됐다 (2026-08-31).
   const olderIds = older.map(s => s.id)
-  const lines = await fetchAll<{ source_doc_id: string; sales_statement_id: string }>(() => db
-    .from('sales_statement_lines')
-    .select('source_doc_id, sales_statement_id')
-    .eq('source_doc_type', 'daily_spec')
-    .in('source_doc_id', olderIds))
-  const billedIds = new Set(lines.map(l => l.source_doc_id))
-  const olderUnbilled = older.filter(
-    s => !billedIds.has(s.id) && isCarryForwardEligible(s.business_date))
+  let olderUnbilled: SpecRow[] = []
+  if (olderIds.length) {
+    const lines = await fetchAll<{ source_doc_id: string; sales_statement_id: string }>(() => db
+      .from('sales_statement_lines')
+      .select('source_doc_id, sales_statement_id')
+      .eq('source_doc_type', 'daily_spec')
+      .in('source_doc_id', olderIds))
+    const billedIds = new Set(lines.map(l => l.source_doc_id))
+    olderUnbilled = older.filter(
+      s => !billedIds.has(s.id) && isCarryForwardEligible(s.business_date))
+  }
 
   // 이 기간 명세서 중 **다른 정산서**에 이미 담긴 것은 뺀다.
   //
