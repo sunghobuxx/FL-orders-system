@@ -35,65 +35,64 @@ function getNextMonth(month: string): string {
 
 /** 총매입과 함께 "이 숫자를 믿어도 되는지" 판단할 근거를 돌려준다. */
 interface PurchaseStat {
+  /** 매입가가 등록된 품목만 더한 값. 순이익은 이걸로 낸다. */
   total: number
-  /** 발주를 판매가로 더한 값 — 명세서 매출과 비슷해야 정상 */
-  orderedAtSalePrice: number
-  /** 매입가가 등록되지 않아 판매가로 대신 계산한 품목 수 */
+  /** 위 total 에 대응하는 매출 — 같은 명세줄의 청구액 */
+  matchedSales: number
+  /** 매입가가 없어 매입을 계산하지 못한 품목 수 */
   missingCostCount: number
+  /** 그 품목들의 청구액. 순이익 계산에서 매출·매입 양쪽 모두 빠진다. */
+  missingCostSales: number
 }
 
 async function getTotalPurchase(db: ReturnType<typeof createAdminClient>, from: string, to: string): Promise<PurchaseStat> {
-  const batches = await fetchAll<{ id: string; business_date: string }>(() => db
-    .from('order_batches')
-    .select('id, business_date')
-    .gte('business_date', from)
-    .lte('business_date', to)
-    .in('status', ['submitted', 'validated', 'ordered', 'dispatched', 'completed']))
-  const batchIds = batches.map(b => b.id)
-  if (batchIds.length === 0) return { total: 0, orderedAtSalePrice: 0, missingCostCount: 0 }
-
-  // 1000 행 제한 때문에 예전에는 발주 품목 일부만 더했다. 7월 총매입이 실제의 62% 로
-  // 떠 있었다(25,166,880 / 40,664,640). 반드시 전부 읽는다.
-  const batchDate = new Map(batches.map(b => [b.id, b.business_date]))
-  const allItems = await fetchAll<{
-    product_id: string; qty: number; unit_price_snapshot: number
-    products: { is_fixed_price: boolean } | null
-    orders: { batch_id: string } | null
+  // 매입도 **명세서 기준**으로 낸다.
+  //
+  // 예전에는 매출은 명세서에서, 매입은 발주에서 계산했다. 둘이 같은 물건을 가리키지
+  // 않으면 순이익이 통째로 흔들린다 — 2026-08 에 발주를 판매가로 합치면 48,784,260 인데
+  // 명세서 매출은 46,773,230 이라 2,011,030 이 어긋나 있었다. 업체별 고정단가로
+  // 명세서만 낮아진 경우(와이로지스 두절콩나물 13,500→1,000)가 대표적이다.
+  // 청구한 줄에 대응하는 매입만 세면 그 어긋남이 사라진다.
+  //
+  // 또 예전에는 그 달 배치 id 를 전부 .in() 에 넣었다. 8월은 배치가 455 개라
+  // 요청 주소가 서버 한계(16KB)를 넘어 조회 자체가 실패했다. 명세줄은 날짜로 거르므로
+  // id 목록을 실어 보낼 일이 없다.
+  const lines = await fetchAll<{
+    product_id: string; qty: number; amount: number
+    daily_specs: { business_date: string } | null
   }>(() => db
-    .from('order_items')
-    .select('product_id, qty, unit_price_snapshot, products(is_fixed_price), orders!inner(batch_id)')
-    .in('orders.batch_id', batchIds))
-  const productIds = [...new Set(allItems.map(i => i.product_id))]
-  const productToSupplier = new Map<string, string>()
-  if (productIds.length > 0) {
-    const spRows = await fetchAll<{ product_id: string; supplier_id: string }>(() => db
-      .from('supplier_products')
-      .select('product_id, supplier_id, updated_at')
-      .in('product_id', productIds)
-      .eq('status', 'active')
-      .order('updated_at', { ascending: false }))
-    for (const sp of spRows) {
-      if (!productToSupplier.has(sp.product_id)) productToSupplier.set(sp.product_id, sp.supplier_id)
-    }
+    .from('daily_spec_lines')
+    .select('product_id, qty, amount, daily_specs!inner(business_date)')
+    .gte('daily_specs.business_date', from)
+    .lte('daily_specs.business_date', to))
+
+  if (!lines.length) {
+    return { total: 0, matchedSales: 0, missingCostCount: 0, missingCostSales: 0 }
   }
 
-  // 매입은 매입가로 계산한다. unit_price_snapshot 은 판매가라 그대로 더하면
-  // 공급처에 준 적 없는 마진까지 매입으로 잡힌다(2026-07: 순이익이 음수로 나왔다).
-  // 매입가가 등록되지 않은 품목만 판매가로 대신한다 — 빼 버리면 매입이 과소 집계된다.
+  const productIds = [...new Set(lines.map(l => l.product_id).filter(Boolean))]
   const costs = await buildPurchaseCostResolver(db, productIds)
 
   let total = 0
-  let orderedAtSalePrice = 0
+  let matchedSales = 0
   let missingCostCount = 0
-  for (const item of allItems) {
-    if (!item.products || !productToSupplier.has(item.product_id)) continue
-    const date = item.orders ? batchDate.get(item.orders.batch_id) : undefined
-    const cost = date ? costs.costOf(item.product_id, date) : null
-    if (cost === null) missingCostCount++
-    total += Number(item.qty) * (cost ?? Number(item.unit_price_snapshot))
-    orderedAtSalePrice += Number(item.qty) * Number(item.unit_price_snapshot)
+  let missingCostSales = 0
+  for (const line of lines) {
+    const spec = Array.isArray(line.daily_specs) ? line.daily_specs[0] : line.daily_specs
+    const date = spec?.business_date
+    const cost = date ? costs.costOf(line.product_id, date) : null
+    const sales = Number(line.amount ?? 0)
+    // 매입가가 없으면 판매가로 때우지 않는다. 그러면 그 품목 마진이 0 이 되어
+    // 이익이 실제보다 작게 나온다(2026-08: 19건 432,000원). 아예 빼고 몇 건인지 알린다.
+    if (cost === null) {
+      missingCostCount++
+      missingCostSales += sales
+      continue
+    }
+    total += Number(line.qty ?? 0) * cost
+    matchedSales += sales
   }
-  return { total, orderedAtSalePrice, missingCostCount }
+  return { total, matchedSales, missingCostCount, missingCostSales }
 }
 
 function buildCalendar(month: string, dailyAmounts: Map<string, number>) {
@@ -176,11 +175,14 @@ export default async function AdminSalesPage({ searchParams }: Props) {
   const avgDailySales = daysWithSales > 0 ? Math.round(totalSales / daysWithSales) : 0
   const totalPurchase = purchaseStat.total
   const prevPurchase = prevPurchaseStat.total
-  // 발주가 매출을 얼마나 뒷받침하는지. 낮으면 그 달 발주 기록이 빠져 매입이 과소 집계된다.
-  // 2026-05 는 28일 중 19일치 발주만 있어 커버율이 54% 였다.
-  const orderCoverage = totalSales > 0
-    ? Math.round((purchaseStat.orderedAtSalePrice / totalSales) * 100) : 100
-  const netProfit = totalSales - totalPurchase
+  // 순이익은 **매입가를 아는 줄끼리만** 뺀다.
+  //
+  // 총매출 전체에서 매입을 빼면, 매입가가 없는 품목의 매출이 통째로 이익으로 잡힌다.
+  // 짝이 맞는 금액끼리 빼야 마진율이 사실대로 나온다.
+  const netProfit = purchaseStat.matchedSales - totalPurchase
+  // 매출 중 이익을 낼 수 있는 부분의 비율. 낮으면 매입가 등록이 덜 됐다는 뜻이다.
+  const costCoverage = totalSales > 0
+    ? Math.round((purchaseStat.matchedSales / totalSales) * 100) : 100
   const salesDelta = pctChange(totalSales, prevTotalSales)
   const purchaseDelta = pctChange(totalPurchase, prevPurchase)
 
@@ -230,21 +232,19 @@ export default async function AdminSalesPage({ searchParams }: Props) {
 
         {/* 숫자를 믿어도 되는지 알려 준다.
             매입은 발주에서 계산하므로 발주 기록이 빠진 달은 이익이 부풀려 보인다. */}
-        {(orderCoverage < 90 || purchaseStat.missingCostCount > 0) && (
+        {purchaseStat.missingCostCount > 0 && (
           <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 space-y-1">
-            {orderCoverage < 90 && (
-              <p className="text-xs text-amber-800">
-                <span className="font-semibold">발주 기록이 부족한 달입니다 (커버율 {orderCoverage}%).</span>{' '}
-                매출은 명세서에서, 매입은 발주에서 계산합니다. 발주가 빠진 만큼 매입이 적게 잡혀
-                순이익이 실제보다 크게 보입니다.
-              </p>
-            )}
-            {purchaseStat.missingCostCount > 0 && (
-              <p className="text-xs text-amber-800">
-                매입가가 등록되지 않은 발주 품목 {purchaseStat.missingCostCount}건은 판매가로 대신 계산했습니다.
-                그만큼 매입이 크게 잡힙니다.
-              </p>
-            )}
+            <p className="text-xs text-amber-800">
+              <span className="font-semibold">
+                매입가가 없는 품목 {purchaseStat.missingCostCount}건({fmt(purchaseStat.missingCostSales)})은
+                순이익 계산에서 뺐습니다.
+              </span>{' '}
+              총매출의 {100 - costCoverage}% 입니다. 품목마스터에 매입가를 넣으면 이익에 반영됩니다.
+            </p>
+            <p className="text-xs text-amber-700">
+              순이익은 <span className="font-semibold">공급가(부가세 제외)</span> 기준입니다.
+              부가세는 받아서 국가에 내는 돈이라 이익에 넣지 않습니다 — 총매출 카드와 금액이 다른 이유입니다.
+            </p>
           </div>
         )}
 
@@ -254,7 +254,7 @@ export default async function AdminSalesPage({ searchParams }: Props) {
         {/* Summary cards */}
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
           <div className="bg-white rounded-xl border border-gray-200 p-4">
-            <p className="text-xs text-gray-500 mb-1">총매출</p>
+            <p className="text-xs text-gray-500 mb-1">총매출 <span className="text-gray-400">(부가세 포함)</span></p>
             <p className="text-lg font-bold text-gray-900">{fmt(totalSales)}</p>
             <DeltaBadge delta={salesDelta} />
           </div>
@@ -266,6 +266,14 @@ export default async function AdminSalesPage({ searchParams }: Props) {
           <div className="bg-white rounded-xl border border-gray-200 p-4">
             <p className="text-xs text-gray-500 mb-1">순이익</p>
             <p className={`text-lg font-bold ${netProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>{fmt(netProfit)}</p>
+            {/* 어떤 매출에서 뺀 이익인지 밝힌다.
+                총매출과 다른 이유는 둘이다 — 부가세를 뺐고(국가에 낼 돈이라 이익이 아니다),
+                매입가를 모르는 품목을 제외했다. */}
+            <span className="text-[11px] text-gray-400">
+              마진 {purchaseStat.matchedSales > 0
+                ? Math.round((netProfit / purchaseStat.matchedSales) * 100) : 0}%
+              {' · '}공급가 {fmt(purchaseStat.matchedSales)} 기준
+            </span>
           </div>
           <div className="bg-white rounded-xl border border-gray-200 p-4">
             <p className="text-xs text-gray-500 mb-1">미수금 (받을 돈)</p>
