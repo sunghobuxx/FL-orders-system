@@ -29,7 +29,6 @@ export default async function AdminStatementPrintPage({ params }: Props) {
   const totalAmount = Number(stmt.total_amount ?? 0)
   const outstandingAmount = Number(stmt.outstanding_amount ?? 0)
   const paidAmount = totalAmount - outstandingAmount
-
   // 화면과 같은 계산을 쓴다. 예전에는 프린트에 이전 미수금 항목이 아예 없어
   // 거래처가 받는 종이와 화면 금액이 달랐다.
   const { previous: carryover, totalDue } = await getCarryover(

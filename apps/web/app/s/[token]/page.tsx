@@ -139,6 +139,10 @@ export default async function SharedStatementPage({ params }: Props) {
   const current = Number(stmt.total_amount ?? 0)
   const paidAmount = Math.max(0, current - currentOutstanding)
 
+  // 이 정산서에 들어온 입금을 날짜별로 보여준다.
+  //
+  // 합계만 있으면 거래처가 "언제 얼마 넣었더라" 를 확인할 수 없다.
+  // 미수금이 남았을 때 특히 그렇다 — 덜 낸 건지, 안 낸 건지 구분이 안 된다.
   const pStart = period?.start_date ?? ''
   const pEnd = period?.end_date ?? ''
   const pYear = Number(pStart.split('-')[0] ?? 0)

@@ -34,6 +34,7 @@ export interface StatementSheetProps {
   carryover: number
   /** 이번 정산서에 이미 들어온 금액 */
   paidAmount: number
+
   /** 이번 정산서의 남은 미수금 */
   outstandingAmount: number
   /** 이전 미수금까지 더한 받을 금액 */
@@ -139,10 +140,11 @@ export default function StatementSheet({
               <td style={{ textAlign: 'right', fontWeight: 'bold', color: '#b45309', whiteSpace: 'nowrap' }}>{fmtWon(carryover)}</td>
             </tr>
           )}
+          {/* 기간 중 들어온 입금. 날짜별로 펼치면 명세서가 길어져 합계 한 줄로 둔다. */}
           {paidAmount > 0 && (
             <tr>
-              <td colSpan={3} style={{ textAlign: 'right', color: '#555' }}>납부액</td>
-              <td style={{ textAlign: 'right', color: '#555', whiteSpace: 'nowrap' }}>{fmtWon(paidAmount)}</td>
+              <td colSpan={3} style={{ textAlign: 'right', color: '#555' }}>입금 합계</td>
+              <td style={{ textAlign: 'right', color: '#555', whiteSpace: 'nowrap' }}>− {fmtWon(paidAmount)}</td>
             </tr>
           )}
           <tr style={{ backgroundColor: '#fff5f5' }}>
