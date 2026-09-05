@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { fetchAll } from '@/lib/supabase/fetch-all'
+import { normalizeUnit } from '@/lib/units'
 
 /**
  * 매입원가 조회.
@@ -12,10 +13,19 @@ import { fetchAll } from '@/lib/supabase/fetch-all'
  *
  * 매입원가는 price_snapshots.purchase_price 다. 단가와 같은 규칙으로 그 날짜에
  * 유효한 값(effective_from <= 영업일 중 가장 최근)을 쓴다.
+ *
+ * **단위까지 맞춰야 한다.** 판매단가는 단위별로 찾는데 매입가만 안 그러면,
+ * kg 로 판 양파에 bag 매입가(15,000)가 붙어 원가가 판매가의 7 배가 된다.
+ * 2026-09 에 양파·무·당근이 그렇게 잡혀 순이익률이 14% → 3% 로 주저앉았다.
  */
 export interface PurchaseCostResolver {
-  /** 그 영업일의 매입원가. 등록된 값이 없으면 null */
-  costOf(productId: string, businessDate: string): number | null
+  /**
+   * 그 영업일·그 단위의 매입원가. 등록된 값이 없으면 null.
+   *
+   * unit 을 주면 그 단위 것만 쓴다. 다른 단위 값으로 대신하지 않는다 —
+   * 단위가 다르면 아예 다른 금액이라 원가가 통째로 틀어진다.
+   */
+  costOf(productId: string, businessDate: string, unit?: string | null): number | null
 }
 
 export async function buildPurchaseCostResolver(
@@ -35,32 +45,43 @@ export async function buildPurchaseCostResolver(
   if (!spIds.length) return { costOf: () => null }
 
   const snaps = await fetchAll<{
-    supplier_product_id: string; purchase_price: number | null; effective_from: string
+    supplier_product_id: string; purchase_price: number | null; effective_from: string; unit: string | null
   }>(() => db
     .from('price_snapshots')
-    .select('supplier_product_id, purchase_price, effective_from')
+    .select('supplier_product_id, purchase_price, effective_from, unit')
     .in('supplier_product_id', spIds)
     .order('effective_from', { ascending: false }))
 
-  // 품목별로 effective_from 내림차순 목록을 만들어 둔다.
+  // `품목` 과 `품목:단위` 두 벌로 담는다. 단위를 아는 쪽을 먼저 보고,
+  // 단위 없이 물으면(옛 호출부) 예전처럼 품목 최신값을 준다.
   const byProduct = new Map<string, { from: string; cost: number }[]>()
+  const byProductUnit = new Map<string, { from: string; cost: number }[]>()
+  const push = (map: Map<string, { from: string; cost: number }[]>, key: string, row: { from: string; cost: number }) => {
+    const arr = map.get(key)
+    if (arr) arr.push(row)
+    else map.set(key, [row])
+  }
   for (const s of snaps) {
     const pid = spToProduct.get(s.supplier_product_id)
     const cost = Number(s.purchase_price ?? 0)
     if (!pid || !(cost > 0)) continue
-    const arr = byProduct.get(pid)
-    if (arr) arr.push({ from: s.effective_from, cost })
-    else byProduct.set(pid, [{ from: s.effective_from, cost }])
+    const row = { from: s.effective_from, cost }
+    push(byProduct, pid, row)
+    if (s.unit) push(byProductUnit, `${pid}:${normalizeUnit(s.unit)}`, row)
+  }
+
+  const pick = (arr: { from: string; cost: number }[] | undefined, businessDate: string) => {
+    if (!arr?.length) return null
+    for (const row of arr) if (row.from <= businessDate) return row.cost
+    return null
   }
 
   return {
-    costOf(productId: string, businessDate: string) {
-      const arr = byProduct.get(productId)
-      if (!arr?.length) return null
-      for (const row of arr) {
-        if (row.from <= businessDate) return row.cost
-      }
-      return null
+    costOf(productId: string, businessDate: string, unit?: string | null) {
+      // 단위를 알면 그 단위 것만 쓴다. 없으면 없는 대로 둔다 —
+      // 다른 단위 매입가로 때우면 원가가 몇 배로 튄다.
+      if (unit) return pick(byProductUnit.get(`${productId}:${normalizeUnit(unit)}`), businessDate)
+      return pick(byProduct.get(productId), businessDate)
     },
   }
 }

@@ -58,11 +58,11 @@ async function getTotalPurchase(db: ReturnType<typeof createAdminClient>, from: 
   // 요청 주소가 서버 한계(16KB)를 넘어 조회 자체가 실패했다. 명세줄은 날짜로 거르므로
   // id 목록을 실어 보낼 일이 없다.
   const lines = await fetchAll<{
-    product_id: string; qty: number; amount: number
+    product_id: string; qty: number; amount: number; unit: string | null
     daily_specs: { business_date: string } | null
   }>(() => db
     .from('daily_spec_lines')
-    .select('product_id, qty, amount, daily_specs!inner(business_date)')
+    .select('product_id, qty, amount, unit, daily_specs!inner(business_date)')
     .gte('daily_specs.business_date', from)
     .lte('daily_specs.business_date', to))
 
@@ -80,7 +80,8 @@ async function getTotalPurchase(db: ReturnType<typeof createAdminClient>, from: 
   for (const line of lines) {
     const spec = Array.isArray(line.daily_specs) ? line.daily_specs[0] : line.daily_specs
     const date = spec?.business_date
-    const cost = date ? costs.costOf(line.product_id, date) : null
+    // 단위까지 맞춘 매입가. kg 로 판 것에 bag 원가가 붙으면 이익이 통째로 틀어진다.
+    const cost = date ? costs.costOf(line.product_id, date, line.unit) : null
     const sales = Number(line.amount ?? 0)
     // 매입가가 없으면 판매가로 때우지 않는다. 그러면 그 품목 마진이 0 이 되어
     // 이익이 실제보다 작게 나온다(2026-08: 19건 432,000원). 아예 빼고 몇 건인지 알린다.

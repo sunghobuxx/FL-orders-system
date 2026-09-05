@@ -71,9 +71,10 @@ export default async function AdminPurchasePage({ searchParams }: Props) {
   // 그대로 더하면 마진까지 얹혀 실제보다 많게 나온다.
   // 매입가가 등록 안 된 품목만 판매가로 대신한다 — 빼면 과소 집계된다.
   const costs = await buildPurchaseCostResolver(db, productIds)
-  const amountOf = (item: { product_id: string; qty: number; unit_price_snapshot: number; orders: { batch_id: string } | null }) => {
+  const amountOf = (item: { product_id: string; qty: number; unit: string | null; unit_price_snapshot: number; orders: { batch_id: string } | null }) => {
     const date = item.orders ? batchDate.get(item.orders.batch_id) : undefined
-    const cost = date ? costs.costOf(item.product_id, date) : null
+    // 단위까지 맞춘 매입가 (2026-09: kg 발주에 bag 원가가 붙던 문제)
+    const cost = date ? costs.costOf(item.product_id, date, item.unit) : null
     return Number(item.qty) * (cost ?? Number(item.unit_price_snapshot))
   }
 
