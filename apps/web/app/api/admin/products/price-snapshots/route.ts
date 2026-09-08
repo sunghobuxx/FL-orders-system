@@ -5,6 +5,7 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getAdminSession } from '@/lib/admin-member-user'
 import { splitVat } from '@/lib/specs/vat'
+import { isMultiUnitProduct, rowsToReprice } from '@/lib/pricing/price-cascade'
 
 export async function POST(req: Request) {
   try {
@@ -31,6 +32,12 @@ export async function POST(req: Request) {
 
     const adminDb = createAdminClient()
 
+    // 단위가 둘 이상인 품목은 **등록한 단위의 줄만** 고친다.
+    // 품목만 보고 덮으면 양파 bag 단가가 kg 발주에 붙는다 (2026-09-07, 315,000원 과다).
+    const { data: productRow } = await adminDb
+      .from('products').select('default_unit, allowed_units').eq('id', body.productId).maybeSingle()
+    const multiUnit = isMultiUnitProduct(productRow?.default_unit, productRow?.allowed_units)
+
     // 1. 발주 아이템 단가 자동 갱신 (effective_from 이후 날짜)
     //
     // 예전에는 open/submitted/validated/ordered 만 갱신해서, 발주 문자가 나간 뒤
@@ -52,20 +59,27 @@ export async function POST(req: Request) {
 
       const orderIds = (orderRows ?? []).map(o => o.id)
       if (orderIds.length) {
-        await adminDb
-          .from('order_items')
-          .update({ unit_price_snapshot: body.sale_price })
-          .in('order_id', orderIds)
-          .eq('supplier_product_id', body.supplierProductId)
-
         // supplier_product_id 가 비어 있는 줄도 있다(2026-08-01 기준 5%).
         // 그 줄은 품목으로 찾아 갱신한다. 안 그러면 같은 품목인데 단가만 옛것으로 남는다.
-        await adminDb
-          .from('order_items')
-          .update({ unit_price_snapshot: body.sale_price })
+        const { data: spItems } = await adminDb
+          .from('order_items').select('id, unit')
+          .in('order_id', orderIds)
+          .eq('supplier_product_id', body.supplierProductId)
+        const { data: looseItems } = await adminDb
+          .from('order_items').select('id, unit')
           .in('order_id', orderIds)
           .is('supplier_product_id', null)
           .eq('product_id', body.productId)
+
+        const itemIds = rowsToReprice(
+          [...(spItems ?? []), ...(looseItems ?? [])] as Array<{ id: string; unit: string | null }>,
+          body.unit, multiUnit)
+        if (itemIds.length) {
+          await adminDb
+            .from('order_items')
+            .update({ unit_price_snapshot: body.sale_price })
+            .in('id', itemIds)
+        }
       }
     }
 
@@ -130,12 +144,16 @@ export async function POST(req: Request) {
       const taxable = productMeta?.taxable_flag ?? false
 
       const specIds = specs.map(s => s.id)
-      const { data: specLines } = await adminDb
+      const { data: allSpecLines } = await adminDb
         .from('daily_spec_lines')
-        .select('id, daily_spec_id, qty')
+        .select('id, daily_spec_id, qty, unit')
         .in('daily_spec_id', specIds)
         .eq('price_overridden', false)
         .eq('product_id', body.productId)
+
+      const repriceIds = new Set(rowsToReprice(
+        (allSpecLines ?? []) as Array<{ id: string; unit: string | null }>, body.unit, multiUnit))
+      const specLines = (allSpecLines ?? []).filter((l: { id: string }) => repriceIds.has(l.id))
 
       // unit_price + vat_amount 동시 업데이트
       for (const line of specLines ?? []) {
