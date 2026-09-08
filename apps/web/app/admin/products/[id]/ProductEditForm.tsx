@@ -26,6 +26,8 @@ interface Product {
   is_fixed_price: boolean | null
   status: string | null
   allowed_units: string[] | null
+  pack_unit: string | null
+  kg_per_pack: number | null
 }
 
 function FieldLabel({ text, required }: { text: string; required?: boolean }) {
@@ -61,6 +63,9 @@ export default function ProductEditForm({ product }: { product: Product }) {
           is_kg_based: d.get('is_kg_based') === 'true',
           is_fixed_price: d.get('is_fixed_price') !== 'false',
           status: d.get('status'),
+          // 규격은 둘 다 채워야 뜻이 있다. 한쪽만 있으면 없는 것으로 본다.
+          pack_unit: d.get('pack_unit') || null,
+          kg_per_pack: d.get('kg_per_pack') ? Number(d.get('kg_per_pack')) : null,
         }),
       })
       const data = await res.json() as { error?: string }
@@ -129,6 +134,31 @@ export default function ProductEditForm({ product }: { product: Product }) {
             </label>
           ))}
         </div>
+      </div>
+
+      <div>
+        <FieldLabel text="포장 규격" />
+        <div className="flex items-center gap-2">
+          <input
+            type="number" name="kg_per_pack" step="0.1" min="0" placeholder="15"
+            defaultValue={product.kg_per_pack ?? ''}
+            className="w-24 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+          />
+          <span className="text-sm text-gray-500">kg =</span>
+          <select
+            name="pack_unit" defaultValue={product.pack_unit ?? ''}
+            className="w-28 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+          >
+            <option value="">없음</option>
+            {UNITS.filter(u => u !== 'kg' && u !== 'g').map(u => (
+              <option key={u} value={u}>1{unitLabel(u)}</option>
+            ))}
+          </select>
+        </div>
+        <p className="mt-1 text-xs text-gray-400">
+          채워 두면 kg 로 들어온 발주가 배수일 때 이 단위로 바뀝니다 — 양파 15kg → 1포.
+          배수가 아니면 kg 그대로 둡니다.
+        </p>
       </div>
 
       <div>

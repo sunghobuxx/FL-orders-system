@@ -19,6 +19,7 @@
 import { generateStatements } from '@/lib/settlement/generate'
 import { splitVat } from '@/lib/specs/vat'
 import { normalizeUnit } from '@/lib/units'
+import { toPackQty, type PackSpec } from '@/lib/products/pack-size'
 
 /**
  * 단가 우선순위: 업체 고정단가 → 당일단가 → 고정단가 품목 → carry-forward
@@ -180,9 +181,9 @@ export async function syncSpecFromOrders(
   const { restaurantId, businessDate, orderIds } = args
   if (!orderIds.length) return null
 
-  const { data: items } = await adminDb
+  const { data: rawItems } = await adminDb
     .from('order_items').select('id, product_id, qty, unit').in('order_id', orderIds)
-  if (!items?.length) return null
+  if (!rawItems?.length) return null
 
   let organizationId = args.organizationId ?? null
   if (organizationId === undefined || organizationId === null) {
@@ -191,7 +192,25 @@ export async function syncSpecFromOrders(
     organizationId = r?.organization_id ?? null
   }
 
-  const productIds = [...new Set(items.map((i: { product_id: string }) => i.product_id))] as string[]
+  const productIds = [...new Set(rawItems.map((i: { product_id: string }) => i.product_id))] as string[]
+
+  const { data: productRows } = await adminDb
+    .from('products').select('id, taxable_flag, pack_unit, kg_per_pack').in('id', productIds)
+  type ProductRow = { id: string; taxable_flag: boolean | null; pack_unit: string | null; kg_per_pack: number | null }
+
+  // 포장 규격이 있으면 kg 발주를 포장 단위로 되돌린다.
+  //
+  // 회원이 양파 1포를 "15kg" 으로 넣어도 명세서는 1포로 나간다. 발주 화면에서도
+  // 같은 변환을 하지만, 모바일 앱은 API 를 건너뛰고 DB 에 직접 쓴다 — 여기가
+  // 마지막 관문이다. 배수가 아닌 수량(3kg·8kg)은 낱개 발주이므로 손대지 않는다.
+  const packOf = new Map<string, PackSpec>(
+    (productRows ?? []).map((p: ProductRow) =>
+      [p.id, { pack_unit: p.pack_unit, kg_per_pack: p.kg_per_pack }]))
+  const items = (rawItems as Array<{ id: string; product_id: string; qty: number; unit: string }>)
+    .map(item => {
+      const packed = toPackQty(Number(item.qty), item.unit, packOf.get(item.product_id))
+      return packed ? { ...item, qty: packed.qty, unit: packed.unit } : item
+    })
 
   // 주문한 단위로 단가를 찾는다. 같은 품목이라도 kg 과 bag 은 값이 다르다.
   // 한 품목을 두 단위로 시킨 경우는 첫 줄의 단위를 쓴다 — 그럴 땐 어차피 줄마다
@@ -211,10 +230,8 @@ export async function syncSpecFromOrders(
   // 과세 품목이어도 부가세가 빠졌고, 나중에 단가를 다시 등록하거나 재계산 버튼을 눌러야만
   // 채워졌다. 같은 품목이 날짜마다 부가세가 붙었다 안 붙었다 했다.
   // (2026-08-02 하이퐁: 7/24 는 16,500 인데 8/1 은 15,000)
-  const { data: taxRows } = await adminDb
-    .from('products').select('id, taxable_flag').in('id', productIds)
   const taxable = new Map(
-    (taxRows ?? []).map((p: { id: string; taxable_flag: boolean | null }) => [p.id, Boolean(p.taxable_flag)]))
+    (productRows ?? []).map((p: ProductRow) => [p.id, Boolean(p.taxable_flag)]))
   // 품목 마스터 단가는 부가세 포함 금액이다. 위에 10% 를 얹지 않고 그 안에서 나눈다.
   const splitOf = (productId: string, qty: number, unitPrice: number) =>
     splitVat(Boolean(taxable.get(productId)), qty, unitPrice)

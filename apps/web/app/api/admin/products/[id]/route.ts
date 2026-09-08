@@ -47,7 +47,7 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
   try {
     const { id } = await context.params
     const body = await req.json()
-    const { standard_name, category, default_unit, sku, taxable_flag, is_kg_based, is_fixed_price, status, allowed_units } = body
+    const { standard_name, category, default_unit, sku, taxable_flag, is_kg_based, is_fixed_price, status, allowed_units, pack_unit, kg_per_pack } = body
 
     if (!standard_name?.trim()) return NextResponse.json({ error: '품목명을 입력하세요' }, { status: 400 })
     if (!category) return NextResponse.json({ error: '카테고리를 선택하세요' }, { status: 400 })
@@ -71,6 +71,10 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
       is_kg_based: is_kg_based ?? false,
       is_fixed_price: is_fixed_price ?? true,
       status: status ?? 'active',
+      // 규격은 둘 다 있어야 뜻이 있다. 한쪽만 오면 없는 것으로 저장한다 —
+      // 반쪽짜리 규격이 남으면 발주 수량이 언제 바뀌는지 알 수 없게 된다.
+      pack_unit: pack_unit && kg_per_pack > 0 ? pack_unit : null,
+      kg_per_pack: pack_unit && kg_per_pack > 0 ? kg_per_pack : null,
     }).eq('id', id)
 
     if (error) {

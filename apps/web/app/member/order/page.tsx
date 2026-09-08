@@ -102,7 +102,7 @@ export default async function MemberOrderPage() {
   if (hasWhitelist) {
     const { data: items } = await supabase
       .from('products')
-      .select('id, standard_name, default_unit, allowed_units, is_kg_based, image_path, category')
+      .select('id, standard_name, default_unit, allowed_units, is_kg_based, image_path, category, pack_unit, kg_per_pack')
       .eq('status', 'active')
       .in('id', whitelistIds)
     products = whitelistIds
@@ -112,7 +112,7 @@ export default async function MemberOrderPage() {
   } else {
     const { data: items } = await supabase
       .from('products')
-      .select('id, standard_name, default_unit, allowed_units, is_kg_based, image_path, category')
+      .select('id, standard_name, default_unit, allowed_units, is_kg_based, image_path, category, pack_unit, kg_per_pack')
       .eq('status', 'active')
       .order('category')
       .order('standard_name')

@@ -5,6 +5,9 @@ import { useRouter } from 'next/navigation'
 
 import Link from 'next/link'
 
+import { toPackQty } from '@/lib/products/pack-size'
+import { unitLabel } from '@/lib/units'
+
 const CATEGORY_LABELS: Record<string, string> = {
   vegetable: '채소', fruit: '과일', meat: '육류', seafood: '수산',
   grain: '곡류', dairy: '유제품', seasoning: '양념', etc: '기타',
@@ -23,6 +26,10 @@ type Product = {
   is_kg_based: boolean
   image_path: string | null
   category: string
+  /** 포장 단위. kg 로 넣은 수량이 규격의 배수면 이 단위로 되돌린다 */
+  pack_unit: string | null
+  /** 포장 하나가 몇 kg 인지 (양파 1포=15) */
+  kg_per_pack: number | null
   /** 'admin' 이면 담당자가 넣어 준 기본 품목이라 회원이 뺄 수 없다 */
   added_by?: string
 }
@@ -76,6 +83,9 @@ export default function OrderForm({ restaurantId, businessDate, batchId, orderId
     return m
   })
 
+  /** 포장 단위로 바꾼 줄에 붙는 안내 — "15kg = 1포로 바꿨습니다" */
+  const [packNotice, setPackNotice] = useState<Record<string, string>>({})
+
   const availableCategories = CATEGORY_ORDER.filter(cat => products.some(p => p.category === cat))
   const [selectedCategory, setSelectedCategory] = useState(availableCategories[0] ?? 'vegetable')
 
@@ -110,6 +120,27 @@ export default function OrderForm({ restaurantId, businessDate, batchId, orderId
 
   function updateQty(productId: string, value: string) {
     setQuantities(prev => ({ ...prev, [productId]: value }))
+    if (packNotice[productId]) setPackNotice(prev => ({ ...prev, [productId]: '' }))
+  }
+
+  /**
+   * kg 로 넣은 수량이 포장 규격의 배수면 포장 단위로 되돌린다.
+   *
+   * 수량 입력을 마쳤을 때만 건다. 타이핑 도중에 걸면 "150" 을 넣으려다 "15" 에서
+   * 바뀌어 버린다. 회원이 단위를 일부러 kg 으로 되돌리면 그 선택은 그대로 둔다 —
+   * 수량을 다시 고치기 전까지 다시 바꾸지 않는다.
+   */
+  function applyPackSize(product: Product) {
+    const qty = parseFloat(quantities[product.id] ?? '0')
+    const unit = units[product.id] ?? product.default_unit
+    const packed = toPackQty(qty, unit, product)
+    if (!packed) return
+    setQuantities(prev => ({ ...prev, [product.id]: String(packed.qty) }))
+    setUnits(prev => ({ ...prev, [product.id]: packed.unit }))
+    setPackNotice(prev => ({
+      ...prev,
+      [product.id]: `${qty}kg = ${packed.qty}${unitLabel(packed.unit)}로 바꿨어요`,
+    }))
   }
 
   /** 회원이 직접 넣은 품목만 뺀다. 담당자가 넣은 기본 품목은 서버에서도 막힌다. */
@@ -136,16 +167,20 @@ export default function OrderForm({ restaurantId, businessDate, batchId, orderId
       try {
         const items = []
         for (const product of products) {
-          const qty = parseFloat(quantities[product.id] ?? '0')
-          if (!Number.isFinite(qty) || qty <= 0) continue
-          const unit = units[product.id] ?? product.default_unit
-          const { price, supplierProductId } = getPrice(product.id)
+          const entered = parseFloat(quantities[product.id] ?? '0')
+          if (!Number.isFinite(entered) || entered <= 0) continue
+          const enteredUnit = units[product.id] ?? product.default_unit
+          // 수량 칸을 벗어나지 않고 바로 보내는 경우가 있어 여기서 한 번 더 건다.
+          const packed = toPackQty(entered, enteredUnit, product)
+          const qty = packed?.qty ?? entered
+          const unit = packed?.unit ?? enteredUnit
+          const { supplierProductId } = getPrice(product.id)
           items.push({
             product_id: product.id,
             supplier_product_id: supplierProductId,
             qty,
             unit,
-            unit_price_snapshot: price,
+            unit_price_snapshot: priceFor(product.id, unit),
             memo: '',
           })
         }
@@ -262,6 +297,11 @@ export default function OrderForm({ restaurantId, businessDate, batchId, orderId
                     {unitPrice > 0
                       ? <span className="text-xs text-gray-400"> · {unitPrice.toLocaleString('ko-KR')}원</span>
                       : <span className="text-xs text-amber-600"> · 단가 문의</span>}
+                    {packNotice[product.id] && (
+                      <span className="block text-xs text-brand-600 mt-0.5">
+                        {packNotice[product.id]}
+                      </span>
+                    )}
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
                     <button
@@ -275,6 +315,7 @@ export default function OrderForm({ restaurantId, businessDate, batchId, orderId
                       type="number"
                       value={qty}
                       onChange={e => updateQty(product.id, e.target.value)}
+                      onBlur={() => applyPackSize(product)}
                       min="0"
                       step={step}
                       placeholder="0"
