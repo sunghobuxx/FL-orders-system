@@ -6,6 +6,8 @@ import { computeOutstanding, syncStatementFinance } from '@/lib/settlement-finan
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getAdminSession } from '@/lib/admin-member-user'
 import { splitVat } from '@/lib/specs/vat'
+import { buildPriceMapByProduct } from '@/lib/specs/sync'
+import { normalizeUnit } from '@/lib/units'
 
 export async function POST(req: Request) {
   try {
@@ -25,71 +27,36 @@ export async function POST(req: Request) {
     if (!spec) return NextResponse.json({ error: '명세서를 찾을 수 없습니다.' }, { status: 404 })
 
     const { data: lines } = await db
-      .from('daily_spec_lines').select('id, product_id, qty, vat_amount, price_overridden, unit_price').eq('daily_spec_id', specId)
+      .from('daily_spec_lines').select('id, product_id, qty, unit, vat_amount, price_overridden, unit_price').eq('daily_spec_id', specId)
     if (!lines?.length) return NextResponse.json({ error: '명세서 라인이 없습니다.' }, { status: 400 })
 
-    // 단가 적용 우선순위:
-    // 1. price_overridden=true → 수동 단가 유지 (아래에서 처리)
-    // 2. effective_from = business_date (당일 단가)
-    // 3. is_fixed_price=true → effective_from 무관 최근 단가
-    // 4. carry-forward (effective_from ≤ business_date 최근)
+    // 단가는 명세서 생성과 **같은 함수**로 찾는다.
+    //
+    // 예전에는 이 라우트가 price_snapshots 를 직접 뒤졌는데 `unit` 을 보지 않았다.
+    // 그래서 다단위 품목에 다른 단위 단가가 붙었다 — 2026-09-12 맛승 부천 명세서에서
+    // 백오이 5개에 박스 단가 65,000 이 붙어 325,000 원이 될 뻔했다(정상 7,500).
+    // 규칙이 두 벌이면 반드시 갈라진다. 한 곳만 둔다.
     const productIds = [...new Set(lines.map(l => l.product_id))]
-    const { data: spRows } = await db
-      .from('supplier_products').select('id, product_id').in('product_id', productIds).eq('status', 'active')
-    const spIds = (spRows ?? []).map(r => r.id)
-    const spToProduct = Object.fromEntries((spRows ?? []).map(r => [r.id, r.product_id]))
+
+    // 그 품목을 어느 단위로 받았는지. 한 품목이 두 단위면 첫 줄을 쓴다 —
+    // 그런 날은 어차피 줄마다 손으로 단가를 맞추게 된다.
+    const unitOf: Record<string, string> = {}
+    for (const l of lines as Array<{ product_id: string; unit: string | null }>) {
+      const u = normalizeUnit(l.unit)
+      if (u && unitOf[l.product_id] === undefined) unitOf[l.product_id] = u
+    }
+
+    const { data: rest } = await db
+      .from('restaurants').select('organization_id').eq('id', spec.restaurant_id).maybeSingle()
+
+    const { priceMap } = await buildPriceMapByProduct(
+      db, productIds, spec.business_date, rest?.organization_id ?? null, unitOf)
 
     const { data: productsMeta } = await db
-      .from('products').select('id, is_fixed_price, taxable_flag').in('id', productIds)
-    const fixedMap = Object.fromEntries(
-      (productsMeta ?? []).map(p => [p.id, p.is_fixed_price])
-    )
+      .from('products').select('id, taxable_flag').in('id', productIds)
     const taxableMap = Object.fromEntries(
       (productsMeta ?? []).map(p => [p.id, p.taxable_flag ?? false])
     )
-
-    const priceMap: Record<string, number> = {}
-    if (spIds.length) {
-      // 우선순위 2: 당일 단가
-      const { data: exactSnaps } = await db
-        .from('price_snapshots').select('supplier_product_id, sale_price')
-        .in('supplier_product_id', spIds).eq('effective_from', spec.business_date)
-        .order('created_at', { ascending: false })
-      for (const s of exactSnaps ?? []) {
-        const pid = spToProduct[s.supplier_product_id]
-        if (pid && priceMap[pid] === undefined) priceMap[pid] = Number(s.sale_price)
-      }
-
-      // 우선순위 3: 고정단가 품목 — 등록일(effective_from)을 지킨다.
-      // 예전에는 effective_from 을 무시하고 최신값을 가져와, 단가를 새로 넣으면
-      // 그보다 앞선 날짜의 명세서까지 소급해 바뀌었다.
-      // 규칙은 "입력한 날짜부터 다음 수정 전까지 적용" 이다(2026-07-31 확인).
-      const fixedSpIds = (spRows ?? []).filter(r => priceMap[r.product_id] === undefined && fixedMap[r.product_id]).map(r => r.id)
-      if (fixedSpIds.length) {
-        const { data: fixedSnaps } = await db
-          .from('price_snapshots').select('supplier_product_id, sale_price')
-          .in('supplier_product_id', fixedSpIds)
-          .lte('effective_from', spec.business_date)
-          .order('effective_from', { ascending: false }).order('created_at', { ascending: false })
-        for (const s of fixedSnaps ?? []) {
-          const pid = spToProduct[s.supplier_product_id]
-          if (pid && priceMap[pid] === undefined) priceMap[pid] = Number(s.sale_price)
-        }
-      }
-
-      // 우선순위 4: carry-forward
-      const remainSpIds = (spRows ?? []).filter(r => priceMap[r.product_id] === undefined).map(r => r.id)
-      if (remainSpIds.length) {
-        const { data: carrySnaps } = await db
-          .from('price_snapshots').select('supplier_product_id, sale_price')
-          .in('supplier_product_id', remainSpIds).lte('effective_from', spec.business_date)
-          .order('effective_from', { ascending: false }).order('created_at', { ascending: false })
-        for (const s of carrySnaps ?? []) {
-          const pid = spToProduct[s.supplier_product_id]
-          if (pid && priceMap[pid] === undefined) priceMap[pid] = Number(s.sale_price)
-        }
-      }
-    }
 
     // spec_lines 업데이트: price_overridden=true인 라인은 수동 단가 유지
     let totalAmount = 0
