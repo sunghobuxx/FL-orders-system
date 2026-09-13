@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useEffect, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 
 import Link from 'next/link'
@@ -82,6 +82,25 @@ export default function OrderForm({ restaurantId, businessDate, batchId, orderId
     for (const item of existingItems) m[item.product_id] = item.unit
     return m
   })
+
+  /**
+   * 화면을 열 때마다 서버에서 최신 발주를 다시 받는다.
+   *
+   * 제출하면 발주확인 화면으로 넘어가는데, 거기서 **뒤로 가기**로 돌아오면 브라우저가
+   * 제출 전 화면(빈 발주서)을 그대로 되살린다. 그 상태에서 품목을 하나 넣고 제출하면
+   * 서버가 기존 품목을 전부 지우고 그 하나만 남긴다 — 2026-09-11 일산킨텍스 오발주.
+   *
+   * 화면이 뜨는 시점에만 부른다. 수량을 입력하는 중에는 부르지 않는다(입력이 날아간다).
+   */
+  useEffect(() => {
+    router.refresh()
+    const onPageShow = (e: PageTransitionEvent) => {
+      // 뒤로 가기로 되살아난 화면은 통째로 다시 받는다.
+      if (e.persisted) window.location.reload()
+    }
+    window.addEventListener('pageshow', onPageShow)
+    return () => window.removeEventListener('pageshow', onPageShow)
+  }, [router])
 
   /** 포장 단위로 바꾼 줄에 붙는 안내 — "15kg = 1포로 바꿨습니다" */
   const [packNotice, setPackNotice] = useState<Record<string, string>>({})

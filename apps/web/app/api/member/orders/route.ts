@@ -3,6 +3,7 @@ export const runtime = 'edge'
 import { NextRequest, NextResponse } from 'next/server'
 import { getSessionUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { isStaleOrderSubmit } from '@/lib/orders/stale-submit'
 import { syncSpecFromOrders } from '@/lib/specs/sync'
 import { refreshDispatchJobItems } from '@/lib/dispatch/current-items'
 import { archiveOrderItems } from '@/lib/orders/archive-items'
@@ -44,6 +45,8 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json()
+  // orderId 를 아예 안 보내는 화면(구버전 앱)과 "없다"고 명시한 화면을 구별한다.
+  const declaresOrderState = Object.prototype.hasOwnProperty.call(body ?? {}, 'orderId')
   const { restaurantId, businessDate, batchId: existingBatchId, orderId: existingOrderId, items: rawItems, isSubmit } = body as {
     restaurantId: string
     businessDate: string
@@ -220,8 +223,16 @@ export async function POST(req: NextRequest) {
       .from('orders').select('id').eq('batch_id', batchId)
       .order('created_at', { ascending: false }).limit(1).maybeSingle()
 
-    if (existingOrderId && existingOrder?.id !== existingOrderId) {
-      return NextResponse.json({ error: '발주 정보가 올바르지 않습니다.' }, { status: 400 })
+    // 낡은 화면에서 온 제출은 막는다. 여기를 통과시키면 아래에서 order_items 를 전부
+    // 지우므로, 화면에 안 실린 품목이 통째로 사라진다 (2026-09-11 일산킨텍스 오발주).
+    if (isStaleOrderSubmit({
+      declaresOrderState,
+      clientOrderId: existingOrderId ?? null,
+      serverOrderId: existingOrder?.id ?? null,
+    })) {
+      return NextResponse.json(
+        { error: '이미 접수된 발주가 있습니다. 화면을 새로고침한 뒤 다시 시도해 주세요.' },
+        { status: 409 })
     }
 
     if (existingOrder) {
