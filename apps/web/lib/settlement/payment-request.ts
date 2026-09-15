@@ -41,6 +41,10 @@ function periodLabel(start: string, end: string) {
   return `${sy}.${sm}.${sd} ~ ${em}.${ed}`
 }
 
+/**
+ * 입금 요청 문구. 독촉이 아니라 **부탁**으로 읽혀야 한다 — 거래처와의 관계가 먼저다
+ * (사장님 요청, 2026-09-15). 인사말로 시작하고, 이미 입금한 곳이 불쾌하지 않게 한 줄 둔다.
+ */
 export function buildPaymentRequestMessage(a: {
   orgName: string
   start: string
@@ -48,15 +52,19 @@ export function buildPaymentRequestMessage(a: {
   amount: number
   shareUrl: string
 }): string {
+  const period = periodLabel(a.start, a.end)
   return [
-    '[FruitLife] 입금 요청',
+    '[FruitLife] 입금 요청 안내',
     '',
-    a.orgName,
-    periodLabel(a.start, a.end),
+    `안녕하세요, ${a.orgName} 사장님.`,
+    '항상 FruitLife를 이용해 주셔서 진심으로 감사드립니다.',
+    '',
+    period ? `${period} 정산 금액 안내드립니다.` : '정산 금액 안내드립니다.',
     '',
     `입금 요청액  ${won(a.amount)}`,
     '',
-    '확인 후 입금 부탁드립니다.',
+    '바쁘시겠지만 확인하시고 입금 부탁드리겠습니다.',
+    '이미 입금해 주셨다면 이 문자는 넘겨주세요. 감사합니다.',
     '',
     `정산서 보기 ▸ ${a.shareUrl}`,
   ].join('\n')

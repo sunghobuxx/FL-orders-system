@@ -45,7 +45,13 @@ describe('buildPaymentRequestMessage', () => {
       amount: 1029500,
       shareUrl: 'https://order.fruitlife.shop/s/abc',
     })
-    expect(text).toContain('[FruitLife] 입금 요청')
+    expect(text).toContain('[FruitLife] 입금 요청 안내')
+    // 인사말로 시작하고, 부탁하는 말투여야 한다 (사장님 요청, 2026-09-15)
+    expect(text).toContain('안녕하세요, 할매솥뚜껑삼겹살 세류점 사장님.')
+    expect(text).toContain('감사')
+    expect(text).toContain('부탁드리겠습니다')
+    // 이미 입금한 곳이 불쾌하지 않게
+    expect(text).toContain('이미 입금해 주셨다면')
     expect(text).toContain('할매솥뚜껑삼겹살 세류점')
     expect(text).toContain('2026.09.06 ~ 09.12')
     expect(text).toContain('1,029,500원')
