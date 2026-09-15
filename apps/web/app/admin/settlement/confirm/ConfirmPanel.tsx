@@ -52,6 +52,37 @@ export default function ConfirmPanel({ rows, cycle, today, periods, selectedPeri
   }
 
   // 이름을 confirm 으로 지으면 전역 window.confirm 을 가려 버린다.
+  /**
+   * 입금 요청. 먼저 미리보기를 받아 **실제 보낼 문구를 확인창에 그대로** 띄우고,
+   * 확인해야만 보낸다. 금액은 화면의 「받을 금액」과 같다(남은 잔액 + 이전 미수금).
+   */
+  async function requestPayment(statementId: string) {
+    setBusy(true)
+    setMsg('')
+    try {
+      const pre = await fetch('/api/admin/settlement/payment-request', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ statementId }),
+      })
+      const p = await pre.json() as { preview?: string; phone?: string; error?: string }
+      if (!pre.ok || !p.preview) { setMsg(p.error ?? '입금 요청을 준비하지 못했습니다'); return }
+
+      if (!window.confirm(`${p.phone} 로 아래 문자를 보냅니다.\n\n${p.preview}`)) return
+
+      const res = await fetch('/api/admin/settlement/payment-request', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ statementId, send: true }),
+      })
+      const r = await res.json() as { success?: boolean; error?: string }
+      setMsg(r.success ? '입금 요청을 보냈습니다' : `입금 요청 실패: ${r.error ?? '알 수 없는 오류'}`)
+      router.refresh()
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : '입금 요청 중 오류')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function runConfirm(ids: string[], opts: { resend?: boolean; notify?: boolean } = {}) {
     if (!ids.length) return
     const { resend = false, notify = true } = opts
@@ -264,7 +295,29 @@ export default function ConfirmPanel({ rows, cycle, today, periods, selectedPeri
               <div className="text-xs">
                 {r.confirmedAt ? (
                   r.notifiedAt
-                    ? <span className="text-green-600 font-medium">확정 · 발송완료</span>
+                    ? (
+                      <span className="text-green-600 font-medium">
+                        확정 · 발송완료
+                        {/* 받을 돈이 있을 때만. 이미 받은 곳에 입금 요청을 보내면 안 된다. */}
+                        {r.total > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => requestPayment(r.statementId)}
+                            disabled={busy}
+                            className="ml-2 rounded border border-brand-300 px-1.5 py-0.5 text-brand-700 hover:bg-brand-50 disabled:opacity-50"
+                          >
+                            입금요청
+                          </button>
+                        )}
+                        {r.paymentRequestedAt && (
+                          <span className="ml-1 text-gray-400 font-normal">
+                            ({new Date(r.paymentRequestedAt).toLocaleString('ko-KR', {
+                              timeZone: 'Asia/Seoul', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit',
+                            })})
+                          </span>
+                        )}
+                      </span>
+                    )
                     : (
                       // 「확정만」 한 것과 발송이 실패한 것은 DB 상 구분이 안 된다
                       // (둘 다 notified_at 이 비어 있다). 실패라고 단정하지 않는다.

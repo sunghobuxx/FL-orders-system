@@ -37,6 +37,8 @@ export interface ConfirmRow {
   total: number
   confirmedAt: string | null
   notifiedAt: string | null
+  /** 입금 요청 문자를 마지막으로 보낸 시각 */
+  paymentRequestedAt: string | null
   phone: string | null
   sendable: boolean
   reason: string
@@ -117,7 +119,7 @@ export default async function SettlementConfirmPage({ searchParams }: Props) {
   const statements = selected
     ? await fetchAll<any>(() => db
         .from('sales_statements')
-        .select('id, total_amount, confirmed_at, notified_at, restaurant_id, settlement_periods!inner(start_date, end_date, period_type), restaurants(settlement_cycle, organization_id, organizations(name))')
+        .select('id, total_amount, confirmed_at, notified_at, payment_requested_at, restaurant_id, settlement_periods!inner(start_date, end_date, period_type), restaurants(settlement_cycle, organization_id, organizations(name))')
         .eq('settlement_period_id', selected.id))
     : []
 
@@ -177,6 +179,7 @@ export default async function SettlementConfirmPage({ searchParams }: Props) {
       // 이미 받은 돈은 또 달라고 하지 않는다. 종이 정산서·문자와 같은 계산이다.
       total: outstanding + carryover,
       confirmedAt: s.confirmed_at, notifiedAt: s.notified_at,
+      paymentRequestedAt: s.payment_requested_at ?? null,
       phone: maskPhone(phone), sendable, reason,
     }
   }))).sort((a, b) => a.orgName.localeCompare(b.orgName, 'ko'))
