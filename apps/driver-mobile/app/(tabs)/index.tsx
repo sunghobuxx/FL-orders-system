@@ -1,5 +1,5 @@
 import { router } from 'expo-router'
-import { ReactNode, useState } from 'react'
+import { Fragment, ReactNode, useState } from 'react'
 import { Pressable, RefreshControl, ScrollView, Text, useWindowDimensions, View } from 'react-native'
 
 import { Loading, Page } from '../../components'
@@ -101,31 +101,39 @@ export default function DashboardScreen() {
 
         <View style={{ flexDirection: twoColumns ? 'row' : 'column', gap: 24, alignItems: 'stretch' }}>
           <DashboardCard style={{ flex: 1 }}>
-            <CardHeader title="주문내역 (식당)" action="전체보기 →" onPress={() => router.push('/orders')} />
-            <View style={{ paddingHorizontal: 18, paddingBottom: 12 }}>
-              <Pressable accessibilityRole="button" onPress={() => setScope(scope === 'assigned' ? 'all' : 'assigned')} style={{ padding: 12, borderRadius: 8, backgroundColor: scope === 'all' ? '#DCFCE7' : '#F3F4F6' }}>
-                <Text style={{ color: '#00964B', fontWeight: '800' }}>{scope === 'all' ? '담당 업체만 보기' : '전체발주보기'}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, paddingHorizontal: 14, paddingTop: 6 }}>
+              <Text style={{ color: '#1F2937', fontSize: 14, fontWeight: '900', flexShrink: 1 }}>주문내역 (식당)</Text>
+              <Pressable accessibilityRole="button" onPress={() => setScope(scope === 'assigned' ? 'all' : 'assigned')} style={{ minHeight: 44, justifyContent: 'center', paddingHorizontal: 10 }}>
+                <Text style={{ color: '#00964B', fontSize: 12, fontWeight: '900' }}>{scope === 'all' ? '담당 업체만 보기' : '전체발주보기'}</Text>
               </Pressable>
-              <Text style={{ color: '#64748B', marginTop: 6 }}>{scope === 'all' ? '전체 업체 주문' : '담당 업체 주문'} · {data?.orders.length ?? 0}건</Text>
             </View>
-            <View style={{ backgroundColor: '#EFF6FF', paddingHorizontal: 18, paddingVertical: 12, borderTopWidth: 1, borderTopColor: '#E5E7EB' }}>
-              <Text style={{ color: '#0067FF', fontWeight: '900', fontSize: 13 }}>배송일 {data?.today} ~ {data?.tomorrow}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 14, paddingBottom: 4 }}>
+              <Text style={{ color: '#64748B', fontSize: 12 }}>{scope === 'all' ? '전체 업체' : '담당 업체'} · {data?.orders.length ?? 0}건</Text>
+              <Pressable accessibilityRole="button" onPress={() => router.push('/orders')} style={{ minHeight: 36, justifyContent: 'center' }}>
+                <Text style={{ color: '#64748B', fontSize: 12, fontWeight: '700' }}>주문내역 →</Text>
+              </Pressable>
             </View>
             {(data?.orders.length ?? 0) === 0 ? (
               <EmptyLine text={scope === 'all' ? "전체 업체 주문이 없습니다." : "담당 업체 주문이 없습니다."} />
             ) : (
-              data?.orders.map((order) => (
-                <Pressable accessibilityRole="button" accessibilityLabel={`${order.restaurantName} 주문 상세`} onPress={() => router.push(`/order/${order.id}`)} key={order.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 18, paddingVertical: 12, borderTopWidth: 1, borderTopColor: '#EEF2F7' }}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ color: '#111827', fontSize: 14, fontWeight: '800' }}>{order.restaurantName}</Text>
-                    <Text style={{ color: '#64748B', fontSize: 12, marginTop: 4 }}>담당자: {order.managerNames?.join(', ') || '미지정'}</Text>
-                    <Text style={{ color: '#64748B', fontSize: 12, marginTop: 2 }}>{order.businessDate}</Text>
+              data?.orders.map((order, index) => (
+                <Fragment key={order.id}>
+                  {index === 0 || data.orders[index - 1].businessDate !== order.businessDate ? (
+                    <View style={{ backgroundColor: '#EFF6FF', paddingHorizontal: 14, paddingVertical: 8, borderTopWidth: 1, borderTopColor: '#E5E7EB' }}>
+                      <Text style={{ color: '#0067FF', fontWeight: '800', fontSize: 12 }}>배송일 {order.businessDate}</Text>
+                    </View>
+                  ) : null}
+                <Pressable accessibilityRole="button" accessibilityLabel={`${order.restaurantName} 주문 상세`} onPress={() => router.push(`/order/${order.id}`)} style={{ minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 10, borderTopWidth: 1, borderTopColor: '#EEF2F7' }}>
+                  <View style={{ flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Text numberOfLines={1} style={{ flexShrink: 1, color: '#111827', fontSize: 13, fontWeight: '800' }}>{order.restaurantName}</Text>
+                    <Text numberOfLines={1} accessibilityLabel={`담당자: ${order.managerNames?.join(', ') || '미지정'}`} style={{ maxWidth: '35%', color: '#64748B', fontSize: 11 }}>{order.managerNames?.join(', ') || '미지정'}</Text>
                   </View>
-                  <Text style={{ width: 36, textAlign: 'right', color: '#64748B', fontSize: 13, fontWeight: '800' }}>{order.itemCount}개</Text>
+                  <Text style={{ width: 28, textAlign: 'right', color: '#64748B', fontSize: 13, fontWeight: '800' }}>{order.itemCount}개</Text>
                   <View style={{ backgroundColor: ['dispatched', 'completed'].includes(order.status) ? '#DCFCE7' : '#F3E8FF', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5 }}>
                     <Text style={{ color: ['dispatched', 'completed'].includes(order.status) ? '#16A34A' : '#8A22E6', fontSize: 12, fontWeight: '900' }}>{STATUS_LABEL[order.status] ?? order.status}</Text>
                   </View>
                 </Pressable>
+                </Fragment>
               ))
             )}
           </DashboardCard>
