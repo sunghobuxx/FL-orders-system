@@ -3,7 +3,7 @@ export const runtime = 'edge'
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getAdminSession } from '@/lib/admin-member-user'
-import { buildLinesFromDispatchJob, formatDispatchLine } from '@/lib/dispatch/current-items'
+import { buildLinesFromDispatchJob, formatDispatchLine, loadShowBreakdown } from '@/lib/dispatch/current-items'
 import { sendKakaoAlimtalk } from '@/lib/messaging/kakao'
 
 // 이미 확정된 dispatch_job 재발송
@@ -40,7 +40,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: '발송할 품목이 없습니다' }, { status: 400 })
     }
 
-    const messageLines = lines.map((l) => formatDispatchLine(l)).join('\n')
+    const lineOpts = { showBreakdown: (await loadShowBreakdown(adminDb, [job.supplier_id])).get(job.supplier_id) !== false }
+    const messageLines = lines.map((l) => formatDispatchLine(l, ': ', lineOpts)).join('\n')
 
     // 연락처 조회
     const { data: supplierRow } = await adminDb

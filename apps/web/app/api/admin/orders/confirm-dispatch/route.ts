@@ -8,6 +8,7 @@ import {
   buildLinesFromDispatchJob,
   buildDispatchLines,
   formatDispatchLine,
+  loadShowBreakdown,
   syncDispatchJobItems,
   type DispatchOrderItem,
 } from '@/lib/dispatch/current-items'
@@ -33,6 +34,7 @@ export async function POST(req: NextRequest) {
     // 해당 공급처 발주 items 조회
     const { grouped } = await getCurrentDispatchGroups(adminDb, businessDate)
     const items = (grouped as Record<string, DispatchOrderItem[]>)[supplierId]
+    const lineOpts = { showBreakdown: (await loadShowBreakdown(adminDb, [supplierId])).get(supplierId) !== false }
 
     if (!items?.length) {
       return NextResponse.json({ error: '해당 공급처의 발주 내역이 없습니다' }, { status: 404 })
@@ -81,10 +83,10 @@ export async function POST(req: NextRequest) {
     let messageLines: string
     const lines = await buildLinesFromDispatchJob(adminDb, jobId)
     if (lines.length) {
-      messageLines = lines.map((l) => formatDispatchLine(l)).join('\n')
+      messageLines = lines.map((l) => formatDispatchLine(l, ': ', lineOpts)).join('\n')
     } else {
       const fallbackLines = buildDispatchLines(items)
-      messageLines = fallbackLines.map((l) => formatDispatchLine(l)).join('\n')
+      messageLines = fallbackLines.map((l) => formatDispatchLine(l, ': ', lineOpts)).join('\n')
     }
 
     if (!messageLines.trim()) {

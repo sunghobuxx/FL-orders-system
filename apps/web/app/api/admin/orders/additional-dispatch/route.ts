@@ -7,6 +7,7 @@ import {
   getCurrentDispatchGroups,
   buildDispatchLines,
   formatDispatchLine,
+  loadShowBreakdown,
   type DispatchOrderItem,
 } from '@/lib/dispatch/current-items'
 import { sendKakaoAlimtalk } from '@/lib/messaging/kakao'
@@ -86,7 +87,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: '추가된 품목이 없습니다' }, { status: 400 })
     }
 
-    const messageLines = buildDispatchLines(newItems).map(l => formatDispatchLine(l)).join('\n')
+    const lineOpts = { showBreakdown: (await loadShowBreakdown(adminDb, [supplierId])).get(supplierId) !== false }
+    const messageLines = buildDispatchLines(newItems).map(l => formatDispatchLine(l, ': ', lineOpts)).join('\n')
     if (!messageLines.trim()) {
       return NextResponse.json({ error: '발송할 품목이 없습니다' }, { status: 400 })
     }

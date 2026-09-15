@@ -7,6 +7,7 @@ import {
   buildLinesFromDispatchJob,
   buildDispatchLines,
   formatDispatchLine,
+  loadShowBreakdown,
   syncDispatchJobItems,
   type DispatchOrderItem,
 } from '@/lib/dispatch/current-items'
@@ -98,7 +99,10 @@ export async function POST(req: NextRequest) {
 
     let dispatched = 0
 
+    // 공급처마다 「업체별 수량 표시」 설정을 따른다 (인숙이네는 총합만)
+    const breakdownOf = await loadShowBreakdown(adminDb, supplierIds)
     for (const supplierId of supplierIds) {
+      const lineOpts = { showBreakdown: breakdownOf.get(supplierId) !== false }
       const items = (grouped as Record<string, DispatchOrderItem[]>)[supplierId]
 
       let job = existingJobMap.get(supplierId)
@@ -132,11 +136,11 @@ export async function POST(req: NextRequest) {
       let messageLines: string
       const lines = await buildLinesFromDispatchJob(adminDb, jobId)
       if (lines.length) {
-        messageLines = lines.map((l) => formatDispatchLine(l)).join('\n')
+        messageLines = lines.map((l) => formatDispatchLine(l, ': ', lineOpts)).join('\n')
       } else {
         const fallbackLines = buildDispatchLines(items)
         if (!fallbackLines.length) continue
-        messageLines = fallbackLines.map((l) => formatDispatchLine(l)).join('\n')
+        messageLines = fallbackLines.map((l) => formatDispatchLine(l, ': ', lineOpts)).join('\n')
       }
 
       if (!messageLines.trim()) continue

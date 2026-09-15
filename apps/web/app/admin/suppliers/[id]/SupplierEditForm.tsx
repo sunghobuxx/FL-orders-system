@@ -7,6 +7,8 @@ interface SupplierData {
   supplierId: string
   name: string
   dispatch_channel: string | null
+  /** 발주 문자에 업체별 수량을 붙일지 */
+  dispatch_show_breakdown: boolean
   status: string
   phone: string | null
 }
@@ -17,11 +19,13 @@ export default function SupplierEditForm({ data }: { data: SupplierData }) {
   const [form, setForm] = useState({
     name: data.name,
     dispatch_channel: data.dispatch_channel ?? 'kakao',
+    dispatch_show_breakdown: data.dispatch_show_breakdown,
     status: data.status,
     phone: data.phone ?? '',
   })
 
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }))
+  const setFlag = (k: string, v: boolean) => setForm(f => ({ ...f, [k]: v }))
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -90,6 +94,23 @@ export default function SupplierEditForm({ data }: { data: SupplierData }) {
           <option value="sms">SMS</option>
           <option value="email">이메일</option>
         </select>
+      </div>
+      <div>
+        <label className="flex items-start gap-2.5 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={form.dispatch_show_breakdown}
+            onChange={e => setFlag('dispatch_show_breakdown', e.target.checked)}
+            className="mt-0.5 rounded"
+          />
+          <span>
+            <span className="block text-sm font-medium text-gray-700">발주 문자에 업체별 수량 표시</span>
+            <span className="block text-xs text-gray-400 mt-0.5">
+              켜면 <code>양파: 20kg (고강점 3kg / 정왕점 2kg)</code>, 끄면 <code>양파: 20kg</code> 처럼 총합만 보냅니다.
+              품목·업체가 많아 문자가 길어지는 공급처는 끄세요.
+            </span>
+          </span>
+        </label>
       </div>
       <div>
         <label htmlFor="s-status" className={labelClass}>상태</label>

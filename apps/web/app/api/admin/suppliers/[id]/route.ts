@@ -7,7 +7,7 @@ import { getAdminSession } from '@/lib/admin-member-user'
 export async function PUT(req: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
     const { id: supplierId } = await context.params
-    const { name, dispatch_channel, status, phone } = await req.json()
+    const { name, dispatch_channel, status, phone, dispatch_show_breakdown } = await req.json()
 
     // 로그인만 보면 회원 계정으로도 통과한다. 관리자 권한까지 확인한다.
     const session = await getAdminSession()
@@ -20,7 +20,12 @@ export async function PUT(req: NextRequest, context: { params: Promise<{ id: str
     // 공급처 기본 정보 업데이트
     const { error: supErr } = await db
       .from('suppliers')
-      .update({ dispatch_channel, status })
+      .update({
+        dispatch_channel,
+        status,
+        // 이 값을 안 보내는 옛 화면이 설정을 켜짐으로 되돌리지 않게, 불리언일 때만 쓴다.
+        ...(typeof dispatch_show_breakdown === 'boolean' ? { dispatch_show_breakdown } : {}),
+      })
       .eq('id', supplierId)
 
     if (supErr) {

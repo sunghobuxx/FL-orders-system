@@ -396,11 +396,40 @@ function shortName(name: string): string {
   return parts[parts.length - 1] || name
 }
 
-export function formatDispatchLine(line: DispatchLine, separator = ': ') {
+/**
+ * 발주 문자 한 줄. 기본은 `양파: 20kg (고강점 3kg / 정왕점 2kg)` 처럼 총합 뒤에 업체별 수량을 붙인다.
+ *
+ * `showBreakdown: false` 면 총합만 쓴다. 인숙이네처럼 품목도 업체도 많은 공급처는
+ * 업체별 수량이 줄마다 길게 붙어 받아 적기가 어렵다는 피드백이 있었다(2026-09-15).
+ * 공급처마다 `suppliers.dispatch_show_breakdown` 으로 고른다.
+ */
+export function formatDispatchLine(
+  line: DispatchLine,
+  separator = ': ',
+  opts: { showBreakdown?: boolean } = {},
+) {
   const total = `${line.name}${separator}${formatQty(line.qty)}${line.unit}`
+  if (opts.showBreakdown === false) return total
   if (!line.byRestaurant?.length || line.byRestaurant.length <= 1) return total
   const breakdown = line.byRestaurant
     .map(r => `${shortName(r.name)} ${formatQty(r.qty)}${line.unit}`)
     .join(' / ')
   return `${total} (${breakdown})`
+}
+
+
+/**
+ * 공급처별 「업체별 수량 표시」 설정. 없거나 못 읽으면 **켜짐**(지금까지와 같은 문자)으로 본다.
+ * 설정을 못 읽었다고 문자가 달라지면 안 되기 때문이다.
+ */
+export async function loadShowBreakdown(adminDb: any, supplierIds: string[]): Promise<Map<string, boolean>> {
+  const map = new Map<string, boolean>()
+  const ids = [...new Set(supplierIds.filter(Boolean))]
+  if (!ids.length) return map
+  const { data } = await adminDb
+    .from('suppliers').select('id, dispatch_show_breakdown').in('id', ids)
+  for (const row of (data ?? []) as Array<{ id: string; dispatch_show_breakdown: boolean | null }>) {
+    map.set(row.id, row.dispatch_show_breakdown !== false)
+  }
+  return map
 }
