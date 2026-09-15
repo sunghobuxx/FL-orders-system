@@ -9,6 +9,7 @@ export async function GET(req: Request) {
   const ctx = await requireDriverUser(req)
   if ('error' in ctx) return ctx.error
 
+  const all = new URL(req.url).searchParams.get('scope') === 'all'
   const today = getKstToday()
   const tomorrow = addDays(today, 1)
   const [, month, day] = today.split('-').map(Number)
@@ -20,7 +21,7 @@ export async function GET(req: Request) {
       .in('business_date', [today, tomorrow])
       .order('business_date', { ascending: true })
       .order('submitted_at', { ascending: false, nullsFirst: false }),
-    ctx.assignedRestaurantIds,
+    all ? null : ctx.assignedRestaurantIds,
   )
 
   const [ordersRes, allOrdersRes, specsRes, notesRes, inquiriesRes, dispatchesRes] = await Promise.all([
@@ -56,10 +57,27 @@ export async function GET(req: Request) {
       .in('business_date', [today, tomorrow]),
   ])
 
+  if (ordersRes.error) return NextResponse.json({ error: ordersRes.error.message }, { status: 500 })
+  const restaurantIds = [...new Set((ordersRes.data ?? []).map(batch => batch.restaurant_id))]
+  const managerNames = new Map<string, string[]>()
+  if (restaurantIds.length) {
+    const { data: assignments, error } = await ctx.db.from('manager_restaurants')
+      .select('restaurant_id, users(name)').in('restaurant_id', restaurantIds)
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    for (const assignment of assignments ?? []) {
+      const user = Array.isArray(assignment.users) ? assignment.users[0] : assignment.users
+      const names = managerNames.get(assignment.restaurant_id) ?? []
+      const name = user?.name || '이름 미등록'
+      if (!names.includes(name)) names.push(name)
+      managerNames.set(assignment.restaurant_id, names.sort((a, b) => a.localeCompare(b, 'ko')))
+    }
+  }
+
   const orders = (ordersRes.data ?? []).map((batch: any) => ({
     id: batch.id,
     restaurantId: batch.restaurant_id,
     restaurantName: orgNameFromRestaurant(batch),
+    managerNames: managerNames.get(batch.restaurant_id) ?? [],
     status: batch.status,
     businessDate: batch.business_date,
     itemCount: (batch.orders ?? []).reduce((sum: number, order: any) => sum + (order.order_items?.length ?? 0), 0),
@@ -176,7 +194,7 @@ export async function GET(req: Request) {
     role: ctx.role,
     assignedRestaurantCount: ctx.assignedRestaurantIds?.length ?? null,
     orders,
-    totalAssignedOrders: orders.length,
+    totalAssignedOrders: orders.filter(order => ctx.assignedRestaurantIds === null || ctx.assignedRestaurantIds.includes(order.restaurantId)).length,
     totalAllOrders: allOrdersRes.data?.length ?? 0,
     specs,
     notes: notesRes.data ?? [],

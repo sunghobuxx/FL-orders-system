@@ -1,10 +1,12 @@
 import { router } from 'expo-router'
-import { ReactNode, useCallback, useEffect, useState } from 'react'
-import { Alert, Pressable, RefreshControl, ScrollView, Text, useWindowDimensions, View } from 'react-native'
+import { ReactNode, useState } from 'react'
+import { Pressable, RefreshControl, ScrollView, Text, useWindowDimensions, View } from 'react-native'
 
 import { Loading, Page } from '../../components'
-import { apiGet } from '../../lib/api'
+import { useDriverResource } from '../../hooks/useDriverResource'
 import { supabase } from '../../lib/supabase'
+
+const STATUS_LABEL: Record<string, string> = { open: '작성 중', submitted: '당일발주', validated: '알림톡 발송', ordered: '배송중', dispatched: '배송완료', completed: '완료' }
 
 type Dashboard = {
   today: string
@@ -13,7 +15,7 @@ type Dashboard = {
   assignedRestaurantCount: number | null
   totalAssignedOrders: number
   totalAllOrders: number
-  orders: Array<{ id: string; restaurantName: string; status: string; businessDate: string; itemCount: number; submittedAt: string }>
+  orders: Array<{ id: string; restaurantName: string; status: string; managerNames: string[]; businessDate: string; itemCount: number; submittedAt: string }>
   notes: Array<{ id: string; title: string; created_at: string }>
   inquiries: Array<{ id: string; title: string; status: string; created_at: string }>
   dispatches: Array<{
@@ -28,25 +30,11 @@ type Dashboard = {
 
 export default function DashboardScreen() {
   const { width } = useWindowDimensions()
-  const [data, setData] = useState<Dashboard | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [refreshing, setRefreshing] = useState(false)
+  const [scope, setScope] = useState<'assigned' | 'all'>('assigned')
+  const { data, loading, refreshing, refresh, error } = useDriverResource<Dashboard>(
+    `/api/driver/dashboard?scope=${scope}`, '대시보드', 5000,
+  )
   const twoColumns = width >= 760
-
-  const load = useCallback(async () => {
-    const dashboard = await apiGet<Dashboard>('/api/driver/dashboard')
-    setData(dashboard)
-  }, [])
-
-  useEffect(() => {
-    load().catch((error) => Alert.alert('대시보드', error.message)).finally(() => setLoading(false))
-  }, [load])
-
-  async function refresh() {
-    setRefreshing(true)
-    await load().catch((error) => Alert.alert('새로고침 실패', error.message))
-    setRefreshing(false)
-  }
 
   async function signOut() {
     await supabase.auth.signOut()
@@ -62,6 +50,7 @@ export default function DashboardScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 28 }}
       >
+        {error ? <Text style={{ color: '#DC2626', marginBottom: 12 }}>갱신 실패: {error} · 아래로 당겨 다시 시도해 주세요.</Text> : null}
         <View style={{ marginBottom: 24 }}>
           <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
             <View style={{ flex: 1 }}>
@@ -113,20 +102,30 @@ export default function DashboardScreen() {
         <View style={{ flexDirection: twoColumns ? 'row' : 'column', gap: 24, alignItems: 'stretch' }}>
           <DashboardCard style={{ flex: 1 }}>
             <CardHeader title="주문내역 (식당)" action="전체보기 →" onPress={() => router.push('/orders')} />
+            <View style={{ paddingHorizontal: 18, paddingBottom: 12 }}>
+              <Pressable accessibilityRole="button" onPress={() => setScope(scope === 'assigned' ? 'all' : 'assigned')} style={{ padding: 12, borderRadius: 8, backgroundColor: scope === 'all' ? '#DCFCE7' : '#F3F4F6' }}>
+                <Text style={{ color: '#00964B', fontWeight: '800' }}>{scope === 'all' ? '담당 업체만 보기' : '전체발주보기'}</Text>
+              </Pressable>
+              <Text style={{ color: '#64748B', marginTop: 6 }}>{scope === 'all' ? '전체 업체 주문' : '담당 업체 주문'} · {data?.orders.length ?? 0}건</Text>
+            </View>
             <View style={{ backgroundColor: '#EFF6FF', paddingHorizontal: 18, paddingVertical: 12, borderTopWidth: 1, borderTopColor: '#E5E7EB' }}>
-              <Text style={{ color: '#0067FF', fontWeight: '900', fontSize: 13 }}>오늘 배송 ({data?.today})</Text>
+              <Text style={{ color: '#0067FF', fontWeight: '900', fontSize: 13 }}>배송일 {data?.today} ~ {data?.tomorrow}</Text>
             </View>
             {(data?.orders.length ?? 0) === 0 ? (
-              <EmptyLine text="담당 업체 주문이 없습니다." />
+              <EmptyLine text={scope === 'all' ? "전체 업체 주문이 없습니다." : "담당 업체 주문이 없습니다."} />
             ) : (
               data?.orders.map((order) => (
-                <View key={order.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 18, paddingVertical: 12, borderTopWidth: 1, borderTopColor: '#EEF2F7' }}>
-                  <Text numberOfLines={1} style={{ flex: 1, color: '#111827', fontSize: 14, fontWeight: '800' }}>{order.restaurantName}</Text>
+                <Pressable accessibilityRole="button" accessibilityLabel={`${order.restaurantName} 주문 상세`} onPress={() => router.push(`/order/${order.id}`)} key={order.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 18, paddingVertical: 12, borderTopWidth: 1, borderTopColor: '#EEF2F7' }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ color: '#111827', fontSize: 14, fontWeight: '800' }}>{order.restaurantName}</Text>
+                    <Text style={{ color: '#64748B', fontSize: 12, marginTop: 4 }}>담당자: {order.managerNames?.join(', ') || '미지정'}</Text>
+                    <Text style={{ color: '#64748B', fontSize: 12, marginTop: 2 }}>{order.businessDate}</Text>
+                  </View>
                   <Text style={{ width: 36, textAlign: 'right', color: '#64748B', fontSize: 13, fontWeight: '800' }}>{order.itemCount}개</Text>
-                  <Pressable style={{ backgroundColor: '#F3E8FF', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5 }}>
-                    <Text style={{ color: '#8A22E6', fontSize: 12, fontWeight: '900' }}>상차시작</Text>
-                  </Pressable>
-                </View>
+                  <View style={{ backgroundColor: ['dispatched', 'completed'].includes(order.status) ? '#DCFCE7' : '#F3E8FF', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5 }}>
+                    <Text style={{ color: ['dispatched', 'completed'].includes(order.status) ? '#16A34A' : '#8A22E6', fontSize: 12, fontWeight: '900' }}>{STATUS_LABEL[order.status] ?? order.status}</Text>
+                  </View>
+                </Pressable>
               ))
             )}
           </DashboardCard>

@@ -7,6 +7,7 @@ import { Card, Loading, Muted, colors } from '../../../components'
 import { apiDelete, apiGet, apiPost } from '../../../lib/api'
 
 type DetailResponse = {
+  canManage?: boolean
   batch: {
     id: string
     status: string
@@ -155,6 +156,7 @@ export default function OrderDetailScreen() {
     )
   }
 
+  const canManage = data.canManage !== false
   const isDone = DONE.includes(data.batch.status)
   const total = data.items.length
   const confirmedCount = confirmed.size
@@ -181,7 +183,7 @@ export default function OrderDetailScreen() {
 
         <View style={{ borderRadius: 10, borderWidth: 1, borderColor: '#BFDBFE', backgroundColor: '#EFF6FF', padding: 12, marginBottom: 12 }}>
           <Text style={{ color: '#1D4ED8', fontSize: 13, fontWeight: '800' }}>
-            수량·단가는 언제든 수정 가능합니다. 수정 저장 시 명세서·정산 금액에 즉시 반영됩니다.
+            {canManage ? '수량·단가는 언제든 수정 가능합니다. 수정 저장 시 명세서·정산 금액에 즉시 반영됩니다.' : '다른 담당자 업체의 주문입니다. 상세 내역만 조회할 수 있습니다.'}
           </Text>
         </View>
 
@@ -201,7 +203,7 @@ export default function OrderDetailScreen() {
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                   <Text numberOfLines={1} style={{ flex: 1.2, color: '#1F2937', fontSize: 13, fontWeight: '800', backgroundColor: '#F3F4F6', paddingHorizontal: 8, paddingVertical: 8, borderRadius: 8 }}>{item.productName}</Text>
                   <View style={{ flex: 1.1, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                    <TextInput
+                    <TextInput editable={canManage}
                       value={qtys[item.id] ?? ''}
                       onChangeText={value => { hasDraft.current = true; setQtys(prev => ({ ...prev, [item.id]: value })) }}
                       keyboardType="decimal-pad"
@@ -209,7 +211,7 @@ export default function OrderDetailScreen() {
                     />
                     <Text style={{ color: '#64748B', fontSize: 12, fontWeight: '700' }}>{item.unit}</Text>
                   </View>
-                  <TextInput
+                  <TextInput editable={canManage}
                     value={prices[item.id] ?? ''}
                     onChangeText={value => { hasDraft.current = true; setPrices(prev => ({ ...prev, [item.id]: value })) }}
                     keyboardType="number-pad"
@@ -217,14 +219,14 @@ export default function OrderDetailScreen() {
                   />
                   <Pressable
                     onPress={() => toggle(item.id).catch((error) => Alert.alert('확인 실패', error.message))}
-                    disabled={isChecking}
+                    disabled={!canManage || isChecking}
                     style={{ width: 56, alignItems: 'center', borderRadius: 8, paddingVertical: 9, backgroundColor: isConfirmed ? '#22C55E' : '#16A34A', opacity: isChecking ? 0.5 : 1 }}
                   >
                     <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '900' }}>{isChecking ? '처리 중' : isConfirmed ? '✓' : '확인'}</Text>
                   </Pressable>
                 </View>
                 <View style={{ alignItems: 'flex-end' }}>
-                  <Pressable onPress={() => deleteItem(item.id, item.productName)} style={{ paddingHorizontal: 8, paddingVertical: 4 }}>
+                  <Pressable disabled={!canManage} style={{ display: canManage ? 'flex' : 'none' }} onPress={() => deleteItem(item.id, item.productName)}>
                     <Text style={{ color: '#EF4444', fontSize: 12, fontWeight: '800' }}>삭제</Text>
                   </Pressable>
                 </View>
@@ -240,8 +242,8 @@ export default function OrderDetailScreen() {
           </View>
         </Card>
 
-        <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 10, marginBottom: 14 }}>
-          <Pressable onPress={save} disabled={saving} style={{ backgroundColor: '#1F2937', borderRadius: 10, paddingHorizontal: 18, paddingVertical: 12, opacity: saving ? 0.5 : 1 }}>
+        <View style={{ display: canManage ? 'flex' : 'none', flexDirection: 'row', justifyContent: 'flex-end', gap: 10, marginBottom: 14 }}>
+          <Pressable onPress={save} disabled={!canManage || saving} style={{ backgroundColor: '#1F2937', borderRadius: 10, paddingHorizontal: 18, paddingVertical: 12, opacity: saving ? 0.5 : 1 }}>
             <Text style={{ color: '#FFFFFF', fontWeight: '900' }}>{saving ? '저장 중...' : '수정 저장'}</Text>
           </Pressable>
         </View>
@@ -251,7 +253,7 @@ export default function OrderDetailScreen() {
             <View style={{ borderRadius: 10, borderWidth: 1, borderColor: '#BBF7D0', backgroundColor: '#F0FDF4', paddingHorizontal: 18, paddingVertical: 12 }}>
               <Text style={{ color: '#16A34A', fontWeight: '900' }}>배송완료 처리됨</Text>
             </View>
-          ) : allConfirmed ? (
+          ) : allConfirmed && canManage ? (
             <Pressable disabled={completing} onPress={() => completeDelivery().catch((error) => Alert.alert('배송완료 실패', error.message))} style={{ backgroundColor: '#16A34A', borderRadius: 10, paddingHorizontal: 18, paddingVertical: 12, opacity: completing ? 0.5 : 1 }}>
               <Text style={{ color: '#FFFFFF', fontWeight: '900' }}>{completing ? '처리 중...' : '② 배송완료'}</Text>
             </Pressable>

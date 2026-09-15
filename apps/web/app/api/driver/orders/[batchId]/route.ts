@@ -13,7 +13,7 @@ const STATUS_LABEL: Record<string, string> = {
   open: '작성 중',
   submitted: '당일발주',
   validated: '알림톡 발송',
-  ordered: '상차',
+  ordered: '배송중',
   dispatched: '배송완료',
   completed: '완료',
 }
@@ -23,14 +23,14 @@ export async function GET(req: Request, { params }: Props) {
   if ('error' in ctx) return ctx.error
 
   const { batchId } = await params
-  const access = await requireBatchAccess(ctx, batchId)
-  if ('error' in access) return access.error
-
-  const { data: batch } = await ctx.db
+  const { data: batch, error: batchError } = await ctx.db
     .from('order_batches')
-    .select('id, status, business_date, submitted_at, restaurants(organizations(name))')
+    .select('id, restaurant_id, status, business_date, submitted_at, restaurants(organizations(name))')
     .eq('id', batchId)
     .single()
+
+  if (batchError || !batch) return NextResponse.json({ error: '발주를 찾을 수 없습니다.' }, { status: 404 })
+  const canManage = ctx.assignedRestaurantIds === null || ctx.assignedRestaurantIds.includes(batch.restaurant_id)
 
   const { data: order } = await ctx.db
     .from('orders')
@@ -72,6 +72,7 @@ export async function GET(req: Request, { params }: Props) {
 
   const restRaw = batch?.restaurants as unknown as { organizations: { name: string } | null } | null
   return NextResponse.json({
+    canManage,
     batch: {
       id: batch?.id,
       status: batch?.status,

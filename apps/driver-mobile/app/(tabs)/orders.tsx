@@ -1,11 +1,14 @@
-import { router, useFocusEffect } from 'expo-router'
-import { useCallback, useState } from 'react'
+import { router } from 'expo-router'
+import { useState } from 'react'
 import { Alert, Pressable, RefreshControl, ScrollView, Text, View } from 'react-native'
 
 import { Card, Empty, Field, Loading, Muted, Page, colors } from '../../components'
-import { apiDelete, apiGet, apiPatch, apiPost } from '../../lib/api'
+import { apiDelete, apiPatch, apiPost } from '../../lib/api'
 import { fmtDateTime } from '../../lib/format'
 import { getKstToday } from '../../lib/format'
+
+import { DateSelector } from '../../components/DateSelector'
+import { useDriverResource } from '../../hooks/useDriverResource'
 
 type OrderRow = {
   id: string
@@ -39,28 +42,12 @@ const NEXT_STATUS: Record<string, { label: string; next: string; primary?: boole
 }
 
 export default function OrdersScreen() {
-  const [data, setData] = useState<OrdersResponse | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [refreshing, setRefreshing] = useState(false)
+  const [date, setDate] = useState(getKstToday())
   const [editingDateId, setEditingDateId] = useState<string | null>(null)
   const [newDate, setNewDate] = useState(getKstToday())
-
-  const load = useCallback(async () => {
-    const next = await apiGet<OrdersResponse>('/api/driver/orders?mode=today')
-    setData(next)
-  }, [])
-
-  useFocusEffect(useCallback(() => {
-    load().catch((error) => Alert.alert('당일 주문', error.message)).finally(() => setLoading(false))
-    const interval = setInterval(() => void load().catch(() => undefined), 5000)
-    return () => clearInterval(interval)
-  }, [load]))
-
-  async function refresh() {
-    setRefreshing(true)
-    await load().catch((error) => Alert.alert('새로고침 실패', error.message))
-    setRefreshing(false)
-  }
+  const { data, loading, refreshing, load, refresh, error } = useDriverResource<OrdersResponse>(
+    `/api/driver/orders?mode=today&date=${date}`, '주문내역', 5000,
+  )
 
   async function updateStatus(order: OrderRow) {
     const config = NEXT_STATUS[order.status]
@@ -102,6 +89,8 @@ export default function OrdersScreen() {
           <Text style={{ color: '#64748B', fontSize: 13, fontWeight: '800' }}>총 {data?.orders.length ?? 0}개 업체</Text>
         </View>
 
+        <DateSelector value={date} onChange={next => { setEditingDateId(null); setDate(next) }} />
+        {error ? <Muted>조회 실패: {error} · 아래로 당겨 다시 시도해 주세요.</Muted> : null}
         {!data?.orders.length ? <Empty message="발주 없음" /> : data.orders.map((order) => {
           const badge = STATUS_COLORS[order.status] ?? STATUS_COLORS.open
           const next = NEXT_STATUS[order.status]
