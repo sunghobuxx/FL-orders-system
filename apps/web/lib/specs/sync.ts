@@ -195,8 +195,8 @@ export async function syncSpecFromOrders(
   const productIds = [...new Set(rawItems.map((i: { product_id: string }) => i.product_id))] as string[]
 
   const { data: productRows } = await adminDb
-    .from('products').select('id, taxable_flag, pack_unit, kg_per_pack').in('id', productIds)
-  type ProductRow = { id: string; taxable_flag: boolean | null; pack_unit: string | null; kg_per_pack: number | null }
+    .from('products').select('id, standard_name, taxable_flag, pack_unit, kg_per_pack').in('id', productIds)
+  type ProductRow = { id: string; standard_name: string; taxable_flag: boolean | null; pack_unit: string | null; kg_per_pack: number | null }
 
   // 포장 규격이 있으면 kg 발주를 포장 단위로 되돌린다.
   //
@@ -205,7 +205,7 @@ export async function syncSpecFromOrders(
   // 마지막 관문이다. 배수가 아닌 수량(3kg·8kg)은 낱개 발주이므로 손대지 않는다.
   const packOf = new Map<string, PackSpec>(
     (productRows ?? []).map((p: ProductRow) =>
-      [p.id, { pack_unit: p.pack_unit, kg_per_pack: p.kg_per_pack }]))
+      [p.id, { standard_name: p.standard_name, pack_unit: p.pack_unit, kg_per_pack: p.kg_per_pack }]))
   const items = (rawItems as Array<{ id: string; product_id: string; qty: number; unit: string }>)
     .map(item => {
       const packed = toPackQty(Number(item.qty), item.unit, packOf.get(item.product_id))

@@ -40,6 +40,7 @@ export default function TabLayout() {
       <Tabs.Screen name="waiting" options={{ title: '웨이팅', tabBarLabel: '웨이팅', tabBarIcon: ({ color, size }) => <Ionicons name="time-outline" size={size} color={color} /> }} />
       <Tabs.Screen name="notices" options={{ title: '공지·문의', tabBarLabel: '공지·문의', tabBarIcon: ({ color, size }) => <Ionicons name="chatbubble-outline" size={size} color={color} /> }} />
       <Tabs.Screen name="profile" options={{ title: '내 정보', href: null }} />
+      <Tabs.Screen name="spec" options={{ title: '납품 명세서', href: null }} />
       <Tabs.Screen name="notice" options={{ href: null, headerShown: false }} />
       <Tabs.Screen name="inquiry" options={{ href: null, headerShown: false }} />
     </Tabs>

@@ -7,6 +7,8 @@ import { normalizeUnit } from '@/lib/units'
 export type PackSpec = {
   pack_unit: string | null
   kg_per_pack: number | null
+  /** 품목별로 변환을 잠시 끌 때 쓰려고 부르는 쪽이 함께 넘긴다. 지금은 끈 품목이 없다. */
+  standard_name?: string | null
 }
 
 /**

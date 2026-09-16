@@ -4,3 +4,14 @@ node_modules.nosync/
 dist/
 .DS_Store
 eas 2.json
+**/.env*
+**/credentials.json
+**/*.p8
+**/*.p12
+builds/
+android/.gradle/
+android/.cxx/
+android/build/
+android/app/build/
+android/app/.cxx/
+android/local.properties

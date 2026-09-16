@@ -1,18 +1,8 @@
-import { useEffect, useState } from 'react'
 import { ActivityIndicator, Alert, Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 
 import { useLocalSearchParams } from 'expo-router'
 
-import { supabase } from '@/lib/supabase'
-
-interface Notice {
-  id: string
-  title: string
-  body: string
-  created_at: string
-  /** 첨부파일 공개 URL. 없으면 null. */
-  file_path: string | null
-}
+import { useNotices } from '@/hooks/use-notices'
 
 /** "1786127264669_FruitLife-Delivery-1.0.3-v5.apk" → "FruitLife-Delivery-1.0.3-v5.apk" */
 function fileNameOf(url: string) {
@@ -26,21 +16,11 @@ function fileNameOf(url: string) {
 
 export default function NoticeDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>()
-  const [notice, setNotice] = useState<Notice | null>(null)
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    // file_path 를 빼먹으면 첨부가 있어도 화면에 아무것도 안 나온다. 웹 회원 화면은
-    // 처음부터 읽고 있었는데 앱만 빠져 있어서 "앱에서는 첨부가 안 보인다" 로 보였다.
-    supabase.from('notices').select('id, title, body, created_at, file_path').eq('id', id).single()
-      .then(({ data, error }) => {
-        if (error) console.error('Failed to load notice:', error)
-        setNotice(data)
-        setLoading(false)
-      })
-  }, [id])
+  const { notices, loading, error, refresh } = useNotices(1, id)
+  const notice = notices.find(item => item.id === id)
 
   if (loading) return <View style={s.center}><ActivityIndicator color="#16a34a" /></View>
+  if (error) return <View style={s.center}><Text style={s.empty}>{error}</Text><TouchableOpacity onPress={() => void refresh()}><Text>다시 시도</Text></TouchableOpacity></View>
   if (!notice) return <View style={s.center}><Text style={s.empty}>공지를 찾을 수 없습니다.</Text></View>
 
   return (

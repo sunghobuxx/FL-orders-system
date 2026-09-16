@@ -40,4 +40,8 @@ describe('toPackQty', () => {
   it('포장 단위가 kg 이면 바꿀 것이 없다', () => {
     expect(toPackQty(15, 'kg', { pack_unit: 'kg', kg_per_pack: 15 })).toBeNull()
   })
+
+  it('품목명을 함께 넘겨도 변환은 그대로 된다 — 청양고추 박스 단가 80,000 확인됨(2026-09-11)', () => {
+    expect(toPackQty(10, 'kg', { ...고추, standard_name: '청양고추' })).toEqual({ qty: 1, unit: 'box' })
+  })
 })

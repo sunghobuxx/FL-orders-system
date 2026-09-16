@@ -3,10 +3,12 @@ export const runtime = 'edge'
 import { NextRequest, NextResponse } from 'next/server'
 import { getSessionUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { isStaleOrderSubmit } from '@/lib/orders/stale-submit'
-import { syncSpecFromOrders } from '@/lib/specs/sync'
+import { buildPriceMapByProduct, syncSpecFromOrders } from '@/lib/specs/sync'
+import { toPackQty } from '@/lib/products/pack-size'
+import { normalizeUnit } from '@/lib/units'
 import { refreshDispatchJobItems } from '@/lib/dispatch/current-items'
 import { archiveOrderItems } from '@/lib/orders/archive-items'
+import { isStaleOrderSubmit } from '@/lib/orders/stale-submit'
 
 interface RawItem {
   product_id?: string
@@ -124,17 +126,31 @@ export async function POST(req: NextRequest) {
   }
 
   const productIds = [...new Set(items.map(i => i.product_id))]
+  const serverPricedItems = new Set<CleanItem>()
 
   // --- 마스터 강제 검증: 클라이언트가 stale 한 product 정보로 보내도
   //     order_items.unit 은 products.default_unit / allowed_units 와 정합 보장 ---
   if (productIds.length > 0) {
     const { data: masterRows } = await adminDb
       .from('products')
-      .select('id, default_unit, allowed_units')
+      .select('id, standard_name, default_unit, allowed_units, pack_unit, kg_per_pack')
       .in('id', productIds)
-    const masterMap = new Map<string, { default_unit: string; allowed_units: string[] | null }>()
+    type ProductMaster = {
+      standard_name: string
+      default_unit: string
+      allowed_units: string[] | null
+      pack_unit: string | null
+      kg_per_pack: number | null
+    }
+    const masterMap = new Map<string, ProductMaster>()
     for (const m of masterRows ?? []) {
-      masterMap.set(m.id, { default_unit: m.default_unit, allowed_units: m.allowed_units })
+      masterMap.set(m.id, {
+        standard_name: m.standard_name,
+        default_unit: m.default_unit,
+        allowed_units: m.allowed_units,
+        pack_unit: m.pack_unit,
+        kg_per_pack: m.kg_per_pack,
+      })
     }
     for (const item of items) {
       const master = masterMap.get(item.product_id)
@@ -145,6 +161,19 @@ export async function POST(req: NextRequest) {
       if (!allowed.includes(item.unit)) {
         // 마스터 허용 단위에 없으면 default_unit 으로 강제 — kg/box 잘못 들어오는 케이스 차단
         item.unit = master.default_unit
+      }
+      const packed = toPackQty(item.qty, item.unit, master)
+      if (packed) {
+        item.qty = packed.qty
+        item.unit = packed.unit
+        serverPricedItems.add(item)
+      } else if (
+        master.pack_unit &&
+        normalizeUnit(item.unit) === normalizeUnit(master.pack_unit) &&
+        normalizeUnit(master.pack_unit) !== normalizeUnit(master.default_unit)
+      ) {
+        // 앱 화면에서 이미 kg→포장 단위로 바꿔 보낸 경우도 포장 단가를 서버에서 확정한다.
+        serverPricedItems.add(item)
       }
     }
   }
@@ -163,30 +192,25 @@ export async function POST(req: NextRequest) {
       if (!productToSp[sp.product_id]) productToSp[sp.product_id] = sp.id
     }
 
-    const spIds = Object.values(productToSp)
-    const priceBySp: Record<string, number> = {}
-    if (spIds.length > 0) {
-      const { data: snaps } = await adminDb
-        .from('price_snapshots')
-        .select('supplier_product_id, sale_price, effective_from')
-        .in('supplier_product_id', spIds)
-        .lte('effective_from', businessDate)
-        .order('effective_from', { ascending: false })
-        .order('created_at', { ascending: false })
-      for (const s of snaps ?? []) {
-        if (priceBySp[s.supplier_product_id] === undefined) {
-          priceBySp[s.supplier_product_id] = Number(s.sale_price)
-        }
-      }
-    }
+    const unitOf = Object.fromEntries(items.map(item => [item.product_id, item.unit]))
+    const { priceMap } = await buildPriceMapByProduct(
+      adminDb,
+      productIds,
+      businessDate,
+      restaurant.organization_id,
+      unitOf,
+    )
 
     for (const item of items) {
       if (!item.supplier_product_id) {
         const spId = productToSp[item.product_id]
         if (spId) item.supplier_product_id = spId
       }
-      if (item.unit_price_snapshot <= 0 && item.supplier_product_id) {
-        const price = priceBySp[item.supplier_product_id]
+      if (serverPricedItems.has(item)) {
+        // kg 단가를 포장 단가로 오인하지 않도록 변환된 줄은 반드시 다시 계산한다.
+        item.unit_price_snapshot = priceMap[item.product_id] ?? 0
+      } else if (item.unit_price_snapshot <= 0) {
+        const price = priceMap[item.product_id]
         if (price !== undefined) item.unit_price_snapshot = price
       }
     }
@@ -199,13 +223,17 @@ export async function POST(req: NextRequest) {
     // 식당+영업일자로 배치를 다시 확인해 클라이언트가 보낸 다른 업체 ID를 신뢰하지 않는다.
     const { data: existingBatch } = await adminDb
       .from('order_batches')
-      .select('id')
+      .select('id, status')
       .eq('restaurant_id', restaurantId)
       .eq('business_date', businessDate)
       .maybeSingle()
 
     if (existingBatchId && existingBatch?.id !== existingBatchId) {
       return NextResponse.json({ error: '발주 일자 정보가 올바르지 않습니다.' }, { status: 400 })
+    }
+
+    if (existingBatch && !['open', 'submitted'].includes(existingBatch.status)) {
+      return NextResponse.json({ error: '배송 진행 중이거나 완료된 발주는 수정할 수 없습니다. 다음 배송일을 선택해주세요.' }, { status: 409 })
     }
 
     if (existingBatch) {

@@ -4,6 +4,9 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import { createAdminClient } from '@/lib/supabase/admin'
 import { buildPriceMapByProduct } from '@/lib/specs/sync'
+import { buildDashboardTrend, latestDashboardLine, productName, type DashboardLine } from '@/lib/member-dashboard'
+import { getSupplyTrend } from '@/lib/market/summary'
+import { toMarketName } from '@/lib/market/product-map'
 
 type ProductRow = {
   product_id: string
@@ -211,7 +214,54 @@ export async function GET(req: NextRequest) {
   }).filter((item) => new Set(item.points.map((point) => point.unit_price).filter((price) => price > 0)).size > 1)
     .sort((a, b) => Math.abs(b.change_rate) - Math.abs(a.change_rate))
 
+  // Additional web-parity payload; retain legacy fields for installed clients.
+  const dashboardLines = (lineData ?? []) as unknown as DashboardLine[]
+  const latestLine = latestDashboardLine(specs, dashboardLines)
+  const [todayResult, yesterdayResult, monthResult, recentResult, balanceResult, inquiryResult, trendResult] = await Promise.all([
+    db.from('order_batches').select('status').eq('restaurant_id', restaurant.id).eq('business_date', today).maybeSingle(),
+    db.from('daily_specs').select('total_amount').eq('restaurant_id', restaurant.id).eq('business_date', kstDate(-1)).maybeSingle(),
+    db.from('daily_specs').select('total_amount').eq('restaurant_id', restaurant.id).gte('business_date', `${today.slice(0, 7)}-01`),
+    db.from('daily_specs').select('business_date').eq('restaurant_id', restaurant.id).order('business_date', { ascending: false }).limit(3),
+    db.from('receivables').select('balance, status').eq('restaurant_id', restaurant.id),
+    db.from('inquiries').select('id, title, status, created_at').eq('organization_id', restaurant.organization_id).order('created_at', { ascending: false }).limit(5),
+    latestLine ? db.from('supplier_products').select('price_snapshots(sale_price, unit, effective_from)').eq('product_id', latestLine.product_id).eq('status', 'active') : Promise.resolve({ data: [], error: null }),
+  ])
+  if ([todayResult, yesterdayResult, monthResult, recentResult, balanceResult, inquiryResult, trendResult].some(result => result.error)) {
+    return NextResponse.json({ error: '대시보드 조회에 실패했습니다. 다시 시도해주세요.' }, { status: 500 })
+  }
+  let supplyError: string | null = null
+  let supplyRows: Array<{ ours: string[]; name: string; unit: string; recentAvg: number; priorAvg: number; changeRate: number; risk: string }> = []
+  try {
+    const market = await getSupplyTrend(db, kstDate(-40))
+    const names = new Set(market.keys())
+    const grouped = new Map<string, typeof supplyRows[number]>()
+    for (const line of dashboardLines) {
+      const name = productName(line)
+      const mapped = toMarketName(name, names)
+      const trend = mapped ? market.get(mapped) : null
+      if (!mapped || !trend) continue
+      const row = grouped.get(mapped) ?? { ...trend, ours: [] }
+      if (!row.ours.includes(name)) row.ours.push(name)
+      grouped.set(mapped, row)
+    }
+    const risks = ['critical', 'high', 'watch', 'safe']
+    supplyRows = [...grouped.values()].sort((a, b) => risks.indexOf(a.risk) - risks.indexOf(b.risk) || a.changeRate - b.changeRate)
+  } catch {
+    supplyError = '수급위험 자료를 불러오지 못했습니다. 다시 시도해주세요.'
+  }
+  const webDashboard = {
+    todayStatus: todayResult.data?.status ?? null,
+    yesterdayTotal: Number(yesterdayResult.data?.total_amount ?? 0),
+    monthTotal: (monthResult.data ?? []).reduce((sum, row) => sum + Number(row.total_amount ?? 0), 0),
+    recentDates: (recentResult.data ?? []).map(row => row.business_date),
+    outstanding: (balanceResult.data ?? []).filter(row => row.status !== 'paid' && Number(row.balance) > 0).reduce((sum, row) => sum + Number(row.balance), 0),
+    inquiries: inquiryResult.data ?? [],
+    trend: buildDashboardTrend(specs, dashboardLines, (trendResult.data ?? []).flatMap(row => row.price_snapshots ?? []), recentRangeStart, today),
+    supplyRows, supplyError,
+    insight: insightResult.data ?? null,
+  }
   return NextResponse.json({
+    webDashboard,
     prices,
     weeklyItems,
     weeklyTotal: specs.reduce((sum, spec) => sum + Number(spec.total_amount ?? 0), 0),
@@ -221,5 +271,5 @@ export async function GET(req: NextRequest) {
     weekStart,
     recentRangeStart,
     today,
-  })
+  }, { headers: { 'Cache-Control': 'no-store' } })
 }

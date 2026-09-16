@@ -46,13 +46,30 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: `품목 조회 실패: ${productError.message}` }, { status: 500 })
   }
 
-  const productIds = (productRows ?? []).map(row => row.product_id)
+  let productIds = (productRows ?? []).map(row => row.product_id)
+  if (!productIds.length) {
+    const { data: active, error } = await db.from('products').select('id').eq('status', 'active')
+    if (error) return NextResponse.json({ error: '품목 조회 실패' }, { status: 500 })
+    productIds = (active ?? []).map(p => p.id)
+  }
+  const { data: masters, error: masterError } = await db.from('products')
+    .select('id, default_unit, allowed_units').in('id', productIds)
+  if (masterError) return NextResponse.json({ error: '단위 정보를 불러오지 못했습니다.' }, { status: 500 })
   const { priceMap } = await buildPriceMapByProduct(
     db,
     productIds,
     businessDate!,
     restaurant.organization_id,
+    Object.fromEntries((masters ?? []).map(p => [p.id, p.default_unit])),
   )
 
-  return NextResponse.json({ prices: priceMap })
+  const multi = (masters ?? []).filter(p => new Set([p.default_unit, ...(p.allowed_units ?? [])]).size > 1)
+  const unitPrices: Record<string, number> = {}
+  for (const unit of new Set(multi.flatMap(p => [p.default_unit, ...(p.allowed_units ?? [])]))) {
+    const ids = multi.filter(p => [p.default_unit, ...(p.allowed_units ?? [])].includes(unit)).map(p => p.id)
+    const { priceMap: byUnit } = await buildPriceMapByProduct(db, ids, businessDate!, restaurant.organization_id,
+      Object.fromEntries(ids.map(id => [id, unit])))
+    for (const id of ids) if (byUnit[id] !== undefined) unitPrices[`${id}:${unit}`] = byUnit[id]
+  }
+  return NextResponse.json({ prices: priceMap, unitPrices })
 }

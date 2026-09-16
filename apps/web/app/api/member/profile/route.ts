@@ -3,10 +3,26 @@ export const runtime = 'edge'
 import { NextRequest, NextResponse } from 'next/server'
 
 import { createAdminClient } from '@/lib/supabase/admin'
-import { getSessionUser } from '@/lib/supabase/server'
+import { getMemberSession } from '@/lib/member-session'
+
+export async function GET(req: NextRequest) {
+  const { user, supabase: db } = await getMemberSession(req)
+  if (!user) return NextResponse.json({ error: '로그인이 필요합니다.' }, { status: 401 })
+  const { data: membership, error } = await db.from('memberships').select('organization_id').eq('user_id', user.id).maybeSingle()
+  if (error || !membership) return NextResponse.json({ error: '업체 정보를 확인할 수 없습니다.' }, { status: 403 })
+  const [org, contact, restaurant] = await Promise.all([
+    db.from('organizations').select('id, name').eq('id', membership.organization_id).single(),
+    db.from('contacts').select('name, phone').eq('organization_id', membership.organization_id).eq('is_primary', true).maybeSingle(),
+    db.from('restaurants').select('id, biz_no').eq('organization_id', membership.organization_id).maybeSingle(),
+  ])
+  if (org.error || contact.error || restaurant.error) return NextResponse.json({ error: '회원정보 조회 실패' }, { status: 500 })
+  return NextResponse.json({ organizationId: org.data.id, name: org.data.name, email: user.email,
+    contactName: contact.data?.name ?? '', phone: contact.data?.phone ?? '',
+    restaurantId: restaurant.data?.id ?? null, bizNo: restaurant.data?.biz_no ?? '' }, { headers: { 'Cache-Control': 'no-store' } })
+}
 
 export async function PUT(req: NextRequest) {
-  const { user, supabase } = await getSessionUser()
+  const { user, supabase } = await getMemberSession(req)
   if (!user) return NextResponse.json({ error: '로그인이 필요합니다.' }, { status: 401 })
 
   const body = await req.json() as {
@@ -39,6 +55,11 @@ export async function PUT(req: NextRequest) {
   if (!name) return NextResponse.json({ error: '업체명을 입력해주세요.' }, { status: 400 })
 
   const db = createAdminClient()
+  // Validate restaurant ownership before the first write, not after updating the org.
+  if (body.restaurantId) {
+    const { data: owned, error } = await db.from('restaurants').select('id').eq('id', body.restaurantId).eq('organization_id', orgId).maybeSingle()
+    if (error || !owned) return NextResponse.json({ error: '식당 정보를 확인할 수 없습니다.' }, { status: 403 })
+  }
   const { error: orgError } = await db.from('organizations').update({ name }).eq('id', orgId)
   if (orgError) return NextResponse.json({ error: `업체명 수정 실패: ${orgError.message}` }, { status: 500 })
 

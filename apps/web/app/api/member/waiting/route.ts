@@ -3,7 +3,7 @@ export const runtime = 'edge'
 import { NextRequest, NextResponse } from 'next/server'
 
 import { createAdminClient } from '@/lib/supabase/admin'
-import { getSessionUser } from '@/lib/supabase/server'
+import { getMemberSession } from '@/lib/member-session'
 import { createWaitingClient } from '@/lib/waiting-db'
 import { sendSms } from '@/lib/messaging/kakao'
 
@@ -42,7 +42,7 @@ async function getMemberRestaurant(userId: string) {
 }
 
 export async function GET(req: NextRequest) {
-  const { user } = await getSessionUser()
+  const { user } = await getMemberSession(req)
   if (!user) return NextResponse.json({ error: '로그인이 필요합니다.' }, { status: 401 })
 
   const restaurant = await getMemberRestaurant(user.id)
@@ -72,7 +72,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
-  const { user } = await getSessionUser()
+  const { user } = await getMemberSession(req)
   if (!user) return NextResponse.json({ error: '로그인이 필요합니다.' }, { status: 401 })
 
   const restaurant = await getMemberRestaurant(user.id)

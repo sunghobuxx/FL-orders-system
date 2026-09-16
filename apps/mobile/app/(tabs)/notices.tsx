@@ -11,8 +11,8 @@ import {
 import { router, useFocusEffect } from 'expo-router'
 
 import { supabase } from '@/lib/supabase'
+import { useNotices } from '@/hooks/use-notices'
 
-type Notice = { id: string; title: string; created_at: string }
 type Inquiry = { id: string; title: string; status: string; created_at: string }
 
 function dateText(value: string) {
@@ -21,29 +21,22 @@ function dateText(value: string) {
 
 export default function NoticesScreen() {
   const [tab, setTab] = useState<'notices' | 'inquiries'>('notices')
-  const [notices, setNotices] = useState<Notice[]>([])
+  const { notices, error: noticeError, refresh: fetchNotices } = useNotices()
   const [inquiries, setInquiries] = useState<Inquiry[]>([])
+  const [inquiryError, setInquiryError] = useState('')
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
 
-  const fetchNotices = useCallback(async () => {
-    const { data, error } = await supabase
-      .from('notices')
-      .select('id, title, created_at')
-      .order('created_at', { ascending: false })
-    if (error) console.error('Failed to load notices:', error)
-    setNotices((data ?? []) as Notice[])
-  }, [])
-
   const fetchInquiries = useCallback(async (organizationId?: string | null) => {
-    if (!organizationId) return
+    if (!organizationId) throw new Error('업체 정보를 확인하지 못했습니다.')
     const { data, error } = await supabase
       .from('inquiries')
       .select('id, title, status, created_at')
       .eq('organization_id', organizationId)
       .order('created_at', { ascending: false })
-    if (error) console.error('Failed to load inquiries:', error)
+    if (error) throw new Error('문의 내역을 불러오지 못했습니다.')
     setInquiries((data ?? []) as Inquiry[])
+    setInquiryError('')
   }, [])
 
   const getOrganizationId = useCallback(async () => {
@@ -58,8 +51,10 @@ export default function NoticesScreen() {
   }, [])
 
   const init = useCallback(async () => {
-    const organizationId = await getOrganizationId()
-    await Promise.all([fetchNotices(), fetchInquiries(organizationId)])
+    try {
+      const organizationId = await getOrganizationId()
+      await Promise.all([fetchNotices(), fetchInquiries(organizationId)])
+    } catch (error) { setInquiryError(error instanceof Error ? error.message : '조회에 실패했습니다.') }
   }, [fetchInquiries, fetchNotices, getOrganizationId])
 
   const onRefresh = useCallback(async () => {
@@ -100,7 +95,8 @@ export default function NoticesScreen() {
           keyExtractor={(item) => item.id}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#16a34a" />}
           contentContainerStyle={s.list}
-          ListEmptyComponent={<Text style={s.empty}>공지사항이 없습니다.</Text>}
+          ListHeaderComponent={noticeError ? <TouchableOpacity onPress={() => void fetchNotices()}><Text style={s.empty}>{noticeError} · 다시 시도</Text></TouchableOpacity> : null}
+          ListEmptyComponent={!noticeError ? <Text style={s.empty}>공지사항이 없습니다.</Text> : null}
           renderItem={({ item }) => (
             <TouchableOpacity style={s.card} onPress={() => router.push(`/notice/${item.id}` as never)}>
               <Text style={s.title} numberOfLines={2}>{item.title}</Text>
@@ -124,7 +120,7 @@ export default function NoticesScreen() {
               <Text style={s.writeBtnText}>+ 문의 작성</Text>
             </TouchableOpacity>
           )}
-          ListEmptyComponent={<Text style={s.empty}>등록된 문의가 없습니다.</Text>}
+          ListEmptyComponent={<Text style={s.empty}>{inquiryError ? `${inquiryError} 아래로 당겨 다시 조회해주세요.` : '등록된 문의가 없습니다.'}</Text>}
           renderItem={({ item }) => (
             <TouchableOpacity style={s.card} onPress={() => router.push(`/inquiry/${item.id}` as never)}>
               <Text style={s.title} numberOfLines={2}>{item.title}</Text>

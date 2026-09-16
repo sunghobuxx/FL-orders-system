@@ -6,6 +6,7 @@ import {
 import { router } from 'expo-router'
 
 import { supabase } from '@/lib/supabase'
+import { memberRequest } from '@/lib/member-api'
 
 type Organization = {
   id: string
@@ -22,55 +23,36 @@ export default function ProfileScreen() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [organizationId, setOrganizationId] = useState('')
+  const [restaurantId, setRestaurantId] = useState<string | null>(null)
   const [email, setEmail] = useState('')
   const [name, setName] = useState('')
   const [contactName, setContactName] = useState('')
   const [phone, setPhone] = useState('')
-  const [mobile, setMobile] = useState('')
-  const [address, setAddress] = useState('')
   const [bizNo, setBizNo] = useState('')
-  const [invoiceEmail, setInvoiceEmail] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [changingPassword, setChangingPassword] = useState(false)
 
   const load = useCallback(async () => {
-    const { data: { session } } = await supabase.auth.getSession()
-    if (!session) { router.replace('/login'); return }
-    setEmail(session.user.email ?? '')
-    const { data: membership } = await supabase
-      .from('memberships').select('organization_id').eq('user_id', session.user.id).single()
-    if (!membership?.organization_id) { setLoading(false); return }
-    const { data } = await supabase
-      .from('organizations')
-      .select('id, name, contact_name, phone, mobile, address, biz_no, invoice_email')
-      .eq('id', membership.organization_id)
-      .single()
-    const org = data as Organization | null
-    if (org) {
-      setOrganizationId(org.id)
-      setName(org.name ?? '')
-      setContactName(org.contact_name ?? '')
-      setPhone(org.phone ?? '')
-      setMobile(org.mobile ?? '')
-      setAddress(org.address ?? '')
-      setBizNo(org.biz_no ?? '')
-      setInvoiceEmail(org.invoice_email ?? '')
-    }
-    setLoading(false)
+    try {
+      const data = await memberRequest<{ organizationId: string; restaurantId: string | null; email: string; name: string; contactName: string; phone: string; bizNo: string }>('/profile')
+      setOrganizationId(data.organizationId); setRestaurantId(data.restaurantId)
+      setEmail(data.email); setName(data.name); setContactName(data.contactName); setPhone(data.phone); setBizNo(data.bizNo)
+    } catch (error) { Alert.alert('조회 실패', error instanceof Error ? error.message : '회원정보 조회 실패') }
+    finally { setLoading(false) }
   }, [])
+
 
   useEffect(() => { void load() }, [load])
 
   async function handleSave() {
     if (!organizationId) return
     setSaving(true)
-    const { error } = await supabase.from('organizations').update({
-      name, contact_name: contactName, phone, mobile, address,
-      biz_no: bizNo, invoice_email: invoiceEmail,
-    }).eq('id', organizationId)
-    setSaving(false)
-    Alert.alert(error ? '저장 실패' : '저장 완료', error ? '정보 저장 중 오류가 발생했습니다.' : '업체 정보가 업데이트되었습니다.')
+    try {
+      await memberRequest('/profile', { method: 'PUT', body: JSON.stringify({ orgId: organizationId, restaurantId, name, contact_name: contactName, phone, biz_no: bizNo }) })
+      Alert.alert('저장 완료', '업체 정보가 업데이트되었습니다.')
+    } catch (error) { Alert.alert('저장 실패', error instanceof Error ? error.message : '정보 저장 실패') }
+    finally { setSaving(false) }
   }
 
   async function handlePasswordChange() {
@@ -97,16 +79,14 @@ export default function ProfileScreen() {
     <KeyboardAvoidingView style={s.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView style={s.scroll} contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
         <Text style={s.pageTitle}>내 정보</Text>
+        {!organizationId && <TouchableOpacity onPress={() => void load()}><Text>회원정보를 불러오지 못했습니다. 다시 조회</Text></TouchableOpacity>}
         <View style={s.section}>
           <Text style={s.sectionTitle}>업체 정보</Text>
           <Field label="로그인 이메일" value={email} editable={false} />
           <Field label="업체명" value={name} onChangeText={setName} />
           <Field label="담당자명" value={contactName} onChangeText={setContactName} />
           <Field label="연락처" value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
-          <Field label="휴대폰" value={mobile} onChangeText={setMobile} keyboardType="phone-pad" />
-          <Field label="주소" value={address} onChangeText={setAddress} />
           <Field label="사업자번호" value={bizNo} onChangeText={setBizNo} keyboardType="numeric" />
-          <Field label="계산서 이메일" value={invoiceEmail} onChangeText={setInvoiceEmail} keyboardType="email-address" autoCapitalize="none" />
           <TouchableOpacity style={s.primaryBtn} onPress={() => void handleSave()} disabled={saving}><Text style={s.primaryText}>{saving ? '저장 중...' : '정보 저장'}</Text></TouchableOpacity>
         </View>
         <View style={s.section}>

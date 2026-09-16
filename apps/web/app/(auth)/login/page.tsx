@@ -5,6 +5,7 @@ export const runtime = 'edge'
 import { useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { mobilePaymentReturn } from '@/lib/mobile-payment-return'
 
 export default function LoginPage() {
   const searchParams = useSearchParams()
@@ -46,7 +47,7 @@ export default function LoginPage() {
                (org as { organization_type: string } | null)?.organization_type === 'operator'
       })
 
-      window.location.href = isAdmin ? '/admin/dashboard' : '/member/dashboard'
+      window.location.href = isAdmin ? '/admin/dashboard' : mobilePaymentReturn(searchParams.get('next')) ?? '/member/dashboard'
     } catch (err) {
       console.error('login error:', err)
       setError('로그인 중 오류가 발생했습니다. 다시 시도해주세요.')
