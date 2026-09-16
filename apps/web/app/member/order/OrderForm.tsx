@@ -7,16 +7,11 @@ import Link from 'next/link'
 
 import { toPackQty } from '@/lib/products/pack-size'
 import { unitLabel } from '@/lib/units'
+import {
+  CATEGORY_EMOJI, CATEGORY_LABELS, CATEGORY_ORDER, normalizeCategory,
+} from '@/lib/products/categories'
 
-const CATEGORY_LABELS: Record<string, string> = {
-  vegetable: '채소', fruit: '과일', meat: '육류', seafood: '수산',
-  grain: '곡류', dairy: '유제품', seasoning: '양념', etc: '기타',
-}
-const CATEGORY_EMOJI: Record<string, string> = {
-  vegetable: '🥬', fruit: '🍎', meat: '🥩', seafood: '🐟',
-  grain: '🌾', dairy: '🥛', seasoning: '🧄', etc: '📦',
-}
-const CATEGORY_ORDER = ['vegetable', 'fruit', 'grain', 'meat', 'seafood', 'dairy', 'seasoning', 'etc']
+
 
 type Product = {
   id: string
@@ -105,11 +100,14 @@ export default function OrderForm({ restaurantId, businessDate, batchId, orderId
   /** 포장 단위로 바꾼 줄에 붙는 안내 — "15kg = 1포로 바꿨습니다" */
   const [packNotice, setPackNotice] = useState<Record<string, string>>({})
 
-  const availableCategories = CATEGORY_ORDER.filter(cat => products.some(p => p.category === cat))
+  // 분류는 normalizeCategory 로 읽는다. 옛 값(meat·dairy·etc)이 남아 있어도,
+  // 모르는 값이 들어와도 품목이 화면에서 사라지지 않게 한다.
+  const catOf = (p: Product) => normalizeCategory(p.category)
+  const availableCategories = CATEGORY_ORDER.filter(cat => products.some(p => catOf(p) === cat))
   const [selectedCategory, setSelectedCategory] = useState(availableCategories[0] ?? 'vegetable')
 
   const byCategory = availableCategories.reduce<Record<string, Product[]>>((acc, cat) => {
-    acc[cat] = products.filter(p => p.category === cat)
+    acc[cat] = products.filter(p => catOf(p) === cat)
     return acc
   }, {})
 

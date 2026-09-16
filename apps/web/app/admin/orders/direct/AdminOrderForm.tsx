@@ -1,6 +1,8 @@
 'use client'
 
 import { useState, useTransition } from 'react'
+import { CATEGORY_LABELS as CATEGORY_LABEL } from '@/lib/products/categories'
+import { CATEGORY_EMOJI, CATEGORY_ORDER, normalizeCategory } from '@/lib/products/categories'
 import { useRouter } from 'next/navigation'
 
 interface Product {
@@ -39,15 +41,6 @@ interface Props {
   existingItems: ExistingItem[]
 }
 
-const CATEGORY_LABEL: Record<string, string> = {
-  vegetable: '채소', fruit: '과일', meat: '육류', seafood: '수산',
-  grain: '곡류', dairy: '유제품', seasoning: '양념', etc: '기타',
-}
-const CATEGORY_EMOJI: Record<string, string> = {
-  vegetable: '🥬', fruit: '🍎', meat: '🥩', seafood: '🐟',
-  grain: '🌾', dairy: '🥛', seasoning: '🧄', etc: '📦',
-}
-const CATEGORY_ORDER = ['vegetable', 'fruit', 'grain', 'meat', 'seafood', 'dairy', 'seasoning', 'etc']
 
 export default function AdminOrderForm({
   selectedRestaurantId, businessDate,
@@ -76,11 +69,12 @@ export default function AdminOrderForm({
     return init
   })
 
-  const categories = CATEGORY_ORDER.filter(cat => products.some(p => p.category === cat))
+  const catOf = (p: { category: string }) => normalizeCategory(p.category)
+  const categories = CATEGORY_ORDER.filter(cat => products.some(p => catOf(p) === cat))
   const [activeCategory, setActiveCategory] = useState(categories[0] ?? 'vegetable')
 
   const productsByCategory = categories.reduce<Record<string, Product[]>>((acc, cat) => {
-    acc[cat] = products.filter(p => p.category === cat)
+    acc[cat] = products.filter(p => catOf(p) === cat)
     return acc
   }, {})
 

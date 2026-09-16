@@ -1,18 +1,9 @@
 'use client'
 
 import Link from 'next/link'
+import { CATEGORY_LABELS as CATEGORY_LABEL } from '@/lib/products/categories'
 import { useState } from 'react'
 
-const CATEGORY_LABEL: Record<string, string> = {
-  vegetable: '채소',
-  fruit: '과일',
-  meat: '육류',
-  seafood: '수산',
-  grain: '곡류',
-  dairy: '유제품',
-  seasoning: '양념',
-  etc: '기타',
-}
 
 interface Props {
   categoryCounts: Record<string, number>

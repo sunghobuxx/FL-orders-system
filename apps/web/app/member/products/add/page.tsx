@@ -1,6 +1,7 @@
 export const runtime = 'edge'
 
 import { redirect } from 'next/navigation'
+import { CATEGORY_LABELS as CATEGORY_LABEL } from '@/lib/products/categories'
 
 import { getSessionUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -24,10 +25,6 @@ interface Props {
   searchParams: Promise<{ category?: string }>
 }
 
-const CATEGORY_LABEL: Record<string, string> = {
-  vegetable: '채소', fruit: '과일', meat: '육류', seafood: '수산',
-  grain: '곡류', dairy: '유제품', seasoning: '양념', etc: '기타',
-}
 
 export default async function MemberAddProductPage({ searchParams }: Props) {
   const { category: categoryParam } = await searchParams

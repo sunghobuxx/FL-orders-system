@@ -10,8 +10,10 @@ import { getAdminSession } from '@/lib/admin-member-user'
  * seasoning 은 etc- 로 붙은 게 22개로 가장 많아 etc 로 맞춘다(veg 6, sea 2).
  */
 const SKU_PREFIX: Record<string, string> = {
-  vegetable: 'veg', fruit: 'frt', meat: 'met', seafood: 'sea',
-  grain: 'grn', dairy: 'dry', seasoning: 'etc', etc: 'etc',
+  vegetable: 'veg', fruit: 'frt', livestock: 'liv', seafood: 'sea',
+  grain: 'grn', seasoning: 'etc', frozen: 'frz', misc: 'etc', supply: 'sup',
+  // 전환 중에만 남는 옛 값
+  meat: 'met', dairy: 'dry', etc: 'etc',
 }
 
 /**

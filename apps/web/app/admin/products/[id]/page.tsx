@@ -27,7 +27,7 @@ export default async function AdminProductEditPage({ params }: Props) {
     { data: allOrgRows },
   ] = await Promise.all([
     db.from('products')
-      .select('id, standard_name, category, default_unit, sku, taxable_flag, is_kg_based, is_fixed_price, status, allowed_units, image_path, pack_unit, kg_per_pack')
+      .select('id, standard_name, category, default_unit, sku, taxable_flag, is_kg_based, is_fixed_price, status, allowed_units, subcategory, image_path, pack_unit, kg_per_pack')
       .eq('id', id)
       .single(),
     db.from('supplier_products')

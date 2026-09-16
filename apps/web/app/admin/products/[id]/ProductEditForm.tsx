@@ -1,19 +1,11 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
+import { PRODUCT_CATEGORIES, SUBCATEGORIES, normalizeCategory } from '@/lib/products/categories'
 import { useState } from 'react'
 import { UNITS, unitLabel } from '@/lib/units'
 
-const CATEGORIES = [
-  { value: 'vegetable', label: '채소' },
-  { value: 'fruit', label: '과일' },
-  { value: 'meat', label: '육류' },
-  { value: 'seafood', label: '수산' },
-  { value: 'grain', label: '곡류' },
-  { value: 'dairy', label: '유제품' },
-  { value: 'seasoning', label: '양념/조미료' },
-  { value: 'etc', label: '기타' },
-]
+const CATEGORIES = PRODUCT_CATEGORIES.map(c => ({ value: c.code, label: c.label }))
 
 interface Product {
   id: string
@@ -26,6 +18,7 @@ interface Product {
   is_fixed_price: boolean | null
   status: string | null
   allowed_units: string[] | null
+  subcategory: string | null
   pack_unit: string | null
   kg_per_pack: number | null
 }
@@ -41,6 +34,7 @@ function FieldLabel({ text, required }: { text: string; required?: boolean }) {
 export default function ProductEditForm({ product }: { product: Product }) {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
+  const [cat, setCat] = useState(normalizeCategory(product.category))
   const [error, setError] = useState('')
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -49,13 +43,17 @@ export default function ProductEditForm({ product }: { product: Product }) {
     setLoading(true)
     const d = new FormData(e.currentTarget)
     const allowed_units = d.getAll('allowed_units') as string[]
+    const category = String(d.get('category') ?? '')
     try {
       const res = await fetch(`/api/admin/products/${product.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           standard_name: d.get('standard_name'),
-          category: d.get('category'),
+          category,
+          // 대분류가 바뀌면 그 대분류에 없는 소분류는 버린다
+          subcategory: (SUBCATEGORIES[category] ?? []).includes(String(d.get('subcategory') ?? ''))
+            ? d.get('subcategory') : null,
           default_unit: d.get('default_unit'),
           sku: d.get('sku') || null,
           allowed_units,
@@ -106,12 +104,26 @@ export default function ProductEditForm({ product }: { product: Product }) {
       <div>
         <FieldLabel text="카테고리" required />
         <select
-          name="category" required defaultValue={product.category ?? ''}
+          name="category" value={cat} onChange={e => setCat(e.target.value)} required
           className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
         >
           <option value="">선택하세요</option>
           {CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
         </select>
+      </div>
+
+      <div>
+        <FieldLabel text="소분류" />
+        <select
+          name="subcategory" defaultValue={product.subcategory ?? ''}
+          className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+        >
+          <option value="">선택 안 함</option>
+          {(SUBCATEGORIES[cat] ?? []).map(sc => <option key={sc} value={sc}>{sc}</option>)}
+        </select>
+        <p className="mt-1 text-xs text-gray-400">
+          대분류는 고정입니다. 새로 다루는 품목은 소분류로 받습니다.
+        </p>
       </div>
 
       <div>

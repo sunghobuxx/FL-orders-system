@@ -1,6 +1,7 @@
 export const runtime = 'edge'
 
 import Link from 'next/link'
+import { CATEGORY_LABELS as CATEGORY_LABEL } from '@/lib/products/categories'
 import { createAdminClient } from '@/lib/supabase/admin'
 import CategoryFilter from './CategoryFilter'
 
@@ -15,16 +16,6 @@ type ProductRow = {
   image_path: string | null
 }
 
-const CATEGORY_LABEL: Record<string, string> = {
-  vegetable: '채소',
-  fruit: '과일',
-  meat: '육류',
-  seafood: '수산',
-  grain: '곡류',
-  dairy: '유제품',
-  seasoning: '양념',
-  etc: '기타',
-}
 
 interface Props {
   searchParams: Promise<{ category?: string; inactive?: string }>

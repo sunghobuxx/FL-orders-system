@@ -47,7 +47,7 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
   try {
     const { id } = await context.params
     const body = await req.json()
-    const { standard_name, category, default_unit, sku, taxable_flag, is_kg_based, is_fixed_price, status, allowed_units, pack_unit, kg_per_pack } = body
+    const { standard_name, category, default_unit, sku, taxable_flag, is_kg_based, is_fixed_price, status, allowed_units, subcategory, pack_unit, kg_per_pack } = body
 
     if (!standard_name?.trim()) return NextResponse.json({ error: '품목명을 입력하세요' }, { status: 400 })
     if (!category) return NextResponse.json({ error: '카테고리를 선택하세요' }, { status: 400 })
@@ -67,6 +67,8 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
       default_unit,
       sku: sku?.trim() || null,
       allowed_units: allowed_units ?? [],
+      // 소분류는 안 고를 수 있다. 빈 값이면 비운다.
+      subcategory: subcategory || null,
       taxable_flag: taxable_flag ?? true,
       is_kg_based: is_kg_based ?? false,
       is_fixed_price: is_fixed_price ?? true,

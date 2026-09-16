@@ -5,17 +5,9 @@ export const runtime = 'edge'
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 import { UNITS, unitLabel } from '@/lib/units'
+import { PRODUCT_CATEGORIES } from '@/lib/products/categories'
 
-const CATEGORIES = [
-  { value: 'vegetable', label: '채소' },
-  { value: 'fruit', label: '과일' },
-  { value: 'meat', label: '육류' },
-  { value: 'seafood', label: '수산' },
-  { value: 'grain', label: '곡류' },
-  { value: 'dairy', label: '유제품' },
-  { value: 'seasoning', label: '양념/조미료' },
-  { value: 'etc', label: '기타' },
-]
+const CATEGORIES = PRODUCT_CATEGORIES.map(c => ({ value: c.code, label: c.label }))
 
 function FieldWrapper({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
   return (
