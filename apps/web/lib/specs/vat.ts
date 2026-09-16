@@ -39,3 +39,18 @@ export function splitVat(taxable: boolean, qty: number, enteredUnitPrice: number
   const vat = gross - Math.round(qty * unitPrice)
   return { unitPrice, vat, gross }
 }
+
+/**
+ * 저장된 줄에서 **사장님이 넣은 단가**(부가세 포함)를 되살린다.
+ *
+ * 저장은 `unit_price`(공급가) + `vat_amount` 로 나뉘어 들어간다. 화면이 `unit_price` 를
+ * 그대로 보여주고 그 값을 다시 저장하면, 서버가 그것을 또 "부가세 포함" 으로 보고 나눠서
+ * **누를 때마다 10% 씩 깎인다.** 2026-09-16 바닷가아구찜 오뎅이 32,000 → 29,092 로 줄었다.
+ * 화면은 항상 이 함수로 되살린 값을 보여준다.
+ */
+export function grossUnitPrice(unitPrice: number, vatAmount: number, qty: number): number {
+  const vat = Number(vatAmount ?? 0)
+  const q = Number(qty ?? 0)
+  if (!vat || q <= 0) return Math.round(Number(unitPrice ?? 0))
+  return Math.round(Number(unitPrice ?? 0) + vat / q)
+}

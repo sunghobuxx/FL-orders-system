@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { splitVat } from '@/lib/specs/vat'
+import { grossUnitPrice, splitVat } from '@/lib/specs/vat'
 
 interface Line {
   id: string
@@ -22,14 +22,19 @@ export default function SpecEditPanel({ specId, lines }: { specId: string; lines
   const [editQtys, setEditQtys] = useState<Record<string, string>>(
     Object.fromEntries(lines.map(l => [l.id, String(l.qty)]))
   )
+  /**
+   * 화면에는 **사장님이 넣은 단가(부가세 포함)** 를 보여준다.
+   * 저장된 `unit_price` 는 공급가라, 그대로 보여주고 다시 저장하면 또 나눠져 10% 씩 깎인다.
+   */
+  const priceOf = (l: Line) => String(grossUnitPrice(l.unit_price, l.vat_amount, l.qty))
   const [editPrices, setEditPrices] = useState<Record<string, string>>(
-    Object.fromEntries(lines.map(l => [l.id, String(l.unit_price)]))
+    Object.fromEntries(lines.map(l => [l.id, priceOf(l)]))
   )
 
-  const linesKey = lines.map(l => `${l.id}:${l.qty}:${l.unit_price}`).join('|')
+  const linesKey = lines.map(l => `${l.id}:${l.qty}:${l.unit_price}:${l.vat_amount}`).join('|')
   useEffect(() => {
     setEditQtys(Object.fromEntries(lines.map(l => [l.id, String(l.qty)])))
-    setEditPrices(Object.fromEntries(lines.map(l => [l.id, String(l.unit_price)])))
+    setEditPrices(Object.fromEntries(lines.map(l => [l.id, priceOf(l)])))
     setSaveMsg('')
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [linesKey])
@@ -38,7 +43,7 @@ export default function SpecEditPanel({ specId, lines }: { specId: string; lines
 
   function calcAmount(lineId: string, line: Line) {
     const qty = parseFloat(editQtys[lineId] ?? String(line.qty)) || 0
-    const price = parseInt(editPrices[lineId] ?? String(line.unit_price), 10) || 0
+    const price = parseInt(editPrices[lineId] ?? priceOf(line), 10) || 0
     // 넣은 단가는 부가세 포함이다. 위에 10% 를 얹으면 화면 금액이 실제 청구액보다 커진다.
     return splitVat(Boolean(line.taxable_flag), qty, price).gross
   }
@@ -52,7 +57,7 @@ export default function SpecEditPanel({ specId, lines }: { specId: string; lines
       const updatedLines = lines.map(l => ({
         id: l.id,
         qty: parseFloat(editQtys[l.id] ?? String(l.qty)) || l.qty,
-        unit_price: parseInt(editPrices[l.id] ?? String(l.unit_price), 10) || 0,
+        unit_price: parseInt(editPrices[l.id] ?? priceOf(l), 10) || 0,
       }))
       const res = await fetch('/api/admin/settlement/update-spec-line', {
         method: 'POST',
@@ -105,7 +110,7 @@ export default function SpecEditPanel({ specId, lines }: { specId: string; lines
               </div>
               <input
                 type="number"
-                value={editPrices[line.id] ?? line.unit_price}
+                value={editPrices[line.id] ?? priceOf(line)}
                 onChange={e => setEditPrices(prev => ({ ...prev, [line.id]: e.target.value }))}
                 min="0"
                 step="100"

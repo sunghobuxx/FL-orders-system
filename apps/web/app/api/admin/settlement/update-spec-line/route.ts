@@ -73,6 +73,12 @@ export async function POST(req: NextRequest) {
       .from('products').select('id, taxable_flag').in('id', productIds)
     const taxableMap = Object.fromEntries((productRows ?? []).map(p => [p.id, p.taxable_flag ?? false]))
 
+    // 저장 확인용 — 줄마다 **실제로 저장하려는 공급가**를 적어 둔다.
+    // 예전에는 되읽은 값을 화면이 보낸 단가와 비교했다. 과세 품목은 공급가로 저장되니
+    // 절대 같아질 수 없어, 과세 품목이 한 줄이라도 있으면 늘 「저장 실패」가 났다
+    // (2026-09-16 바닷가아구찜 오뎅). 게다가 실패를 알리기 전에 저장은 이미 끝나 있었다.
+    const expectedPrice = new Map<string, number>()
+
     // 3) 각 라인: daily_spec_lines 갱신 + 매칭 order_items 도 갱신
     for (const upd of lines) {
       if (upd.qty <= 0) continue
@@ -82,6 +88,7 @@ export async function POST(req: NextRequest) {
       const isTaxable = taxableMap[meta.product_id] ?? false
       // 손으로 넣는 단가도 부가세 포함 금액이다. 위에 얹지 않고 그 안에서 나눈다.
       const split = splitVat(isTaxable, upd.qty, upd.unit_price)
+      expectedPrice.set(upd.id, split.unitPrice)
 
       // amount는 generated column (qty * unit_price 자동계산) → 직접 업데이트 불가
       const { error: lineError } = await db
@@ -113,7 +120,9 @@ export async function POST(req: NextRequest) {
 
     const savedPriceById = new Map((savedLines ?? []).map(line => [line.id, Number(line.unit_price)]))
     for (const line of lines) {
-      if (savedPriceById.get(line.id) !== Number(line.unit_price)) {
+      const expected = expectedPrice.get(line.id)
+      if (expected === undefined) continue
+      if (savedPriceById.get(line.id) !== expected) {
         throw new Error('단가 저장 확인 실패')
       }
     }
