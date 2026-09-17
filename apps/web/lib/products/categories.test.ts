@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { CATEGORY_ORDER, categoryLabel, normalizeCategory, SUBCATEGORIES } from './categories'
+import { CATEGORY_ORDER, categoryLabel, groupBySubcategory, normalizeCategory, SUBCATEGORIES } from './categories'
 
 describe('normalizeCategory — 옛 분류값도 읽힌다', () => {
   it('육류·유제품은 축산으로 합친다', () => {
@@ -36,5 +36,31 @@ describe('분류 목록', () => {
 
   it('소분류는 대분류마다 있다', () => {
     for (const c of CATEGORY_ORDER) expect(SUBCATEGORIES[c].length).toBeGreaterThan(0)
+  })
+})
+
+describe('groupBySubcategory — 대분류 안에서 소분류로 묶는다', () => {
+  const P = (name: string, subcategory: string | null) => ({ name, subcategory })
+
+  it('소분류 정해진 순서대로 묶는다', () => {
+    const g = groupBySubcategory('vegetable', [
+      P('무', '근채류'), P('깻잎', '엽채류'), P('팽이', '버섯류'), P('대파', '근채류'),
+    ])
+    expect(g.map(x => x.subcategory)).toEqual(['엽채류', '근채류', '버섯류'])
+    expect(g[1].items.map(i => i.name)).toEqual(['무', '대파'])
+  })
+
+  it('소분류가 없거나 모르는 값이면 맨 뒤 「기타」로 모은다', () => {
+    const g = groupBySubcategory('vegetable', [P('깻잎', '엽채류'), P('???', null), P('신품목', '없는분류')])
+    expect(g.map(x => x.subcategory)).toEqual(['엽채류', '기타'])
+    expect(g[1].items).toHaveLength(2)
+  })
+
+  it('한 소분류뿐이면 묶음 하나', () => {
+    expect(groupBySubcategory('fruit', [P('사과', '과일'), P('배', '과일')])).toHaveLength(1)
+  })
+
+  it('빈 목록은 빈 결과', () => {
+    expect(groupBySubcategory('vegetable', [])).toEqual([])
   })
 })

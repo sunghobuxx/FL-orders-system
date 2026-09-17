@@ -63,3 +63,25 @@ export const SUBCATEGORIES: Record<string, string[]> = {
   misc: ['음료·커피', '기타'],
   supply: ['위생장갑', '종이·포장', '청소·세척', '기타 소모품'],
 }
+
+/**
+ * 대분류 안에서 소분류로 묶는다. 발주 화면에서 품목이 많을 때(야채 77개) 찾기 쉬우라고 쓴다.
+ *
+ * 소분류 순서는 `SUBCATEGORIES` 순서를 따른다. 소분류가 없거나 목록에 없는 값이면
+ * **맨 뒤 「기타」로 모은다** — 빠뜨려서 화면에서 사라지는 일이 없어야 한다.
+ */
+export function groupBySubcategory<T extends { subcategory?: string | null }>(
+  category: string,
+  items: T[],
+): Array<{ subcategory: string; items: T[] }> {
+  const order = SUBCATEGORIES[normalizeCategory(category)] ?? []
+  const buckets = new Map<string, T[]>()
+  for (const item of items) {
+    const sub = item.subcategory && order.includes(item.subcategory) ? item.subcategory : '기타'
+    const bucket = buckets.get(sub)
+    if (bucket) bucket.push(item)
+    else buckets.set(sub, [item])
+  }
+  const sorted = [...order.filter(s => buckets.has(s)), ...(buckets.has('기타') ? ['기타'] : [])]
+  return sorted.map(subcategory => ({ subcategory, items: buckets.get(subcategory)! }))
+}

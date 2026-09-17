@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react'
 import { CATEGORY_LABELS as CATEGORY_LABEL } from '@/lib/products/categories'
-import { CATEGORY_EMOJI, CATEGORY_ORDER, normalizeCategory } from '@/lib/products/categories'
+import { CATEGORY_EMOJI, CATEGORY_ORDER, groupBySubcategory, normalizeCategory } from '@/lib/products/categories'
 import { useRouter } from 'next/navigation'
 
 interface Product {
@@ -13,6 +13,7 @@ interface Product {
   is_kg_based: boolean
   image_path: string | null
   category: string
+  subcategory: string | null
 }
 
 interface PriceData {
@@ -198,7 +199,14 @@ export default function AdminOrderForm({
           {currentProducts.length === 0 ? (
             <div className="px-4 py-8 text-center text-sm text-gray-400">이 카테고리에 품목이 없습니다</div>
           ) : (
-            currentProducts.map(product => {
+            groupBySubcategory(activeCategory, currentProducts).map(group => (
+            <div key={group.subcategory}>
+              <div className="sticky top-0 z-10 flex items-center justify-between bg-gray-50 px-4 py-1.5 border-b border-gray-200">
+                <span className="text-xs font-bold text-gray-600">{group.subcategory}</span>
+                <span className="text-xs text-gray-400">{group.items.length}개</span>
+              </div>
+              <div className="divide-y divide-gray-100">
+            {group.items.map(product => {
               const qty = qtys[product.id] ?? ''
               const isOrdered = parseFloat(qty) > 0
               const allUnits = [...new Set([product.default_unit, ...(product.allowed_units ?? [])])].filter(Boolean)
@@ -269,7 +277,10 @@ export default function AdminOrderForm({
                   </div>
                 </div>
               )
-            })
+            })}
+              </div>
+            </div>
+            ))
           )}
         </div>
       </div>

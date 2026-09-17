@@ -16,6 +16,7 @@ function shiftDate(d: string, delta: number) {
 type ProductRow = {
   id: string; standard_name: string; default_unit: string
   allowed_units: string[]; is_kg_based: boolean; image_path: string | null; category: string
+  subcategory: string | null
 }
 
 export default async function AdminDirectOrderPage({
@@ -78,7 +79,7 @@ export default async function AdminDirectOrderPage({
   if (hasWhitelist) {
     const { data } = await db
       .from('products')
-      .select('id, standard_name, default_unit, allowed_units, is_kg_based, image_path, category')
+      .select('id, standard_name, default_unit, allowed_units, is_kg_based, image_path, category, subcategory')
       .eq('status', 'active')
       .in('id', whitelistIds)
     products = whitelistIds
@@ -87,7 +88,7 @@ export default async function AdminDirectOrderPage({
   } else {
     const { data } = await db
       .from('products')
-      .select('id, standard_name, default_unit, allowed_units, is_kg_based, image_path, category')
+      .select('id, standard_name, default_unit, allowed_units, is_kg_based, image_path, category, subcategory')
       .eq('status', 'active')
       .order('category')
       .order('standard_name')
