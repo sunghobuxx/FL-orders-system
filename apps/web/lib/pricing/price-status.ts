@@ -28,7 +28,7 @@ export interface PriceStatusInput {
   date: string
   /** price_confirmations.confirmed_at */
   confirmedAt: string | null
-  /** 적용일이 D 인 price_snapshots 의 마지막 created_at */
+  /** 적용일이 D **이하**인 price_snapshots 중 확정 뒤에 등록된 것의 마지막 created_at (단가 등록은 이후 날짜 명세서까지 덮어쓴다) */
   lastPriceAt: string | null
   /** D 를 포함한 정산서가 확정됐는지 */
   statementConfirmed: boolean

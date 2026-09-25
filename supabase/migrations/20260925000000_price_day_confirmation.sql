@@ -1,9 +1,9 @@
 -- 당일 단가 확정 표시.
 --
 -- 사장님이 「오늘 단가 확정」을 누른 시각만 저장한다. 「입력 중 / 확정 / 수정됨」 상태는
--- 저장하지 않고 화면을 열 때 계산한다: 확정 뒤에 그 날짜(effective_from)의 단가가
--- 새로 등록되면 「수정됨」. 단가를 넣는 경로가 몇 개든 created_at 은 DB 가 채우므로
--- 자동으로 감지된다.
+-- 저장하지 않고 화면을 열 때 계산한다: 확정 뒤에 적용일이 그 날짜 이하(effective_from <= D)인
+-- 단가가 새로 등록되면 「수정됨」(단가 등록은 이후 날짜 명세서까지 덮어쓴다).
+-- 단가를 넣는 경로가 몇 개든 created_at 은 DB 가 채우므로 자동으로 감지된다.
 
 create table if not exists public.price_confirmations (
   business_date date primary key,
@@ -14,7 +14,8 @@ create table if not exists public.price_confirmations (
 -- RLS 를 켜 두되 정책은 두지 않는다. 읽고 쓰는 것은 service role 뿐이라 RLS 를 지나간다.
 alter table public.price_confirmations enable row level security;
 
--- 날짜별 단가 마지막 등록 시각. 날짜 수(최대 약 31행)만 읽으므로 PostgREST 1,000행 제한에 걸리지 않는다.
+-- 적용일별 단가 마지막 등록 시각. 앱은 가장 이른 확정 시각보다 뒤에 등록된 행만 읽어서
+-- PostgREST 1,000행 제한에 걸리지 않는다.
 create or replace view public.price_day_last_change as
 select effective_from as business_date, max(created_at) as last_price_at
 from public.price_snapshots
