@@ -6,6 +6,7 @@ declare
   org uuid; rest uuid; org2 uuid; rest2 uuid;
   per1 uuid; per2 uuid; st1 uuid; st2 uuid; r1 uuid; r2 uuid;
   res jsonb; bt uuid; n int; b numeric; s text; o numeric;
+  org3 uuid; rest3 uuid; per3 uuid; st3 uuid;
 begin
   insert into organizations(organization_type, name) values ('restaurant', '__test_rp__') returning id into org;
   insert into restaurants(organization_id) values (org) returning id into rest;
@@ -93,6 +94,29 @@ begin
     perform record_receivable_payment(rest, 500, 'transfer', now(), null, gen_random_uuid());
     raise exception 'ASSERT E 없는 거래가 통과했다';
   exception when others then if sqlerrm <> 'BANK_TX_NOT_FOUND' then raise; end if; end;
+
+  -- G) 금액 가드(2026-09-26 리뷰): 원 단위 정수만, NaN/Infinity 거절. 잔액 0 인 미납 미수금은 입금 대상이 아니다.
+  begin
+    perform record_receivable_payment(rest, 100.005, 'transfer', now(), null, null);
+    raise exception 'ASSERT G 소수 금액이 통과했다';
+  exception when others then if sqlerrm <> 'INVALID_AMOUNT' then raise; end if; end;
+  begin
+    perform record_receivable_payment(rest, 'NaN'::numeric, 'transfer', now(), null, null);
+    raise exception 'ASSERT G NaN 이 통과했다';
+  exception when others then if sqlerrm <> 'INVALID_AMOUNT' then raise; end if; end;
+  begin
+    perform record_receivable_payment(rest, 'Infinity'::numeric, 'transfer', now(), null, null);
+    raise exception 'ASSERT G Infinity 가 통과했다';
+  exception when others then if sqlerrm <> 'INVALID_AMOUNT' then raise; end if; end;
+  insert into organizations(organization_type, name) values ('restaurant', '__test_rp3__') returning id into org3;
+  insert into restaurants(organization_id) values (org3) returning id into rest3;
+  insert into settlement_periods(period_type, start_date, end_date) values ('weekly', '2001-01-15', '2001-01-21') returning id into per3;
+  insert into sales_statements(restaurant_id, settlement_period_id, total_amount, outstanding_amount) values (rest3, per3, 0, 0) returning id into st3;
+  insert into receivables(restaurant_id, statement_id, due_date, balance, status) values (rest3, st3, '2001-01-30', 0, 'unpaid');
+  begin
+    perform record_receivable_payment(rest3, 1000, 'transfer', now(), null, null);
+    raise exception 'ASSERT G 잔액 0 미수금에 입금이 통과했다';
+  exception when others then if sqlerrm <> 'NO_RECEIVABLES' then raise; end if; end;
 
   -- F) 일반 사용자는 이 함수를 실행할 수 없다.
   if has_function_privilege('anon', 'public.record_receivable_payment(uuid,numeric,text,timestamptz,uuid,uuid)', 'execute')

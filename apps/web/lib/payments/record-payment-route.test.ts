@@ -79,6 +79,13 @@ describe('POST /api/admin/finance/record-payment', () => {
     expect((await post({ ...ok, method: 'bitcoin' })).status).toBe(400)
   })
 
+  it('금액이 원 단위 정수가 아니면(소수·NaN·Infinity) 400 — 예전에는 소수 금액이 잔액을 어긋나게 만들 수 있었다', async () => {
+    mocks.rpc.mockResolvedValue({ data: null, error: { message: 'INVALID_AMOUNT' } })
+    const res = await post({ ...ok, amount: 1000.005 })
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toBe('금액이 올바르지 않습니다.')
+  })
+
   it('그 밖의 DB 오류는 500 이고 오류 내용을 화면에 내보내지 않는다', async () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
     mocks.rpc.mockResolvedValue({ data: null, error: { message: 'secret detail' } })

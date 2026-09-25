@@ -73,6 +73,10 @@ export async function POST(req: Request) {
             `지금 넣으시려면 ${won(totalOutstanding)}원까지만 됩니다.`,
         }, { status: 400 })
       }
+      if (error.message === 'INVALID_AMOUNT') {
+        // 원 단위 정수만 받는다(소수·NaN·Infinity 는 DB 함수가 거절). 잔액이 어긋나는 것을 막는다.
+        return NextResponse.json({ error: '금액이 올바르지 않습니다.' }, { status: 400 })
+      }
       if (error.message === 'INVALID_METHOD') {
         return NextResponse.json({ error: '입금 방법이 올바르지 않습니다.' }, { status: 400 })
       }
