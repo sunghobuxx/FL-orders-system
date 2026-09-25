@@ -8,11 +8,27 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { fetchAll } from '@/lib/supabase/fetch-all'
 import { getSessionUser } from '@/lib/supabase/server'
 import { normalizeUnit } from '@/lib/units'
+import { PRICE_STATUS_FROM, priceWarnings, type PriceWarning } from '@/lib/pricing/price-status'
+import { loadDateStatuses } from '@/lib/pricing/price-status-loader'
 
 export default async function AdminDashboardPage() {
   const db = createAdminClient()
   const today = getKstToday()
   const tomorrow = getKstDateOffset(1)
+
+  // 단가 확정 경고 — 부가 정보라서 조회가 실패해도 대시보드는 그대로 뜬다.
+  let priceWarningList: PriceWarning[] = []
+  try {
+    const twoWeeksAgo = getKstDateOffset(-14)
+    const from = PRICE_STATUS_FROM > twoWeeksAgo ? PRICE_STATUS_FROM : twoWeeksAgo
+    const { data: specDates } = await db
+      .from('daily_specs').select('business_date').gte('business_date', from).lte('business_date', today)
+    const dates = [...new Set([today, ...((specDates ?? []) as Array<{ business_date: string }>).map(r => r.business_date)])]
+    const statuses = await loadDateStatuses(db, dates)
+    priceWarningList = priceWarnings(today, dates.map(d => ({ date: d, status: statuses.get(d)?.status ?? 'none' })))
+  } catch (e) {
+    console.error('[admin/dashboard] 단가 확정 경고 조회 실패', e)
+  }
 
   // 매니저 담당 업체 필터
   const { user } = await getSessionUser()
@@ -256,6 +272,16 @@ export default async function AdminDashboardPage() {
 
   return (
     <div className="p-4 space-y-4 lg:p-6 lg:space-y-6 max-w-5xl">
+      {priceWarningList.length > 0 && (
+        <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 space-y-1">
+          {priceWarningList.map(w => (
+            <p key={w.kind} className="text-sm text-amber-800">⚠️ {w.message}</p>
+          ))}
+          <Link href="/admin/products" className="text-xs font-semibold text-amber-900 underline">
+            품목마스터에서 확정하기 →
+          </Link>
+        </div>
+      )}
       <div>
         <h1 className="text-xl font-bold text-gray-900">대시보드</h1>
         <p className="text-sm text-gray-400 mt-0.5">

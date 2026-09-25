@@ -4,6 +4,11 @@ import Link from 'next/link'
 import { CATEGORY_LABELS as CATEGORY_LABEL } from '@/lib/products/categories'
 import { createAdminClient } from '@/lib/supabase/admin'
 import CategoryFilter from './CategoryFilter'
+import { getKstToday } from '@/lib/date-kst'
+import { validDate } from '@/lib/member-settlement'
+import { NO_PRICE_STATUS, adminStatusText } from '@/lib/pricing/price-status'
+import { loadDateStatuses } from '@/lib/pricing/price-status-loader'
+import PriceConfirmBar from './PriceConfirmBar'
 
 type ProductRow = {
   id: string
@@ -18,11 +23,11 @@ type ProductRow = {
 
 
 interface Props {
-  searchParams: Promise<{ category?: string; inactive?: string }>
+  searchParams: Promise<{ category?: string; inactive?: string; priceDate?: string }>
 }
 
 export default async function AdminProductsPage({ searchParams }: Props) {
-  const { category: categoryParam, inactive } = await searchParams
+  const { category: categoryParam, inactive, priceDate: priceDateParam } = await searchParams
   const showInactive = inactive === '1'
   // 어드민 화면은 service role 로 조회한다 (세션 RLS 로 조회하면 세션이 끊겼을 때 빈 목록이 된다)
   const db = createAdminClient()
@@ -53,6 +58,22 @@ export default async function AdminProductsPage({ searchParams }: Props) {
     .from('product_requests')
     .select('id', { count: 'exact', head: true })
     .eq('status', 'pending')
+
+  // 단가 확정 상태 — 부가 정보라서 조회가 실패해도 품목 목록은 그대로 보여준다.
+  const today = getKstToday()
+  const priceDate = priceDateParam && validDate(priceDateParam) && priceDateParam <= today ? priceDateParam : today
+  let priceBar: { statusText: string; tone: 'pending' | 'confirmed' | 'modified' | 'none' } =
+    { statusText: '상태를 불러오지 못했습니다', tone: 'none' }
+  try {
+    const statuses = await loadDateStatuses(db, [priceDate])
+    const r = statuses.get(priceDate) ?? NO_PRICE_STATUS
+    priceBar = {
+      statusText: adminStatusText(r),
+      tone: r.status === 'none' || r.status === 'final' ? 'none' : r.status,
+    }
+  } catch (e) {
+    console.error('[admin/products] 단가 확정 상태 조회 실패', e)
+  }
 
   return (
     <div className="p-6">
@@ -94,6 +115,8 @@ export default async function AdminProductsPage({ searchParams }: Props) {
           </Link>
         </div>
       </div>
+
+      <PriceConfirmBar date={priceDate} today={today} {...priceBar} />
 
       <CategoryFilter categoryCounts={categoryCounts} total={all.length} activeCategory={activeCategory} />
 
