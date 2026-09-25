@@ -8,7 +8,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { fetchAll } from '@/lib/supabase/fetch-all'
 import { getSessionUser } from '@/lib/supabase/server'
 import { normalizeUnit } from '@/lib/units'
-import { PRICE_STATUS_FROM, priceWarnings, type PriceWarning } from '@/lib/pricing/price-status'
+import { PRICE_STATUS_FROM, priceWarnings, warningDates, type PriceWarning } from '@/lib/pricing/price-status'
 import { loadDateStatuses } from '@/lib/pricing/price-status-loader'
 
 export default async function AdminDashboardPage() {
@@ -23,7 +23,8 @@ export default async function AdminDashboardPage() {
     const from = PRICE_STATUS_FROM > twoWeeksAgo ? PRICE_STATUS_FROM : twoWeeksAgo
     const { data: specDates } = await db
       .from('daily_specs').select('business_date').gte('business_date', from).lte('business_date', today)
-    const dates = [...new Set([today, ...((specDates ?? []) as Array<{ business_date: string }>).map(r => r.business_date)])]
+    // 명세서가 있는 날짜만 따진다 — 배송이 없는 날(일요일 등)에는 「오늘 단가 미확정」 경고를 띄우지 않는다.
+    const dates = warningDates(((specDates ?? []) as Array<{ business_date: string }>).map(r => r.business_date))
     const statuses = await loadDateStatuses(db, dates)
     priceWarningList = priceWarnings(today, dates.map(d => ({ date: d, status: statuses.get(d)?.status ?? 'none' })))
   } catch (e) {

@@ -127,7 +127,16 @@ const md = (date: string) => {
   return `${Number(m)}/${Number(d)}`
 }
 
-/** 대시보드 경고. items 에는 명세서가 있는 날짜(와 오늘)만 넣는다. */
+/**
+ * 대시보드가 경고를 따질 날짜 = **명세서가 있는 날짜**뿐(중복 제거, 오래된 순).
+ * 오늘을 억지로 넣지 않는다 — 배송이 없는 날(일요일 등)에 「오늘 단가 미확정」 경고가 뜨면
+ * 사장님이 경고를 무시하게 된다.
+ */
+export function warningDates(specDates: string[]): string[] {
+  return [...new Set(specDates)].sort()
+}
+
+/** 대시보드 경고. items 에는 명세서가 있는 날짜만 넣는다(warningDates). */
 export function priceWarnings(today: string, items: Array<{ date: string; status: PriceStatus }>): PriceWarning[] {
   const out: PriceWarning[] = []
   const sorted = [...items].sort((a, b) => a.date.localeCompare(b.date))

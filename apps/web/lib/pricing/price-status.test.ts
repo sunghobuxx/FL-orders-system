@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   NO_PRICE_STATUS, adminStatusText, displayFor, kstClock, priceStatus,
-  priceStatusPrintText, priceStatusText, priceWarnings,
+  priceStatusPrintText, priceStatusText, priceWarnings, warningDates,
 } from './price-status'
 
 const FROM = '2026-09-26'
@@ -161,5 +161,19 @@ describe('priceWarnings — 대시보드 경고', () => {
     expect(priceWarnings(today, [
       { date: '2026-10-05', status: 'none' }, { date: '2026-10-04', status: 'final' },
     ])).toEqual([])
+  })
+})
+
+describe('warningDates — 경고를 따질 날짜는 명세서가 있는 날뿐', () => {
+  it('오늘 명세서가 없으면(일요일 등) 오늘을 넣지 않는다 — 배송이 없는 날에 "오늘 단가 미확정" 경고를 띄우지 않는다', () => {
+    expect(warningDates(['2026-10-03', '2026-10-02'])).toEqual(['2026-10-02', '2026-10-03'])
+  })
+
+  it('명세서가 있는 날짜만 중복 없이 오래된 순으로 돌려준다', () => {
+    expect(warningDates(['2026-10-05', '2026-10-05', '2026-10-04'])).toEqual(['2026-10-04', '2026-10-05'])
+  })
+
+  it('명세서가 하나도 없으면 빈 목록', () => {
+    expect(warningDates([])).toEqual([])
   })
 })
