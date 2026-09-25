@@ -3,6 +3,9 @@ export const runtime = 'edge'
 import { redirect } from 'next/navigation'
 import { getSessionUser } from '@/lib/supabase/server'
 import AutoPrint from './AutoPrint'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { NO_PRICE_STATUS, displayFor, priceStatusPrintText } from '@/lib/pricing/price-status'
+import { loadSpecStatuses } from '@/lib/pricing/price-status-loader'
 
 interface Props {
   searchParams: Promise<{ date?: string; type?: string }>
@@ -54,6 +57,19 @@ export default async function SpecPrintPage({ searchParams }: Props) {
   const [, pM, pD] = targetDate.split('-')
   const printDateLabel = `${Number(pM)}월 ${Number(pD)}일`
 
+  // 인쇄된 종이에도 단가가 확정인지 임시인지 찍는다. 조회가 실패해도 인쇄는 그대로 나온다.
+  let printStatus: string | null = null
+  if (spec) {
+    try {
+      const statuses = await loadSpecStatuses(createAdminClient(), [{ id: spec.id, business_date: targetDate }])
+      const shown = displayFor(statuses.get(spec.id) ?? NO_PRICE_STATUS, targetDate,
+        { audience: 'member', today, view: 'spec' })
+      printStatus = shown ? priceStatusPrintText(shown) : null
+    } catch (e) {
+      console.error('[member/spec/print] 단가 확정 상태 조회 실패', e)
+    }
+  }
+
   return (
     <>
       <AutoPrint />
@@ -71,10 +87,12 @@ export default async function SpecPrintPage({ searchParams }: Props) {
         .th-bg { background-color: #f0f0f0; }
         .total-row td { font-weight: bold; }
         .memo { margin-top: 3mm; }
+        .price-status { text-align: center; font-size: 10pt; font-weight: bold; border: 1px solid #000; padding: 3px 0; margin: -3mm 0 4mm; }
         @media print { @page { size: A4; margin: 10mm; } }
       `}</style>
 
       <h2>{printDateLabel} 발주 명세표</h2>
+      {printStatus && <p className="price-status">{printStatus}</p>}
 
       <table className="info-table">
         <tbody>

@@ -5,6 +5,10 @@ import { redirect } from 'next/navigation'
 import { getSessionUser } from '@/lib/supabase/server'
 import SettlementShell from '../settlement/SettlementShell'
 import { PrintButton, PayButton } from './SpecActions'
+import { createAdminClient } from '@/lib/supabase/admin'
+import PriceStatusBadge from '@/components/PriceStatusBadge'
+import { NO_PRICE_STATUS, displayFor, type ShownPriceStatus } from '@/lib/pricing/price-status'
+import { loadSpecStatuses } from '@/lib/pricing/price-status-loader'
 
 interface Props {
   searchParams: Promise<{ date?: string }>
@@ -61,6 +65,18 @@ export default async function MemberSpecPage({ searchParams }: Props) {
 
   const fmt = (n: number) => Number(n).toLocaleString('ko-KR')
 
+  // 단가 확정 상태 — 부가 정보라서 조회가 실패해도 명세서는 그대로 보여준다.
+  let priceShown: ShownPriceStatus | null = null
+  if (spec) {
+    try {
+      const statuses = await loadSpecStatuses(createAdminClient(), [{ id: spec.id, business_date: targetDate }])
+      priceShown = displayFor(statuses.get(spec.id) ?? NO_PRICE_STATUS, targetDate,
+        { audience: 'member', today, view: 'spec' })
+    } catch (e) {
+      console.error('[member/spec] 단가 확정 상태 조회 실패', e)
+    }
+  }
+
   return (
     <SettlementShell orgName={org.name} date={targetDate}>
       <div className="space-y-3">
@@ -73,6 +89,7 @@ export default async function MemberSpecPage({ searchParams }: Props) {
           )}
           <span className="text-sm font-bold text-gray-900">{targetDate} 명세서</span>
         </div>
+        {priceShown && <PriceStatusBadge status={priceShown} />}
 
         {/* 명세 테이블 */}
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">

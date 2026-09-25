@@ -4,6 +4,9 @@ import { redirect } from 'next/navigation'
 import { getSessionUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import AutoPrint from '@/app/member/spec/print/AutoPrint'
+import { NO_PRICE_STATUS, displayFor, priceStatusPrintText } from '@/lib/pricing/price-status'
+import { loadSpecStatuses } from '@/lib/pricing/price-status-loader'
+import { getKstToday } from '@/lib/date-kst'
 
 interface Props {
   searchParams: Promise<{ specId?: string }>
@@ -47,6 +50,18 @@ export default async function AdminSpecPrintPage({ searchParams }: Props) {
 
   // totalAmount = 공급가 + 세액 (daily_specs.total_amount 기준과 일치)
   const totalAmount = lines.reduce((s, l) => s + Number(l.amount ?? 0) + Number(l.vat_amount ?? 0), 0)
+
+  // 인쇄된 종이에도 단가가 확정인지 임시인지 찍는다. 이 화면은 사장님·배송 매니저가 업체에 건넬 종이를 뽑는
+  // 곳이라 배송앱과 같은 표시 규칙(오래된 미확정도 표시)을 쓴다. 조회가 실패해도 인쇄는 그대로 나온다.
+  let printStatus: string | null = null
+  try {
+    const statuses = await loadSpecStatuses(db, [{ id: spec.id, business_date: spec.business_date }])
+    const shown = displayFor(statuses.get(spec.id) ?? NO_PRICE_STATUS, spec.business_date,
+      { audience: 'driver', today: getKstToday() })
+    printStatus = shown ? priceStatusPrintText(shown) : null
+  } catch (e) {
+    console.error('[print/spec] 단가 확정 상태 조회 실패', e)
+  }
 
   // 전일미수금 = 미납(outstanding) 정산서에 포함된 spec 중 오늘 이전 날짜 합계
   // 입금 처리 전까지 자동 누적
@@ -236,11 +251,13 @@ export default async function AdminSpecPrintPage({ searchParams }: Props) {
         td, th { border: 1px solid #000; padding: 4px 8px; font-size: 10pt; }
         .info-table td { border: none; font-size: 10pt; line-height: 1.8; }
         h2 { text-align: center; font-size: 16pt; font-weight: bold; margin-bottom: 6mm; }
+        .price-status { text-align: center; font-size: 10pt; font-weight: bold; border: 1px solid #000; padding: 3px 0; margin: -3mm 0 4mm; }
         .th-bg { background-color: #f0f0f0; }
         @media print { @page { size: A4; margin: 10mm; } }
       `}</style>
 
       <h2>{printDateLabel} 발주 명세표</h2>
+      {printStatus && <p className="price-status">{printStatus}</p>}
 
       <table className="info-table" style={{marginBottom:'3mm'}}>
         <tbody>

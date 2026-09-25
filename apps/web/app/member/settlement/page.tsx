@@ -4,6 +4,9 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { getSessionUser } from '@/lib/supabase/server'
 import SettlementShell from './SettlementShell'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { NO_PRICE_STATUS, PRICE_STATUS_FROM, displayFor, priceStatusText } from '@/lib/pricing/price-status'
+import { loadSpecStatuses } from '@/lib/pricing/price-status-loader'
 
 export default async function MemberSettlementPage() {
   const { user, supabase } = await getSessionUser()
@@ -133,9 +136,38 @@ export default async function MemberSettlementPage() {
 
   const rows = [...grouped.values()]
 
+  // 단가 확정 안내 — 「입력 중」·「수정됨」 날짜만 알려준다. 조회가 실패해도 정산 화면은 그대로 보여준다.
+  const priceNotices: Array<{ date: string; text: string }> = []
+  try {
+    const refs = (dailySpecs ?? [])
+      .filter(s => s.business_date >= PRICE_STATUS_FROM)
+      .map(s => ({ id: s.id as string, business_date: s.business_date as string }))
+    if (refs.length) {
+      const statuses = await loadSpecStatuses(createAdminClient(), refs)
+      for (const r of refs) {
+        const shown = displayFor(statuses.get(r.id) ?? NO_PRICE_STATUS, r.business_date,
+          { audience: 'member', today, view: 'settlement' })
+        if (shown && (shown.status === 'pending' || shown.status === 'modified')) {
+          priceNotices.push({ date: r.business_date, text: priceStatusText(shown) })
+        }
+      }
+    }
+  } catch (e) {
+    console.error('[member/settlement] 단가 확정 상태 조회 실패', e)
+  }
+
   return (
     <SettlementShell orgName={org.name} date={today}>
       <div className="space-y-4 max-w-2xl">
+        {priceNotices.length > 0 && (
+          <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 space-y-1">
+            {priceNotices.map(n => (
+              <p key={n.date} className="text-xs text-amber-800">
+                <span className="font-semibold">{n.date.slice(5).split('-').map(Number).join('/')}</span> 명세서 · {n.text}
+              </p>
+            ))}
+          </div>
+        )}
         <div className="flex items-center justify-between">
           <span className={`text-xs font-semibold px-3 py-1 rounded-full ${cycle === 'weekly' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
             {cycle === 'weekly' ? '주정산' : '월정산'}
