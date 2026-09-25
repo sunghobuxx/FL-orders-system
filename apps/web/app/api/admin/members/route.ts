@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getAdminSession } from '@/lib/admin-member-user'
+import { validateLoginEmail } from '@/lib/members/login-email'
 
 export async function POST(req: NextRequest) {
   try {
@@ -23,6 +24,11 @@ export async function POST(req: NextRequest) {
     const session = await getAdminSession()
     if (!session) return NextResponse.json({ error: '권한이 없습니다' }, { status: 403 })
     const { user } = session
+
+    // 로그인 이메일 검사는 **아무것도 만들기 전에** 한다. 나중에 실패하면 로그인 계정이 없는
+    // 업체가 남고, 그런 업체는 「이메일 변경」 도 할 수 없다.
+    const loginEmail = validateLoginEmail(org_type, email)
+    if (!loginEmail.ok) return NextResponse.json({ error: loginEmail.error }, { status: 400 })
 
     const adminDb = createAdminClient()
 
@@ -79,7 +85,8 @@ export async function POST(req: NextRequest) {
 
     // 4. 로그인 계정 생성
     let warning: string | null = null
-    if (email) {
+    if (loginEmail.email) {
+      const email = loginEmail.email
       try {
         const { data: authData, error: authErr } = await adminDb.auth.admin.createUser({
           email,

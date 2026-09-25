@@ -94,8 +94,10 @@ export default function NewMemberForm({ orgType, products }: Props) {
       <div className="px-5 py-4 border-b border-gray-100 space-y-3">
         <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">로그인 계정 설정</p>
         <div className="flex items-center gap-2">
-          <label className="text-sm text-gray-500 shrink-0 w-20">이메일:</label>
-          <input name="email" type="email" placeholder="account@example.com"
+          <label className="text-sm text-gray-500 shrink-0 w-20">
+            이메일:{!isSupplier && <span className="text-red-500"> *</span>}
+          </label>
+          <input name="email" type="email" required={!isSupplier} placeholder="account@example.com"
             className="flex-1 bg-gray-100 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
         </div>
         <div className="flex items-center gap-2">
@@ -103,7 +105,11 @@ export default function NewMemberForm({ orgType, products }: Props) {
           <input name="password" type="text" placeholder="aaaa1111 (미입력 시 기본값)"
             className="flex-1 bg-gray-100 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
         </div>
-        <p className="text-xs text-gray-400">이메일 입력 시 해당 이메일로 로그인 계정이 자동 생성됩니다</p>
+        <p className="text-xs text-gray-400">
+          {isSupplier
+            ? '이메일 입력 시 해당 이메일로 로그인 계정이 자동 생성됩니다'
+            : '이 이메일로 로그인 계정이 자동 생성됩니다. 이메일이 없으면 등록할 수 없습니다.'}
+        </p>
       </div>
 
       {/* 정산 주기 (매출 업체만) */}
