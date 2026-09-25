@@ -2,6 +2,7 @@ export const runtime = 'edge'
 
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { pushScheduleDue, submitExpoPush } from '@/lib/push-delivery'
 
 const PUSH_SECRET = process.env.PUSH_CRON_SECRET
 
@@ -17,80 +18,75 @@ export async function POST(req: Request) {
   const kstNow = new Date(Date.now() + 9 * 60 * 60 * 1000)
   const currentTime = kstNow.toISOString().slice(11, 16) // "HH:MM"
 
-  // 현재 시간과 일치하는 활성 스케줄 조회
-  const { data: schedules } = await db
+  // Cron can run late. Find today's due schedules rather than matching one minute.
+  const { data: schedules, error: scheduleError } = await db
     .from('push_schedules')
-    .select('id, title, body, last_sent_at')
+    .select('id, title, body, send_time, last_sent_at')
     .eq('is_active', true)
-    .eq('send_time', currentTime)
+  if (scheduleError) return NextResponse.json({ error: 'schedule_query_failed' }, { status: 500 })
 
   if (!schedules || schedules.length === 0) {
-    return NextResponse.json({ sent: 0, time: currentTime })
+    return NextResponse.json({ accepted: 0, time: currentTime, results: [], ticketIds: [] })
   }
 
   let totalSent = 0
   const results: string[] = []
 
-  for (const schedule of schedules as { id: string; title: string; body: string; last_sent_at: string | null }[]) {
-    // 23시간 이내 중복 발송 방지
-    if (schedule.last_sent_at) {
-      const hoursSince = (Date.now() - new Date(schedule.last_sent_at).getTime()) / 3_600_000
-      if (hoursSince < 23) {
-        results.push(`skip:${schedule.id} (${hoursSince.toFixed(1)}h ago)`)
-        continue
-      }
-    }
+  let failed = false
+  const tickets: string[] = []
+  for (const schedule of schedules as { id: string; title: string; body: string; send_time: string; last_sent_at: string | null }[]) {
+    if (!pushScheduleDue(schedule.send_time, schedule.last_sent_at)) continue
 
     // 대상 org 조회
-    const { data: scheduleOrgs } = await db
+    const { data: scheduleOrgs, error: orgError } = await db
       .from('push_schedule_orgs')
       .select('organization_id')
       .eq('schedule_id', schedule.id)
 
+    if (orgError) { failed = true; results.push(`error:${schedule.id} org_query`); continue }
     if (!scheduleOrgs?.length) { results.push(`skip:${schedule.id} no orgs`); continue }
 
     const orgIds = scheduleOrgs.map((s: { organization_id: string }) => s.organization_id)
 
     // 해당 org 회원의 user_id 조회
-    const { data: memberships } = await db
+    const { data: memberships, error: memberError } = await db
       .from('memberships')
       .select('user_id')
       .in('organization_id', orgIds)
 
+    if (memberError) { failed = true; results.push(`error:${schedule.id} member_query`); continue }
     if (!memberships?.length) { results.push(`skip:${schedule.id} no members`); continue }
 
     const userIds = memberships.map((m: { user_id: string }) => m.user_id)
 
     // 푸시 토큰 조회
-    const { data: tokens } = await db
+    const { data: tokens, error: tokenError } = await db
       .from('push_tokens')
       .select('token')
       .in('user_id', userIds)
 
+    if (tokenError) { failed = true; results.push(`error:${schedule.id} token_query`); continue }
     if (!tokens?.length) { results.push(`skip:${schedule.id} no tokens`); continue }
 
-    // Expo Push API 발송
-    const messages = tokens.map((t: { token: string }) => ({
-      to: t.token,
-      title: schedule.title,
-      body: schedule.body,
-      sound: 'default',
-    }))
+    // Optimistic claim prevents simultaneous cron requests from sending twice.
+    const claimedAt = new Date().toISOString()
+    let claim = db.from('push_schedules').update({ last_sent_at: claimedAt }).eq('id', schedule.id).eq('is_active', true)
+    claim = schedule.last_sent_at ? claim.eq('last_sent_at', schedule.last_sent_at) : claim.is('last_sent_at', null)
+    const { data: claimed, error: claimError } = await claim.select('id')
+    if (claimError) { failed = true; results.push(`error:${schedule.id} claim`); continue }
+    if (!claimed?.length) continue
 
-    const res = await fetch('https://exp.host/--/api/v2/push/send', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-      body: JSON.stringify(messages),
-    })
-
-    if (res.ok) {
-      totalSent += tokens.length
-      await db.from('push_schedules').update({ last_sent_at: new Date().toISOString() }).eq('id', schedule.id)
-      results.push(`sent:${schedule.id} to ${tokens.length} devices`)
-    } else {
-      results.push(`error:${schedule.id} expo ${res.status}`)
+    const result = await submitExpoPush(tokens.map((t: { token: string }) => t.token), schedule.title, schedule.body)
+    totalSent += result.accepted
+    tickets.push(...result.ticketIds)
+    results.push(`accepted:${schedule.id} ${result.accepted}/${result.requested}`)
+    if (result.errors.length) { failed = true; results.push(`error:${schedule.id} ${result.errors.join(',')}`) }
+    // Keep partial successes claimed to avoid resending to successful devices.
+    if (result.accepted === 0) {
+      const { error } = await db.from('push_schedules').update({ last_sent_at: schedule.last_sent_at }).eq('id', schedule.id).eq('last_sent_at', claimedAt)
+      if (error) { failed = true; results.push(`error:${schedule.id} release_claim` ) }
     }
   }
 
-  return NextResponse.json({ sent: totalSent, time: currentTime, results })
+  return NextResponse.json({ accepted: totalSent, time: currentTime, results, ticketIds: tickets }, { status: failed ? 502 : 200 })
 }

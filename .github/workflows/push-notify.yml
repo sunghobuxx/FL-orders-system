@@ -2,9 +2,13 @@ name: Push Notification Sender
 
 on:
   schedule:
-    # 매분 실행 — KST 스케줄 시간과 일치할 때 발송
-    - cron: '* * * * *'
+    # GitHub schedules may be delayed; the API catches up today's due schedules.
+    - cron: '*/5 * * * *'
   workflow_dispatch:
+
+concurrency:
+  group: push-notification-sender
+  cancel-in-progress: false
 
 jobs:
   notify:
@@ -20,3 +24,6 @@ jobs:
           BODY=$(echo "$RESPONSE" | head -1)
           echo "Response: $BODY"
           echo "HTTP: $HTTP_CODE"
+          if [ "$HTTP_CODE" != "200" ]; then
+            exit 1
+          fi
