@@ -211,8 +211,12 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          # 키 값을 이 파일에 적지 않는다. 저장소가 공개라 커밋 기록에 남으면 DB 전체 권한이 노출된다
+          # (2026-09-25 발견). 값은 GitHub Actions secret 에서만 읽는다.
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
-          echo "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im52cGFnZ2FjdmJvdGdxeXhmZG9mIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NTcxMzI3MCwiZXhwIjoyMDkxMjg5MjcwfQ.XQHl-sDQQPT8Jnsld3-SCNuV2WZeTxxP2BFFohxp6Ic" | pnpm dlx wrangler pages secret put SUPABASE_SERVICE_ROLE_KEY --project-name fruitlife
+          test -n "$SUPABASE_SERVICE_ROLE_KEY" || { echo "::error::SUPABASE_SERVICE_ROLE_KEY secret 이 비어 있습니다"; exit 1; }
+          echo "$SUPABASE_SERVICE_ROLE_KEY" | pnpm dlx wrangler pages secret put SUPABASE_SERVICE_ROLE_KEY --project-name fruitlife
 
       - name: Deploy to Cloudflare Pages
         working-directory: apps/web
