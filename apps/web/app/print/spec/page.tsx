@@ -55,7 +55,7 @@ export default async function AdminSpecPrintPage({ searchParams }: Props) {
   // 곳이라 배송앱과 같은 표시 규칙(오래된 미확정도 표시)을 쓴다. 조회가 실패해도 인쇄는 그대로 나온다.
   let printStatus: string | null = null
   try {
-    const statuses = await loadSpecStatuses(db, [{ id: spec.id, business_date: spec.business_date }])
+    const statuses = await loadSpecStatuses(db, [{ id: spec.id, business_date: spec.business_date, monthly: settlementCycle === 'monthly' }])
     const shown = displayFor(statuses.get(spec.id) ?? NO_PRICE_STATUS, spec.business_date,
       { audience: 'driver', today: getKstToday() })
     printStatus = shown ? priceStatusPrintText(shown) : null

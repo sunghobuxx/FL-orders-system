@@ -51,7 +51,7 @@ export async function GET(req: NextRequest) {
   const priceStatuses: Array<{ date: string; status: string; at: string | null }> = []
   try {
     const refs = [...specs, ...(selectedResult.data ? [selectedResult.data] : [])]
-      .map(s => ({ id: s.id as string, business_date: s.business_date as string }))
+      .map(s => ({ id: s.id as string, business_date: s.business_date as string, monthly: restaurant.settlement_cycle === 'monthly' }))
     const statusBySpec = await loadSpecStatuses(createAdminClient(), refs)
     const seen = new Set<string>()
     for (const ref of refs) {

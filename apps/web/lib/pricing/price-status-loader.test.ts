@@ -141,6 +141,16 @@ describe('loadSpecStatuses', () => {
     expect(m.get('s-b')).toEqual({ status: 'pending', at: null })
   })
 
+  it('월정산 명세서(monthly)는 확정 기록이 없어도 confirmed(시각 없음), 주정산은 그대로 pending', async () => {
+    const db = fakeDb({ price_confirmations: [], price_day_last_change: [], sales_statement_lines: [] })
+    const m = await loadSpecStatuses(db, [
+      { id: 's-month', business_date: '2026-10-01', monthly: true },
+      { id: 's-week', business_date: '2026-10-01' },
+    ], FROM)
+    expect(m.get('s-month')).toEqual({ status: 'confirmed', at: null })
+    expect(m.get('s-week')).toEqual({ status: 'pending', at: null })
+  })
+
   it('명세서 단위에서도 이전 날짜 단가가 확정 뒤에 등록되면 modified', async () => {
     const db = fakeDb({
       price_confirmations: confirmations,

@@ -2,9 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const state = vi.hoisted(() => ({ db: null as any }))
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: () => state.db }))
-const loader = vi.hoisted(() => ({ map: new Map<string, unknown>(), fail: false }))
+const loader = vi.hoisted(() => ({ map: new Map<string, unknown>(), fail: false, refs: [] as any[] }))
 vi.mock('@/lib/pricing/price-status-loader', () => ({
-  loadSpecStatuses: async () => { if (loader.fail) throw new Error('boom'); return loader.map },
+  loadSpecStatuses: async (_db: unknown, refs: any[]) => { loader.refs = refs; if (loader.fail) throw new Error('boom'); return loader.map },
 }))
 import { GET as dashboardHandler } from '@/app/api/driver/dashboard/route'
 import { GET as orderDetailHandler, PATCH as patchHandler, DELETE as deleteHandler } from '@/app/api/driver/orders/[batchId]/route'
@@ -67,7 +67,7 @@ function request(path: string, method = 'GET', body?: object) {
 const params = (batchId: string) => ({ params: Promise.resolve({ batchId }) })
 
 beforeEach(() => {
-  loader.map = new Map(); loader.fail = false
+  loader.map = new Map(); loader.fail = false; loader.refs = []
   writes = []
   tables = {
     memberships: [{ user_id: 'manager-a', role: 'manager', organizations: { organization_type: 'operator' } }],
@@ -151,6 +151,13 @@ describe('배송앱 조회와 처리 권한', () => {
     loader.map = new Map()
     expect((await (await specs(request(`specs?mode=today&date=${oldDate}`))).json()).specs[0]).not.toHaveProperty('priceStatus')
   })
+  it('월정산 업체의 명세서는 monthly 표시를 달아 상태 계산에 넘긴다', async () => {
+    tables.daily_specs = tables.daily_specs.map((r: any) =>
+      r.id === 'spec-old' ? { ...r, restaurants: { ...r.restaurants, settlement_cycle: 'monthly' } } : r)
+    await specs(request(`specs?mode=today&date=${oldDate}`))
+    expect(loader.refs).toEqual([expect.objectContaining({ id: 'spec-old', monthly: true })])
+  })
+
   it('상태 조회가 실패해도 명세서 목록은 그대로 200 이다', async () => {
     loader.fail = true
     const response = await specs(request(`specs?mode=today&date=${oldDate}`))

@@ -32,6 +32,8 @@ export interface PriceStatusInput {
   lastPriceAt: string | null
   /** D 를 포함한 정산서가 확정됐는지 */
   statementConfirmed: boolean
+  /** 월정산 업체 — 시행일 이후 날짜는 전부 확정으로 본다(월말에 정산서로 확정되므로 날짜별 표시가 소음이다) */
+  monthly?: boolean
   from?: string
 }
 
@@ -40,6 +42,8 @@ const ms = (iso: string) => new Date(iso).getTime()
 export function priceStatus(i: PriceStatusInput): PriceStatusResult {
   if (i.date < (i.from ?? PRICE_STATUS_FROM)) return NO_PRICE_STATUS
   if (i.statementConfirmed) return { status: 'final', at: null }
+  // 월정산 업체는 시각 없는 확정. 사장님 결정(2026-09-25): 배포 후 날짜는 전부 확정으로 보인다.
+  if (i.monthly) return { status: 'confirmed', at: null }
   if (i.confirmedAt) {
     // 같은 순간이면 수정이 아니다(경계). 확정 이후에 **더 늦게** 등록된 단가만 수정으로 본다.
     if (i.lastPriceAt && ms(i.lastPriceAt) > ms(i.confirmedAt)) return { status: 'modified', at: i.lastPriceAt }
@@ -94,7 +98,7 @@ export function kstClock(iso: string): string {
 export function priceStatusText(s: ShownPriceStatus): string {
   switch (s.status) {
     case 'pending': return '단가 입력 중 · 금액이 바뀔 수 있습니다 (이전 단가 기준)'
-    case 'confirmed': return `✓ 당일 단가 확정 (${kstClock(s.at as string)})`
+    case 'confirmed': return s.at ? `✓ 당일 단가 확정 (${kstClock(s.at)})` : '✓ 당일 단가 확정'
     case 'modified': return `단가 수정됨 · 금액이 바뀔 수 있습니다 (${kstClock(s.at as string)} 수정)`
     case 'final': return '정산 확정'
   }
@@ -109,7 +113,7 @@ export function priceStatusPrintText(s: ShownPriceStatus): string | null {
 export function adminStatusText(r: PriceStatusResult): string {
   switch (r.status) {
     case 'pending': return '입력 중 (아직 확정 전)'
-    case 'confirmed': return `확정됨 (${kstClock(r.at as string)})`
+    case 'confirmed': return r.at ? `확정됨 (${kstClock(r.at)})` : '확정됨'
     case 'modified': return `확정 후 단가가 수정됨 (${kstClock(r.at as string)} 수정) — 다시 확정해 주세요`
     case 'final': return '정산 확정된 날짜입니다'
     case 'none': return '시행일 이전 날짜입니다'

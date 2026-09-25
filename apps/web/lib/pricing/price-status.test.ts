@@ -177,3 +177,34 @@ describe('warningDates — 경고를 따질 날짜는 명세서가 있는 날뿐
     expect(warningDates([])).toEqual([])
   })
 })
+
+describe('월정산 업체 — 시행일 이후 날짜는 전부 확정으로 본다', () => {
+  const monthly = { ...base, monthly: true }
+
+  it('확정 기록이 없어도 confirmed (시각 없음)', () => {
+    expect(priceStatus(monthly)).toEqual({ status: 'confirmed', at: null })
+  })
+
+  it('확정 뒤 단가가 수정돼도 modified 가 아니라 confirmed', () => {
+    expect(priceStatus({ ...monthly, confirmedAt: '2026-09-30T04:10:00Z', lastPriceAt: '2026-09-30T05:00:00Z' }))
+      .toEqual({ status: 'confirmed', at: null })
+  })
+
+  it('시행일 이전은 그대로 none — 배포 후 날짜부터만 확정으로 본다', () => {
+    expect(priceStatus({ ...monthly, date: '2026-09-25' })).toEqual({ status: 'none', at: null })
+  })
+
+  it('정산서가 확정됐으면 final 이 우선', () => {
+    expect(priceStatus({ ...monthly, statementConfirmed: true })).toEqual({ status: 'final', at: null })
+  })
+
+  it('주정산 업체는 그대로 pending (월정산만 예외)', () => {
+    expect(priceStatus({ ...base, monthly: false }).status).toBe('pending')
+  })
+
+  it('시각이 없는 confirmed 문구는 시각 없이 「✓ 당일 단가 확정」', () => {
+    expect(priceStatusText({ status: 'confirmed', at: null })).toBe('✓ 당일 단가 확정')
+    expect(priceStatusPrintText({ status: 'confirmed', at: null })).toBe('✓ 당일 단가 확정')
+    expect(adminStatusText({ status: 'confirmed', at: null })).toBe('확정됨')
+  })
+})

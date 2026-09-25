@@ -141,7 +141,7 @@ export default async function MemberSettlementPage() {
   try {
     const refs = (dailySpecs ?? [])
       .filter(s => s.business_date >= PRICE_STATUS_FROM)
-      .map(s => ({ id: s.id as string, business_date: s.business_date as string }))
+      .map(s => ({ id: s.id as string, business_date: s.business_date as string, monthly: cycle === 'monthly' }))
     if (refs.length) {
       const statuses = await loadSpecStatuses(createAdminClient(), refs)
       for (const r of refs) {

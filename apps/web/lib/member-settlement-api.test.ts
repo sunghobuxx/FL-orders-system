@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { NextRequest } from 'next/server'
-const state = vi.hoisted(() => ({ fail: '', filters: [] as unknown[][] }))
-const loader = vi.hoisted(() => ({ map: new Map<string, unknown>(), fail: false }))
+const state = vi.hoisted(() => ({ fail: '', filters: [] as unknown[][], cycle: 'weekly' }))
+const loader = vi.hoisted(() => ({ map: new Map<string, unknown>(), fail: false, refs: [] as any[] }))
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: () => ({}) }))
 vi.mock('@/lib/pricing/price-status-loader', () => ({
-  loadSpecStatuses: async () => { if (loader.fail) throw new Error('boom'); return loader.map },
+  loadSpecStatuses: async (_db: unknown, refs: any[]) => { loader.refs = refs; if (loader.fail) throw new Error('boom'); return loader.map },
 }))
 vi.mock('@/lib/member-session', () => ({ getMemberSession: async () => ({ user: { id: 'member' }, supabase: {
   from(table: string) {
@@ -13,13 +13,13 @@ vi.mock('@/lib/member-session', () => ({ getMemberSession: async () => ({ user: 
     q.eq = (key: string, value: unknown) => { state.filters.push([table,key,value]); return q }
     q.maybeSingle = () => { single = true; return q }
     q.then = (resolve: (value: unknown) => void) => resolve({ error: table === state.fail ? { message: 'failed' } : null,
-      data: table === 'memberships' ? { organization_id: 'own', organizations: { name: '테스트' } } : table === 'restaurants' ? { id: 'rest', settlement_cycle: 'weekly' } : table === 'daily_specs' ? (single ? { id: 'spec', business_date: '2026-09-15', total_amount: 10000 } : [{ id: 'spec', business_date: '2026-09-15', total_amount: 10000 }]) : table === 'receivables' ? [{ balance: 4000, status: 'partial', due_date: '2026-09-20', sales_statements: { settlement_periods: { start_date: '2026-09-14', end_date: '2026-09-20' } } }] : [] })
+      data: table === 'memberships' ? { organization_id: 'own', organizations: { name: '테스트' } } : table === 'restaurants' ? { id: 'rest', settlement_cycle: state.cycle } : table === 'daily_specs' ? (single ? { id: 'spec', business_date: '2026-09-15', total_amount: 10000 } : [{ id: 'spec', business_date: '2026-09-15', total_amount: 10000 }]) : table === 'receivables' ? [{ balance: 4000, status: 'partial', due_date: '2026-09-20', sales_statements: { settlement_periods: { start_date: '2026-09-14', end_date: '2026-09-20' } } }] : [] })
     return q
   },
 } }) }))
 import { GET } from '@/app/api/member/settlement/route'
 const request = (extra = '') => GET(new NextRequest('http://localhost/api/member/settlement?date=2026-09-15&from=2026-09-01&to=2026-09-30' + extra))
-beforeEach(() => { state.fail = ''; state.filters = []; loader.map = new Map(); loader.fail = false })
+beforeEach(() => { state.fail = ''; state.filters = []; state.cycle = 'weekly'; loader.map = new Map(); loader.fail = false; loader.refs = [] })
 describe('정산 조회 API', () => {
   it('납품 합계와 부분 납부 잔액을 구분한다', async () => {
     const response = await request('&restaurantId=other')
@@ -58,5 +58,17 @@ describe('정산 조회 API', () => {
     const body = await response.json()
     expect(body).toMatchObject({ outstanding: 4000, periods: [{ total: 10000 }] })
     expect(body.priceStatuses).toEqual([])
+  })
+
+  it('월정산 업체이면 명세서에 monthly 표시를 달아 상태 계산에 넘긴다', async () => {
+    state.cycle = 'monthly'
+    await request()
+    expect(loader.refs.length).toBeGreaterThan(0)
+    expect(loader.refs.every(r => r.monthly === true)).toBe(true)
+  })
+
+  it('주정산 업체는 monthly 가 아니다', async () => {
+    await request()
+    expect(loader.refs.every(r => r.monthly === false)).toBe(true)
   })
 })

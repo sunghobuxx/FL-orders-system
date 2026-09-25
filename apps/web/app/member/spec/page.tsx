@@ -35,7 +35,7 @@ export default async function MemberSpecPage({ searchParams }: Props) {
   )
 
   const { data: restaurant } = await supabase
-    .from('restaurants').select('id').eq('organization_id', org.id).single()
+    .from('restaurants').select('id, settlement_cycle').eq('organization_id', org.id).single()
 
   if (!restaurant) return (
     <SettlementShell orgName={org.name} date={targetDate}>
@@ -69,7 +69,7 @@ export default async function MemberSpecPage({ searchParams }: Props) {
   let priceShown: ShownPriceStatus | null = null
   if (spec) {
     try {
-      const statuses = await loadSpecStatuses(createAdminClient(), [{ id: spec.id, business_date: targetDate }])
+      const statuses = await loadSpecStatuses(createAdminClient(), [{ id: spec.id, business_date: targetDate, monthly: restaurant.settlement_cycle === 'monthly' }])
       priceShown = displayFor(statuses.get(spec.id) ?? NO_PRICE_STATUS, targetDate,
         { audience: 'member', today, view: 'spec' })
     } catch (e) {

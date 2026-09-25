@@ -13,7 +13,12 @@ import { NO_PRICE_STATUS, PRICE_STATUS_FROM, priceStatus, type PriceStatusResult
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type Db = any
 
-export interface SpecRef { id: string; business_date: string }
+export interface SpecRef {
+  id: string
+  business_date: string
+  /** 월정산 업체의 명세서 — 시행일 이후 날짜는 전부 확정으로 본다 */
+  monthly?: boolean
+}
 
 const CHUNK = 100
 
@@ -110,7 +115,7 @@ export async function loadSpecStatuses(
   for (const spec of eligible) {
     const r = raw.get(spec.business_date)!
     result.set(spec.id, priceStatus({
-      date: spec.business_date, ...r, statementConfirmed: finalSpecs.has(spec.id), from,
+      date: spec.business_date, ...r, statementConfirmed: finalSpecs.has(spec.id), monthly: spec.monthly, from,
     }))
   }
   return result

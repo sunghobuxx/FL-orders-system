@@ -19,7 +19,7 @@ export async function GET(req: Request) {
   const query = applyAssignedFilter(
     ctx.db
       .from('daily_specs')
-      .select('id, restaurant_id, business_date, total_amount, restaurants(organizations(name)), daily_spec_lines(id, qty, unit, unit_price, amount, products(standard_name))')
+      .select('id, restaurant_id, business_date, total_amount, restaurants(settlement_cycle, organizations(name)), daily_spec_lines(id, qty, unit, unit_price, amount, products(standard_name))')
       .gte('business_date', from)
       .lte('business_date', to)
       .order('business_date', { ascending: false }),
@@ -34,7 +34,10 @@ export async function GET(req: Request) {
   let statusBySpec = new Map<string, PriceStatusResult>()
   try {
     statusBySpec = await loadSpecStatuses(
-      ctx.db, (data ?? []).map((s: any) => ({ id: s.id as string, business_date: s.business_date as string })))
+      ctx.db, (data ?? []).map((s: any) => {
+        const rest = Array.isArray(s.restaurants) ? s.restaurants[0] : s.restaurants
+        return { id: s.id as string, business_date: s.business_date as string, monthly: rest?.settlement_cycle === 'monthly' }
+      }))
   } catch (e) {
     console.error('[driver/specs] 단가 확정 상태 조회 실패', e)
   }

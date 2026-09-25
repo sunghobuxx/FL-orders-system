@@ -23,7 +23,7 @@ export default async function SpecPrintPage({ searchParams }: Props) {
   if (!org) return <div>업체 정보 없음</div>
 
   const { data: restaurant } = await supabase
-    .from('restaurants').select('id').eq('organization_id', org.id).single()
+    .from('restaurants').select('id, settlement_cycle').eq('organization_id', org.id).single()
   if (!restaurant) return <div>식당 정보 없음</div>
 
   const today = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().split('T')[0]
@@ -61,7 +61,7 @@ export default async function SpecPrintPage({ searchParams }: Props) {
   let printStatus: string | null = null
   if (spec) {
     try {
-      const statuses = await loadSpecStatuses(createAdminClient(), [{ id: spec.id, business_date: targetDate }])
+      const statuses = await loadSpecStatuses(createAdminClient(), [{ id: spec.id, business_date: targetDate, monthly: restaurant.settlement_cycle === 'monthly' }])
       const shown = displayFor(statuses.get(spec.id) ?? NO_PRICE_STATUS, targetDate,
         { audience: 'member', today, view: 'spec' })
       printStatus = shown ? priceStatusPrintText(shown) : null
