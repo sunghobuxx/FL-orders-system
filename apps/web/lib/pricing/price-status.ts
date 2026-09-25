@@ -14,7 +14,7 @@
  * 안 그러면 월정산 업체(마산 등)의 9월 초 날짜가 전부 「입력 중」으로 뜬다.
  * 배포 당일(KST)로 맞춘다.
  */
-export const PRICE_STATUS_FROM = '2026-09-26'
+export const PRICE_STATUS_FROM = '2026-09-25'
 
 export type PriceStatus = 'none' | 'final' | 'modified' | 'confirmed' | 'pending'
 export interface PriceStatusResult { status: PriceStatus; at: string | null }
