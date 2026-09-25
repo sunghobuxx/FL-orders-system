@@ -2,6 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const state = vi.hoisted(() => ({ db: null as any }))
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: () => state.db }))
+const loader = vi.hoisted(() => ({ map: new Map<string, unknown>(), fail: false }))
+vi.mock('@/lib/pricing/price-status-loader', () => ({
+  loadSpecStatuses: async () => { if (loader.fail) throw new Error('boom'); return loader.map },
+}))
 import { GET as dashboardHandler } from '@/app/api/driver/dashboard/route'
 import { GET as orderDetailHandler, PATCH as patchHandler, DELETE as deleteHandler } from '@/app/api/driver/orders/[batchId]/route'
 import { GET as ordersHandler } from '@/app/api/driver/orders/route'
@@ -63,6 +67,7 @@ function request(path: string, method = 'GET', body?: object) {
 const params = (batchId: string) => ({ params: Promise.resolve({ batchId }) })
 
 beforeEach(() => {
+  loader.map = new Map(); loader.fail = false
   writes = []
   tables = {
     memberships: [{ user_id: 'manager-a', role: 'manager', organizations: { organization_type: 'operator' } }],
@@ -133,6 +138,26 @@ describe('배송앱 조회와 처리 권한', () => {
     expect(specBody.specs.map((r: any) => r.id)).toEqual(['spec-old'])
     expect(specBody.specs[0]).toMatchObject({ businessDate: oldDate, totalAmount: 250, lines: [{ productName: '사과', qty: 2, unitPrice: 125, amount: 250 }] })
     expect(writes).toEqual([])
+  })
+  it('배송앱 명세서에 단가 확정 상태를 붙인다 — 오래된 미확정 날짜도 표시한다', async () => {
+    loader.map = new Map([['spec-old', { status: 'pending', at: null }]])
+    const body = await (await specs(request(`specs?mode=today&date=${oldDate}`))).json()
+    expect(body.specs[0].priceStatus).toEqual({ status: 'pending', at: null })
+  })
+  it('정산 확정된 명세서는 final, 시행일 이전(none)은 필드가 없다', async () => {
+    loader.map = new Map([['spec-old', { status: 'final', at: null }]])
+    expect((await (await specs(request(`specs?mode=today&date=${oldDate}`))).json()).specs[0].priceStatus)
+      .toEqual({ status: 'final', at: null })
+    loader.map = new Map()
+    expect((await (await specs(request(`specs?mode=today&date=${oldDate}`))).json()).specs[0]).not.toHaveProperty('priceStatus')
+  })
+  it('상태 조회가 실패해도 명세서 목록은 그대로 200 이다', async () => {
+    loader.fail = true
+    const response = await specs(request(`specs?mode=today&date=${oldDate}`))
+    expect(response.status).toBe(200)
+    const body = await response.json()
+    expect(body.specs.map((r: any) => r.id)).toEqual(['spec-old'])
+    expect(body.specs[0]).not.toHaveProperty('priceStatus')
   })
   it('조회 날짜에 자료가 없으면 오늘 자료를 섞지 않는다', async () => {
     const body = await (await specs(request('specs?mode=today&date=2024-01-01'))).json()

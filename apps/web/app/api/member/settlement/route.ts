@@ -2,6 +2,9 @@ export const runtime = 'edge'
 import { NextRequest, NextResponse } from 'next/server'
 import { getMemberSession } from '@/lib/member-session'
 import { settlementPeriod, unpaidBalance, validDate } from '@/lib/member-settlement'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { NO_PRICE_STATUS, displayFor } from '@/lib/pricing/price-status'
+import { loadSpecStatuses } from '@/lib/pricing/price-status-loader'
 
 function one<T>(value: T | T[] | null): T | null { return Array.isArray(value) ? value[0] ?? null : value }
 export async function GET(req: NextRequest) {
@@ -43,9 +46,27 @@ export async function GET(req: NextRequest) {
     const period = periods.get(key)
     if (period) { period.billed = true; period.outstanding += unpaidBalance(rec) }
   }
+  // 단가 확정 상태 — 부가 정보라서 조회가 실패해도 정산 조회 자체는 그대로 응답한다.
+  // 업체 표시 범위(pending 은 오늘·어제만, final·none 은 없음)만 내려준다.
+  const priceStatuses: Array<{ date: string; status: string; at: string | null }> = []
+  try {
+    const refs = [...specs, ...(selectedResult.data ? [selectedResult.data] : [])]
+      .map(s => ({ id: s.id as string, business_date: s.business_date as string }))
+    const statusBySpec = await loadSpecStatuses(createAdminClient(), refs)
+    const seen = new Set<string>()
+    for (const ref of refs) {
+      if (seen.has(ref.business_date)) continue
+      seen.add(ref.business_date)
+      const shown = displayFor(statusBySpec.get(ref.id) ?? NO_PRICE_STATUS, ref.business_date,
+        { audience: 'member', today, view: 'spec' })
+      if (shown) priceStatuses.push({ date: ref.business_date, status: shown.status, at: shown.at })
+    }
+  } catch (e) {
+    console.error('[member/settlement] 단가 확정 상태 조회 실패', e)
+  }
   return NextResponse.json({ organizationName: one(member.organizations)?.name ?? '', today, date, from, to,
     cycle: weekly ? 'weekly' : 'monthly', outstanding: recs.reduce((sum, row) => sum + unpaidBalance(row), 0),
     previousOutstanding: recs.filter(r => r.due_date && r.due_date < from).reduce((sum, row) => sum + unpaidBalance(row), 0),
-    selectedSpec: selectedResult.data, periods: [...periods.values()], lines,
+    selectedSpec: selectedResult.data, periods: [...periods.values()], lines, priceStatuses,
   }, { headers: { 'Cache-Control': 'no-store' } })
 }
