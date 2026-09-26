@@ -1,11 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fakeDb } from '@/lib/testing/fake-db'
 
-const m = vi.hoisted(() => ({ clean: vi.fn(), db: null as unknown, session: vi.fn(), sessionUser: vi.fn() }))
+const m = vi.hoisted(() => ({ clean: vi.fn(), db: null as unknown, session: vi.fn(), sessionUser: vi.fn(), driverDb: null as unknown, batchStatus: 'dispatched' }))
 vi.mock('@/lib/specs/cleanup-deleted-batch', () => ({ cleanSpecAfterBatchDelete: m.clean }))
 vi.mock('@/lib/admin-member-user', () => ({ getAdminSession: m.session }))
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: () => m.db }))
 vi.mock('@/lib/supabase/server', () => ({ getSessionUser: m.sessionUser }))
+vi.mock('@/lib/driver-api', () => ({
+  requireDriverUser: async () => ({ db: m.driverDb, user: { id: 'drv' }, role: 'manager', assignedRestaurantIds: null }),
+  requireBatchAccess: async () => ({ batch: { id: 'b1', restaurant_id: 'r1', business_date: '2026-09-21', status: m.batchStatus } }),
+}))
 
 const FUTURE = '2099-01-01'
 const tables = (date = '2026-09-21', status = 'submitted') => ({
@@ -109,6 +113,30 @@ describe('발주 삭제 — 명세서·정산서도 함께 정리한다', () => 
       const { res } = await memberDelete(tables(FUTURE, 'dispatched'), ownerTables)
       expect(res.status).toBe(400)
       expect(m.clean).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('배송앱', () => {
+    const driverDelete = async (status: string) => {
+      m.batchStatus = status
+      const f = fakeDb(tables('2026-09-21', status)); m.driverDb = f.db
+      const DELETE = await del('../../app/api/driver/orders/[batchId]/route')
+      const res = await DELETE(new Request('https://x.test') as never, ctxOf())
+      return { res, f }
+    }
+
+    it('★ 배송이 끝난(completed) 발주는 삭제할 수 없다(409) — 납품한 물건값이 청구서에서 빠지지 않게', async () => {
+      const { res, f } = await driverDelete('completed')
+      expect(res.status).toBe(409)
+      expect(f.writes).toEqual([])
+      expect(m.clean).not.toHaveBeenCalled()
+    })
+
+    it('배송 전·배송 중(dispatched 등) 발주는 예전처럼 삭제되고 명세서도 정리된다', async () => {
+      const { res, f } = await driverDelete('dispatched')
+      expect(res.status).toBe(200)
+      expect(f.writes.some(w => w.table === 'order_batches' && w.op === 'delete')).toBe(true)
+      expect(m.clean).toHaveBeenCalledWith(f.db, { restaurantId: 'r1', businessDate: '2026-09-21', itemIds: ['oi1', 'oi2'], productIds: ['p1', 'p2'] })
     })
   })
 })

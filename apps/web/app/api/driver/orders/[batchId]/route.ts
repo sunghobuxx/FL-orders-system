@@ -128,6 +128,11 @@ export async function DELETE(req: Request, { params }: Props) {
   const access = await requireBatchAccess(ctx, batchId)
   if ('error' in access) return access.error
 
+  // 배송이 끝난 발주는 지울 수 없다. 지우면 납품한 물건값이 명세서·정산서에서 함께 빠진다(사장님 결정 2026-09-26).
+  if (access.batch.status === 'completed') {
+    return NextResponse.json({ error: '배송이 끝난 발주는 삭제할 수 없습니다.' }, { status: 409 })
+  }
+
   const { data: batch } = await ctx.db
     .from('order_batches').select('restaurant_id, business_date').eq('id', batchId).maybeSingle()
   let itemIdsForCleanup: string[] = []
