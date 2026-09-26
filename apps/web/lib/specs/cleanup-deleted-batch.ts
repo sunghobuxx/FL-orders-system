@@ -14,6 +14,8 @@ import { settledSpecIds } from '@/lib/specs/settled'
  *   관리자가 손으로 넣은 **다른 품목** 줄은 남긴다.
  * 줄이 하나도 안 남으면 명세서와 그 정산서 줄도 지운다. 남으면 합계만 다시 낸다.
  * 확정됐거나 완납된 정산서에 든 날짜는 청구가 끝난 금액이라 손대지 않는다(status 'settled').
+ * 지우면 미수금 잔액이 음수가 될 만큼 이미 받은 돈이 많으면(부분입금 뒤 발주 삭제) 정리하지 않는다(status 'overpaid') —
+ * computeOutstanding 이 잔액을 0 으로 잘라서 초과분이 기록 없이 사라지기 때문이다(만나웰빙 2026-07-27 과 같은 원인).
  */
 export interface CleanupArgs {
   restaurantId: string
@@ -22,7 +24,7 @@ export interface CleanupArgs {
   productIds: string[]
 }
 export interface CleanupResult {
-  status: 'none' | 'settled' | 'cleaned'
+  status: 'none' | 'settled' | 'overpaid' | 'cleaned'
   removedLines: number
   removedSpec: boolean
 }
@@ -47,14 +49,27 @@ export async function cleanSpecAfterBatchDelete(db: any, args: CleanupArgs): Pro
 
   if ((await settledSpecIds(db, [specId])).has(specId)) return { ...none, status: 'settled' }
 
-  const { error: delLinesError } = await db.from('daily_spec_lines').delete().in('id', removing.map(l => l.id))
-  if (delLinesError) throw delLinesError
-
   const remaining = all.filter(l => !removing.includes(l))
+  const sum = (ls: Line[]) => ls.reduce((s, l) => s + Number(l.amount ?? 0) + Number(l.vat_amount ?? 0), 0)
   const { data: stmtLines } = await db
     .from('sales_statement_lines').select('id, sales_statement_id')
     .eq('source_doc_type', 'daily_spec').eq('source_doc_id', specId)
   const statementIds = [...new Set((stmtLines ?? []).map((l: { sales_statement_id: string }) => l.sales_statement_id))] as string[]
+
+  // 쓰기 전에 검사한다 — 반쯤 고친 상태를 남기지 않는다.
+  if (statementIds.length) {
+    const { data: recvs } = await db.from('receivables').select('statement_id, balance').in('statement_id', statementIds)
+    const delta = sum(remaining) - sum(all) // 음수: 총액이 줄어드는 만큼
+    for (const id of statementIds) {
+      const balance = ((recvs ?? []) as Array<{ statement_id: string; balance: number }>)
+        .filter(r => r.statement_id === id).reduce((s, r) => s + Number(r.balance ?? 0), 0)
+      const hasReceivable = ((recvs ?? []) as Array<{ statement_id: string }>).some(r => r.statement_id === id)
+      if (hasReceivable && balance + delta < 0) return { ...none, status: 'overpaid' }
+    }
+  }
+
+  const { error: delLinesError } = await db.from('daily_spec_lines').delete().in('id', removing.map(l => l.id))
+  if (delLinesError) throw delLinesError
 
   if (!remaining.length) {
     if (stmtLines?.length) {
@@ -64,7 +79,7 @@ export async function cleanSpecAfterBatchDelete(db: any, args: CleanupArgs): Pro
     const { error } = await db.from('daily_specs').delete().eq('id', specId)
     if (error) throw error
   } else {
-    const total = remaining.reduce((s, l) => s + Number(l.amount ?? 0) + Number(l.vat_amount ?? 0), 0)
+    const total = sum(remaining)
     const vat = remaining.reduce((s, l) => s + Number(l.vat_amount ?? 0), 0)
     const { error } = await db.from('daily_specs').update({ total_amount: total, vat_amount: vat }).eq('id', specId)
     if (error) throw error

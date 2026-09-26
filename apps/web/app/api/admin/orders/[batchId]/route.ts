@@ -21,6 +21,8 @@ export async function DELETE(_req: NextRequest, context: { params: Promise<{ bat
     // dispatch_job_items 삭제 (order_item_id FK)
     const { data: batch } = await db
       .from('order_batches').select('restaurant_id, business_date').eq('id', batchId).maybeSingle()
+    let itemIdsForCleanup: string[] = []
+    let productIdsForCleanup: string[] = []
     const { data: orders } = await db.from('orders').select('id').eq('batch_id', batchId)
     const orderIds = (orders ?? []).map((o: { id: string }) => o.id)
 
@@ -28,32 +30,41 @@ export async function DELETE(_req: NextRequest, context: { params: Promise<{ bat
       const { data: items } = await db.from('order_items').select('id, product_id').in('order_id', orderIds)
       const itemIds = (items ?? []).map((i: { id: string }) => i.id)
       const productIds = [...new Set((items ?? []).map((i: { product_id: string }) => i.product_id))] as string[]
+      itemIdsForCleanup = itemIds
+      productIdsForCleanup = productIds
 
       if (itemIds.length > 0) {
         // dispatch_job_items FK 먼저
         await db.from('dispatch_job_items').delete().in('order_item_id', itemIds)
-        // 그 발주로 만든 명세서 줄과 정산서 금액도 함께 정리한다. 예전엔 발주만 지워서 금액이 정산서에 남았다
-        // (킨텍스점 9/21, 2026-09-26). 실패해도 발주 삭제는 계속한다 — 로그를 남기고 사람이 본다.
-        if (batch) {
-          try {
-            await cleanSpecAfterBatchDelete(db, {
-              restaurantId: batch.restaurant_id, businessDate: batch.business_date, itemIds, productIds,
-            })
-          } catch (e) {
-            console.error('[DELETE /api/admin/orders/[batchId]] 명세서 정리 실패', batchId, e)
-          }
-        }
         // daily_spec_lines.order_item_id FK — order_item_id 를 NULL 로 해제 후 삭제
         await db.from('daily_spec_lines').update({ order_item_id: null }).in('order_item_id', itemIds)
       }
-      await db.from('order_items').delete().in('order_id', orderIds)
-      await db.from('orders').delete().in('batch_id', [batchId])
+      const { error: itemsError } = await db.from('order_items').delete().in('order_id', orderIds)
+      const { error: ordersError } = itemsError ? { error: null } : await db.from('orders').delete().in('batch_id', [batchId])
+      if (itemsError || ordersError) {
+        console.error('[DELETE /api/admin/orders/[batchId]] 품목·주문 삭제 실패', itemsError ?? ordersError)
+        return NextResponse.json({ error: '발주 삭제 실패' }, { status: 500 })
+      }
     }
 
     const { error } = await db.from('order_batches').delete().eq('id', batchId)
     if (error) {
       console.error('[DELETE /api/admin/orders/[batchId]]', error)
       return NextResponse.json({ error: '발주 삭제 실패' }, { status: 500 })
+    }
+
+    // 발주 삭제가 **끝난 뒤에** 그 발주로 만든 명세서 줄과 정산서 금액을 함께 정리한다. 예전엔 발주만 지워서 금액이
+    // 정산서에 남았다(킨텍스점 9/21, 2026-09-26). 삭제가 실패했는데 청구만 빠지면 안 되므로 순서가 중요하다.
+    // 정리가 실패해도 삭제는 이미 끝났으니 성공으로 응답하고 로그를 남긴다.
+    if (batch && itemIdsForCleanup.length > 0) {
+      try {
+        await cleanSpecAfterBatchDelete(db, {
+          restaurantId: batch.restaurant_id, businessDate: batch.business_date,
+          itemIds: itemIdsForCleanup, productIds: productIdsForCleanup,
+        })
+      } catch (e) {
+        console.error('[DELETE /api/admin/orders/[batchId]] 명세서 정리 실패', batchId, e)
+      }
     }
 
     return NextResponse.json({ success: true })

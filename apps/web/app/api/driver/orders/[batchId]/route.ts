@@ -130,6 +130,8 @@ export async function DELETE(req: Request, { params }: Props) {
 
   const { data: batch } = await ctx.db
     .from('order_batches').select('restaurant_id, business_date').eq('id', batchId).maybeSingle()
+  let itemIdsForCleanup: string[] = []
+  let productIdsForCleanup: string[] = []
   const { data: orders } = await ctx.db.from('orders').select('id').eq('batch_id', batchId)
   const orderIds = (orders ?? []).map((o: { id: string }) => o.id)
 
@@ -137,26 +139,32 @@ export async function DELETE(req: Request, { params }: Props) {
     const { data: items } = await ctx.db.from('order_items').select('id, product_id').in('order_id', orderIds)
     const itemIds = (items ?? []).map((i: { id: string }) => i.id)
     const productIds = [...new Set((items ?? []).map((i: { product_id: string }) => i.product_id))] as string[]
+    itemIdsForCleanup = itemIds
+    productIdsForCleanup = productIds
     if (itemIds.length > 0) {
       await ctx.db.from('dispatch_job_items').delete().in('order_item_id', itemIds)
-      // 그 발주로 만든 명세서 줄과 정산서 금액도 함께 정리한다(lib/specs/cleanup-deleted-batch.ts). 실패해도 삭제는 계속한다.
-      if (batch) {
-        try {
-          await cleanSpecAfterBatchDelete(ctx.db, {
-            restaurantId: batch.restaurant_id, businessDate: batch.business_date, itemIds, productIds,
-          })
-        } catch (e) {
-          console.error('[DELETE /api/driver/orders/[batchId]] 명세서 정리 실패', batchId, e)
-        }
-      }
       await ctx.db.from('daily_spec_lines').update({ order_item_id: null }).in('order_item_id', itemIds)
     }
-    await ctx.db.from('order_items').delete().in('order_id', orderIds)
-    await ctx.db.from('orders').delete().in('batch_id', [batchId])
+    const { error: itemsError } = await ctx.db.from('order_items').delete().in('order_id', orderIds)
+    const { error: ordersError } = itemsError ? { error: null } : await ctx.db.from('orders').delete().in('batch_id', [batchId])
+    if (itemsError || ordersError) return NextResponse.json({ error: '발주 삭제 실패' }, { status: 500 })
   }
 
   const { error } = await ctx.db.from('order_batches').delete().eq('id', batchId)
   if (error) return NextResponse.json({ error: '발주 삭제 실패' }, { status: 500 })
+
+  // 발주 삭제가 끝난 뒤에 그 발주로 만든 명세서 줄과 정산서 금액도 정리한다(lib/specs/cleanup-deleted-batch.ts).
+  // 정리가 실패해도 삭제는 이미 끝났으니 성공으로 응답하고 로그를 남긴다.
+  if (batch && itemIdsForCleanup.length > 0) {
+    try {
+      await cleanSpecAfterBatchDelete(ctx.db, {
+        restaurantId: batch.restaurant_id, businessDate: batch.business_date,
+        itemIds: itemIdsForCleanup, productIds: productIdsForCleanup,
+      })
+    } catch (e) {
+      console.error('[DELETE /api/driver/orders/[batchId]] 명세서 정리 실패', batchId, e)
+    }
+  }
 
   return NextResponse.json({ success: true })
 }

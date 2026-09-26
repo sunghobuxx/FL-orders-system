@@ -13,7 +13,7 @@ const base = (over: Record<string, unknown[]> = {}) => ({
   daily_spec_lines: [{ id: 'l1', product_id: 'p-gaenip', order_item_id: null, amount: 46000, vat_amount: 0 }],
   sales_statement_lines: [{ id: 'sl1', sales_statement_id: 'st1', source_doc_id: 'spec-1', amount: 46000 }],
   sales_statements: [{ id: 'st1', confirmed_at: null }],
-  receivables: [{ statement_id: 'st1', status: 'unpaid' }],
+  receivables: [{ statement_id: 'st1', status: 'unpaid', balance: 200000 }],
   ...over,
 })
 
@@ -70,6 +70,19 @@ describe('cleanSpecAfterBatchDelete — 지운 발주의 명세서·정산서 �
     expect(result).toEqual({ status: 'settled', removedLines: 0, removedSpec: false })
     expect(writes).toEqual([])
     expect(fin.syncStatementFinance).not.toHaveBeenCalled()
+  })
+
+  it('★ 이미 받은 돈보다 정산서 총액이 작아지게 되면(부분입금 뒤 발주 삭제) 정리를 거부한다 — 초과 입금이 기록 없이 사라지지 않게', async () => {
+    // 미수금 잔액 10,000 인 정산서에서 46,000 짜리 명세서를 지우면 잔액이 -36,000 → 0 으로 잘려 36,000 이 사라진다
+    const { result, writes } = await run(base({ receivables: [{ statement_id: 'st1', status: 'partial', balance: 10000 }] }))
+    expect(result).toEqual({ status: 'overpaid', removedLines: 0, removedSpec: false })
+    expect(writes).toEqual([])
+    expect(fin.syncStatementFinance).not.toHaveBeenCalled()
+  })
+
+  it('잔액이 지우는 금액과 정확히 같으면(완전히 0 이 되는 경우)는 정리한다', async () => {
+    const { result } = await run(base({ receivables: [{ statement_id: 'st1', status: 'unpaid', balance: 46000 }] }))
+    expect(result.status).toBe('cleaned')
   })
 
   it('그날 명세서가 없으면 할 일이 없다', async () => {
