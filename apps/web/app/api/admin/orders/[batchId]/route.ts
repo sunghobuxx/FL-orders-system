@@ -3,6 +3,7 @@ export const runtime = 'edge'
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getAdminSession } from '@/lib/admin-member-user'
+import { cleanSpecAfterBatchDelete } from '@/lib/specs/cleanup-deleted-batch'
 
 // 발주 삭제
 export async function DELETE(_req: NextRequest, context: { params: Promise<{ batchId: string }> }) {
@@ -18,16 +19,30 @@ export async function DELETE(_req: NextRequest, context: { params: Promise<{ bat
 
     // 삭제 순서: dispatch_job_items → order_items → orders → order_batches
     // dispatch_job_items 삭제 (order_item_id FK)
+    const { data: batch } = await db
+      .from('order_batches').select('restaurant_id, business_date').eq('id', batchId).maybeSingle()
     const { data: orders } = await db.from('orders').select('id').eq('batch_id', batchId)
     const orderIds = (orders ?? []).map((o: { id: string }) => o.id)
 
     if (orderIds.length > 0) {
-      const { data: items } = await db.from('order_items').select('id').in('order_id', orderIds)
+      const { data: items } = await db.from('order_items').select('id, product_id').in('order_id', orderIds)
       const itemIds = (items ?? []).map((i: { id: string }) => i.id)
+      const productIds = [...new Set((items ?? []).map((i: { product_id: string }) => i.product_id))] as string[]
 
       if (itemIds.length > 0) {
         // dispatch_job_items FK 먼저
         await db.from('dispatch_job_items').delete().in('order_item_id', itemIds)
+        // 그 발주로 만든 명세서 줄과 정산서 금액도 함께 정리한다. 예전엔 발주만 지워서 금액이 정산서에 남았다
+        // (킨텍스점 9/21, 2026-09-26). 실패해도 발주 삭제는 계속한다 — 로그를 남기고 사람이 본다.
+        if (batch) {
+          try {
+            await cleanSpecAfterBatchDelete(db, {
+              restaurantId: batch.restaurant_id, businessDate: batch.business_date, itemIds, productIds,
+            })
+          } catch (e) {
+            console.error('[DELETE /api/admin/orders/[batchId]] 명세서 정리 실패', batchId, e)
+          }
+        }
         // daily_spec_lines.order_item_id FK — order_item_id 를 NULL 로 해제 후 삭제
         await db.from('daily_spec_lines').update({ order_item_id: null }).in('order_item_id', itemIds)
       }

@@ -38,9 +38,10 @@ export default function OrderActionButtons({ businessDate }: { businessDate: str
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ businessDate }),
       })
-      const data = await res.json() as { success?: boolean; error?: string; created?: number }
+      const data = await res.json() as { success?: boolean; error?: string; created?: number; skipped?: number }
       if (!res.ok) throw new Error(data.error ?? '명세서 생성 실패')
-      alert(`명세서 ${data.created ?? 0}건 생성 완료`)
+      alert(`명세서 ${data.created ?? 0}건 생성 완료`
+        + (data.skipped ? `\n확정·완납된 정산서에 든 ${data.skipped}곳은 건드리지 않았습니다.` : ''))
       router.refresh()
     } catch (e) {
       alert(e instanceof Error ? e.message : '오류 발생')

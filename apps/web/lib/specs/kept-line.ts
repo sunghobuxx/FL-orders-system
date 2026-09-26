@@ -1,4 +1,5 @@
 import { grossUnitPrice, splitVat } from '@/lib/specs/vat'
+import { normalizeUnit } from '@/lib/units'
 
 /**
  * 잠긴(price_overridden) 명세서 줄을 발주에 다시 맞출 때의 규칙.
@@ -43,9 +44,10 @@ export interface KeptSpecLine {
 export function keptSpecLine(kept: KeptLine, item: OrderedItem, taxable: boolean): KeptSpecLine {
   const keptQty = Number(kept.qty)
   const itemQty = Number(item.qty)
-  const unit = kept.unit ?? item.unit
-  const sameUnit = kept.unit == null || kept.unit === item.unit
+  // 「박스」와 box 는 같은 단위다(과거 줄엔 한글 표기가 남아 있다). 표기만 다르다고 수량을 못 따라가면 이번 사고가 조용히 재발한다.
+  const sameUnit = kept.unit == null || normalizeUnit(kept.unit) === normalizeUnit(item.unit)
   const follows = sameUnit && Number.isFinite(itemQty) && itemQty > 0 && itemQty !== keptQty
+  const unit = follows ? item.unit : (kept.unit ?? item.unit)
 
   if (!follows) {
     return {

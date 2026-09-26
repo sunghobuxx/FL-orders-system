@@ -67,7 +67,9 @@ export function RegenFromOrderButton({ businessDate }: { businessDate: string | 
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? '재생성 실패')
-      setMsg('✅ 재생성 완료')
+      setMsg(data.skipped
+        ? `✅ 재생성 완료 (확정·완납된 정산서에 든 ${data.skipped}곳은 건드리지 않았습니다)`
+        : '✅ 재생성 완료')
       router.refresh()
     } catch (err: unknown) {
       setMsg(err instanceof Error ? err.message : '재생성 실패')

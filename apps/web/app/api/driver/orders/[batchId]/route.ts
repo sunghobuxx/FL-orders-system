@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server'
 
 import { getKstToday } from '@/lib/date-kst'
 import { requireBatchAccess, requireDriverUser } from '@/lib/driver-api'
+import { cleanSpecAfterBatchDelete } from '@/lib/specs/cleanup-deleted-batch'
 
 interface Props {
   params: Promise<{ batchId: string }>
@@ -127,14 +128,27 @@ export async function DELETE(req: Request, { params }: Props) {
   const access = await requireBatchAccess(ctx, batchId)
   if ('error' in access) return access.error
 
+  const { data: batch } = await ctx.db
+    .from('order_batches').select('restaurant_id, business_date').eq('id', batchId).maybeSingle()
   const { data: orders } = await ctx.db.from('orders').select('id').eq('batch_id', batchId)
   const orderIds = (orders ?? []).map((o: { id: string }) => o.id)
 
   if (orderIds.length > 0) {
-    const { data: items } = await ctx.db.from('order_items').select('id').in('order_id', orderIds)
+    const { data: items } = await ctx.db.from('order_items').select('id, product_id').in('order_id', orderIds)
     const itemIds = (items ?? []).map((i: { id: string }) => i.id)
+    const productIds = [...new Set((items ?? []).map((i: { product_id: string }) => i.product_id))] as string[]
     if (itemIds.length > 0) {
       await ctx.db.from('dispatch_job_items').delete().in('order_item_id', itemIds)
+      // 그 발주로 만든 명세서 줄과 정산서 금액도 함께 정리한다(lib/specs/cleanup-deleted-batch.ts). 실패해도 삭제는 계속한다.
+      if (batch) {
+        try {
+          await cleanSpecAfterBatchDelete(ctx.db, {
+            restaurantId: batch.restaurant_id, businessDate: batch.business_date, itemIds, productIds,
+          })
+        } catch (e) {
+          console.error('[DELETE /api/driver/orders/[batchId]] 명세서 정리 실패', batchId, e)
+        }
+      }
       await ctx.db.from('daily_spec_lines').update({ order_item_id: null }).in('order_item_id', itemIds)
     }
     await ctx.db.from('order_items').delete().in('order_id', orderIds)

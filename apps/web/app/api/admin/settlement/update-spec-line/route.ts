@@ -6,6 +6,7 @@ import { computeOutstanding, syncStatementFinance } from '@/lib/settlement-finan
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getAdminSession } from '@/lib/admin-member-user'
 import { splitVat } from '@/lib/specs/vat'
+import { findOrderItemForLine, orderQtyForSpecLine, type OrderItemRef } from '@/lib/specs/mirror-order'
 
 interface LineUpdate {
   id: string          // daily_spec_lines.id
@@ -45,7 +46,7 @@ export async function POST(req: NextRequest) {
     // 1) daily_specs 존재 확인 + 이전 total 백업
     const { data: spec } = await db
       .from('daily_specs')
-      .select('id, total_amount')
+      .select('id, total_amount, restaurant_id, business_date')
       .eq('id', specId)
       .single()
     if (!spec) return NextResponse.json({ error: '명세서를 찾을 수 없습니다' }, { status: 404 })
@@ -56,22 +57,25 @@ export async function POST(req: NextRequest) {
     const lineIds = lines.map(l => l.id)
     const { data: existingLines } = await db
       .from('daily_spec_lines')
-      .select('id, product_id, order_item_id')
+      .select('id, product_id, order_item_id, unit')
       .in('id', lineIds)
 
-    const metaById = new Map<string, { product_id: string; order_item_id: string | null }>()
+    const metaById = new Map<string, { product_id: string; order_item_id: string | null; unit: string | null }>()
     for (const l of existingLines ?? []) {
       metaById.set(l.id, {
         product_id: l.product_id,
         order_item_id: l.order_item_id,
+        unit: l.unit ?? null,
       })
     }
 
     // products.taxable_flag 조회 (vat_amount 기준 추정 → 품목마스터 기준으로 변경)
     const productIds = [...new Set((existingLines ?? []).map(l => l.product_id))]
     const { data: productRows } = await db
-      .from('products').select('id, taxable_flag').in('id', productIds)
+      .from('products').select('id, taxable_flag, standard_name, pack_unit, kg_per_pack').in('id', productIds)
     const taxableMap = Object.fromEntries((productRows ?? []).map(p => [p.id, p.taxable_flag ?? false]))
+    const packOf = new Map((productRows ?? []).map(p =>
+      [p.id, { standard_name: p.standard_name, pack_unit: p.pack_unit, kg_per_pack: p.kg_per_pack }]))
 
     // 저장 확인용 — 줄마다 **실제로 저장하려는 공급가**를 적어 둔다.
     // 예전에는 되읽은 값을 화면이 보낸 단가와 비교했다. 과세 품목은 공급가로 저장되니
@@ -99,12 +103,29 @@ export async function POST(req: NextRequest) {
 
       if (lineError) throw lineError
 
-      // 매입 집계는 order_items.qty * unit_price_snapshot 으로 계산되므로 같이 갱신
+      // 손으로 고친 수량을 발주에도 적는다. 명세서 줄은 잠겨 있어도 수량은 재동기화 때 최신 발주 수량을 따르므로
+      // (lib/specs/kept-line.ts) 발주에 없으면 나중에 다시 맞출 때 되돌아간다. 매입 집계도 order_items 를 쓴다.
+      //  - 발주 연결이 끊긴 줄은 그날 그 식당 발주에서 그 품목을 찾아 적는다(하나뿐일 때만).
+      //  - 발주는 kg, 명세서는 포장 단위(고추 10kg=1박스)면 kg 로 환산해 적고, 환산할 수 없으면 건드리지 않는다.
+      //  → lib/specs/mirror-order.ts
+      let target: OrderItemRef | null = null
       if (meta.order_item_id) {
+        const { data: linked } = await db
+          .from('order_items').select('id, qty, unit').eq('id', meta.order_item_id).maybeSingle()
+        target = (linked as OrderItemRef | null) ?? null
+      } else {
+        target = await findOrderItemForLine(db, {
+          restaurantId: spec.restaurant_id, businessDate: spec.business_date, productId: meta.product_id,
+        })
+      }
+      const mirrored = target ? orderQtyForSpecLine(upd.qty, meta.unit, target, packOf.get(meta.product_id)) : null
+      if (target && mirrored) {
         const { error: orderItemError } = await writeDb
           .from('order_items')
-          .update({ qty: upd.qty, unit_price_snapshot: upd.unit_price })
-          .eq('id', meta.order_item_id)
+          .update(mirrored.mirrorPrice
+            ? { qty: mirrored.qty, unit_price_snapshot: upd.unit_price }
+            : { qty: mirrored.qty })
+          .eq('id', target.id)
 
         if (orderItemError) throw orderItemError
       }

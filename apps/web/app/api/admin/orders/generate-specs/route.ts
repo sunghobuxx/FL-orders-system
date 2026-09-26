@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getAdminSession } from '@/lib/admin-member-user'
 import { syncSpecFromOrders } from '@/lib/specs/sync'
+import { settledSpecIds } from '@/lib/specs/settled'
 
 export async function POST(req: Request) {
   try {
@@ -33,8 +34,19 @@ export async function POST(req: Request) {
       (restaurantRows ?? []).map((r: { id: string; organization_id: string | null }) => [r.id, r.organization_id])
     )
 
+    // 확정됐거나 완납된 정산서에 든 날짜는 다시 만들지 않는다. 청구가 끝난 금액이라 소급해서 바꾸면 정산서와 명세서가
+    // 어긋나거나 이미 받은 돈과 청구액이 달라진다(예전엔 지난 날짜에서 이 버튼을 누르면 그대로 덮어썼다).
+    const { data: existingSpecs } = await adminDb
+      .from('daily_specs').select('id, restaurant_id')
+      .eq('business_date', businessDate).in('restaurant_id', restaurantIds)
+    const settled = await settledSpecIds(adminDb, (existingSpecs ?? []).map((s: { id: string }) => s.id))
+    const settledRestaurants = new Set(
+      (existingSpecs ?? []).filter((s: { id: string }) => settled.has(s.id)).map((s: { restaurant_id: string }) => s.restaurant_id))
+
     let created = 0
+    let skipped = 0
     for (const batch of batches) {
+      if (settledRestaurants.has(batch.restaurant_id)) { skipped++; continue }
       const { data: orders } = await adminDb.from('orders').select('id').eq('batch_id', batch.id)
       const orderIds = (orders ?? []).map((o: { id: string }) => o.id)
       const specId = await syncSpecFromOrders(adminDb, {
@@ -46,7 +58,7 @@ export async function POST(req: Request) {
       if (specId) created++
     }
 
-    return NextResponse.json({ success: true, created })
+    return NextResponse.json({ success: true, created, skipped })
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : '오류 발생' }, { status: 500 })
   }

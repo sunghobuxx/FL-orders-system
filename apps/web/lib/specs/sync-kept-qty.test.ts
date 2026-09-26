@@ -3,34 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 vi.mock('@/lib/settlement/generate', () => ({ generateStatements: vi.fn().mockResolvedValue(undefined) }))
 
 import { syncSpecFromOrders } from './sync'
-
-/**
- * 가짜 DB — from(테이블) 뒤에 무슨 메서드를 이어 붙이든 같은 빌더가 돌아오고, await 하면 그 테이블의 준비된 행이 나온다.
- * insert/update/delete 는 호출 내용을 기록한다. syncSpecFromOrders 가 어떤 줄을 저장하는지만 본다.
- */
-function fakeDb(tables: Record<string, unknown[]>) {
-  const writes: Array<{ table: string; op: string; payload: unknown }> = []
-  const from = (table: string) => {
-    let op = 'select'
-    const builder: any = new Proxy({}, {
-      get(_t, prop: string) {
-        if (prop === 'then') {
-          return (resolve: (v: unknown) => unknown, reject: (e: unknown) => unknown) =>
-            Promise.resolve({ data: op === 'select' ? (tables[table] ?? []) : null, error: null }).then(resolve, reject)
-        }
-        if (prop === 'insert' || prop === 'update' || prop === 'delete') {
-          return (payload?: unknown) => { op = prop; writes.push({ table, op: prop, payload }); return builder }
-        }
-        if (prop === 'single' || prop === 'maybeSingle') {
-          return () => Promise.resolve({ data: (tables[table] ?? [])[0] ?? null, error: null })
-        }
-        return () => builder
-      },
-    })
-    return builder
-  }
-  return { db: { from }, writes }
-}
+import { fakeDb } from '@/lib/testing/fake-db'
 
 const P_FIXED = 'p-fixed'
 const P_MANUAL = 'p-manual'

@@ -39,6 +39,16 @@ describe('keptSpecLine — 잠긴(price_overridden) 명세서 줄을 발주에 �
     expect(changed).toMatchObject({ qty: 2, unit: 'box', unit_price: 7_000 })
   })
 
+  it('단위 표기만 다르면(옛 줄 「박스」, 새 발주 box) 같은 단위로 보고 수량을 따른다 — 안 그러면 이번 사고가 조용히 재발한다', () => {
+    const r = keptSpecLine(kept({ qty: 2, unit: '박스', unit_price: 7_000 }), item(5, 'box'), false)
+    expect(r).toMatchObject({ qty: 5, unit: 'box', unit_price: 7_000 })
+  })
+
+  it('단위 표기가 다르면서 진짜 다른 단위(박스 ↔ ea)이면 그대로 둔다', () => {
+    expect(keptSpecLine(kept({ qty: 2, unit: '박스', unit_price: 7_000 }), item(5, 'ea'), false))
+      .toMatchObject({ qty: 2, unit: '박스' })
+  })
+
   it('줄에 단위가 비어 있으면 발주 단위를 쓰고 수량도 따른다', () => {
     const r = keptSpecLine(kept({ unit: null }), item(4, 'ea'), false)
     expect(r).toMatchObject({ qty: 4, unit: 'ea' })

@@ -2,6 +2,8 @@ export const runtime = 'edge'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { getSessionUser } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { cleanSpecAfterBatchDelete } from '@/lib/specs/cleanup-deleted-batch'
 
 // 멤버 발주 삭제 (02:00 전, open/submitted 상태만 가능)
 export async function DELETE(_req: NextRequest, context: { params: Promise<{ batchId: string }> }) {
@@ -34,6 +36,20 @@ export async function DELETE(_req: NextRequest, context: { params: Promise<{ bat
     const orderIds = (orders ?? []).map((o: { id: string }) => o.id)
 
     if (orderIds.length > 0) {
+      // 지우는 발주로 이미 명세서가 만들어졌으면 그 줄과 정산서 금액도 정리한다(명세서·정산서는 회원 권한으로 못 고치므로 관리자 클라이언트).
+      // 실패해도 발주 삭제는 계속한다.
+      const { data: items } = await db.from('order_items').select('id, product_id').in('order_id', orderIds)
+      const itemIds = (items ?? []).map((i: { id: string }) => i.id)
+      const productIds = [...new Set((items ?? []).map((i: { product_id: string }) => i.product_id))] as string[]
+      if (itemIds.length > 0) {
+        try {
+          await cleanSpecAfterBatchDelete(createAdminClient(), {
+            restaurantId: batch.restaurant_id, businessDate: batch.business_date, itemIds, productIds,
+          })
+        } catch (e) {
+          console.error('[DELETE /api/member/orders/[batchId]] 명세서 정리 실패', batchId, e)
+        }
+      }
       await db.from('order_items').delete().in('order_id', orderIds)
       await db.from('orders').delete().in('batch_id', [batchId])
     }
