@@ -9,7 +9,8 @@
  *   generate-specs 유일하게 옳았다 — 그 로직을 여기로 옮긴다
  *
  * 규칙
- *   - price_overridden 라인은 품목 기준으로 찾아 수량·단가를 그대로 둔다.
+ *   - price_overridden 라인은 품목 기준으로 찾아 **단가**를 그대로 두고, 수량은 최신 발주를 따른다
+ *     (관리자가 손으로 고친 수량은 order_items.qty 에도 같이 반영되므로 지켜진다 — kept-line.ts).
  *     order_item_id 는 재발주 때 NULL 로 끊기므로 기준이 될 수 없다.
  *   - 발주에 없어도 관리자가 손으로 넣은 품목은 명세서에 남긴다.
  *   - 명세서 자체를 지우지 않는다. 지우면 정산서가 참조하는 근거가 사라진다.
@@ -18,6 +19,7 @@
 
 import { generateStatements } from '@/lib/settlement/generate'
 import { splitVat } from '@/lib/specs/vat'
+import { keptSpecLine } from '@/lib/specs/kept-line'
 import { normalizeUnit } from '@/lib/units'
 import { toPackQty, type PackSpec } from '@/lib/products/pack-size'
 
@@ -266,17 +268,9 @@ export async function syncSpecFromOrders(
   const specLines = (items as Array<{ id: string; product_id: string; qty: number; unit: string }>)
     .map(item => {
       const kept = keepByProduct.get(item.product_id)
-      if (kept) {
-        return {
-          order_item_id: item.id,
-          product_id: item.product_id,
-          qty: kept.qty,
-          unit: kept.unit ?? item.unit,
-          unit_price: kept.unit_price,
-          vat_amount: kept.vat_amount ?? 0,
-          price_overridden: true,
-        }
-      }
+      // 잠긴 줄도 수량은 최신 발주를 따른다(단가만 잠금). 2026-09-26 이전에는 수량까지 얼려서
+      // 고정단가 품목의 발주 수정이 명세서에 안 옮겨졌다 → lib/specs/kept-line.ts
+      if (kept) return keptSpecLine(kept, item, Boolean(taxable.get(item.product_id)))
       const entered = priceMap[item.product_id] ?? 0
       const split = splitOf(item.product_id, Number(item.qty), entered)
       return {
