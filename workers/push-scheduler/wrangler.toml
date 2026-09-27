@@ -1,0 +1,14 @@
+name = "fruitlife-push-scheduler"
+main = "index.mjs"
+account_id = "a9b379ed3503dd94ebf9f35e38038dcd"
+compatibility_date = "2026-09-01"
+workers_dev = false
+preview_urls = false
+
+[triggers]
+# Check every minute; the existing API applies Asia/Seoul reservation times.
+crons = ["* * * * *"]
+
+[observability]
+enabled = true
+head_sampling_rate = 1

@@ -1,9 +1,8 @@
 name: Push Notification Sender
 
 on:
-  schedule:
-    # GitHub schedules may be delayed; the API catches up today's due schedules.
-    - cron: '*/5 * * * *'
+  # Automatic scheduling lives in workers/push-scheduler (Cloudflare Cron).
+  # Keep manual dispatch only for operator diagnostics/recovery.
   workflow_dispatch:
 
 concurrency:
