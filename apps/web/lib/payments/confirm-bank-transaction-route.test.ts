@@ -11,7 +11,8 @@ async function post(db: unknown, body: unknown) {
 }
 
 const txRow = (over: Record<string, unknown> = {}) => ({
-  id: 'bt-1', direction: 'in', amount: 48000, posted_at: null, posted_restaurant_id: null, ...over,
+  id: 'bt-1', direction: 'in', amount: 48000, posted_at: null, posted_restaurant_id: null,
+  depositor_raw: '박창민(할매솥뚜껑삼', depositor_norm: '박창민할매솥뚜껑삼', ...over,
 })
 
 describe('POST /api/admin/finance/confirm-bank-transaction', () => {
@@ -95,5 +96,46 @@ describe('POST /api/admin/finance/confirm-bank-transaction', () => {
     expect(res.status).toBe(500)
     expect(JSON.stringify(await res.json())).not.toContain('secret detail')
     spy.mockRestore()
+  })
+
+  describe('업체 확정 → 입금자 별칭 자동 등록 (2026-09-29 사장님 요청: 두 화면이 서로 안 맞음)', () => {
+    it('★ 처음 확정되면 그 입금자명을 업체 별칭으로 등록한다 — 다음엔 자동 추천되도록', async () => {
+      const f = fakeDb({ bank_transactions: [txRow()], depositor_aliases: [] })
+      ;(f.db as any).rpc = vi.fn().mockResolvedValue({ data: { applied: 48000, updated_count: 1, leftover: 0, already_posted: false }, error: null })
+      await post(f.db, { bankTransactionId: 'bt-1', restaurantId: 'r1' })
+      const w = f.writes.find(w => w.table === 'depositor_aliases' && w.op === 'insert')!
+      expect(w.payload).toMatchObject({
+        restaurant_id: 'r1', alias_raw: '박창민(할매솥뚜껑삼', alias_norm: '박창민할매솥뚜껑삼', created_by: 'admin-1',
+      })
+    })
+
+    it('이미 이 업체에 같은 별칭이 등록돼 있으면(중복키) 조용히 넘어가고 확정 자체는 성공한다', async () => {
+      const f = fakeDb({ bank_transactions: [txRow()] }, { errors: { 'depositor_aliases:insert': { message: 'duplicate key value violates unique constraint', code: '23505' } } })
+      ;(f.db as any).rpc = vi.fn().mockResolvedValue({ data: { applied: 48000, updated_count: 1, leftover: 0, already_posted: false }, error: null })
+      const res = await post(f.db, { bankTransactionId: 'bt-1', restaurantId: 'r1' })
+      expect(res.status).toBe(200)
+      expect((await res.json()).success).toBe(true)
+    })
+
+    it('입금자명이 없으면(이자 입금 등) 별칭을 등록하지 않는다', async () => {
+      const f = fakeDb({ bank_transactions: [txRow({ depositor_raw: null, depositor_norm: null })] })
+      ;(f.db as any).rpc = vi.fn().mockResolvedValue({ data: { applied: 48000, updated_count: 1, leftover: 0, already_posted: false }, error: null })
+      await post(f.db, { bankTransactionId: 'bt-1', restaurantId: 'r1' })
+      expect(f.writes.find(w => w.table === 'depositor_aliases')).toBeUndefined()
+    })
+
+    it('중복 클릭(이미 반영된 같은 업체)이면 별칭을 다시 등록하려 하지 않는다', async () => {
+      const f = fakeDb({ bank_transactions: [txRow({ posted_at: '2026-09-29T00:00:00Z', posted_restaurant_id: 'r1' })] })
+      ;(f.db as any).rpc = vi.fn().mockResolvedValue({ data: { applied: 0, updated_count: 0, leftover: 0, already_posted: true }, error: null })
+      await post(f.db, { bankTransactionId: 'bt-1', restaurantId: 'r1' })
+      expect(f.writes.find(w => w.table === 'depositor_aliases')).toBeUndefined()
+    })
+
+    it('초과입금 등으로 확정이 실패하면 별칭도 등록하지 않는다', async () => {
+      const f = fakeDb({ bank_transactions: [txRow()] })
+      ;(f.db as any).rpc = vi.fn().mockResolvedValue({ data: null, error: { message: 'OVERPAY', details: '30000' } })
+      await post(f.db, { bankTransactionId: 'bt-1', restaurantId: 'r1' })
+      expect(f.writes.find(w => w.table === 'depositor_aliases')).toBeUndefined()
+    })
   })
 })

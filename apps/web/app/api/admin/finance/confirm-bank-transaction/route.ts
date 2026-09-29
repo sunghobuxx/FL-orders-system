@@ -2,6 +2,7 @@ export const runtime = 'edge'
 
 import { NextResponse } from 'next/server'
 import { getAdminSession } from '@/lib/admin-member-user'
+import { normalizeDepositor } from '@/lib/payments/depositor'
 
 const won = (n: number) => Math.round(n).toLocaleString('ko-KR')
 
@@ -24,7 +25,7 @@ export async function POST(req: Request) {
 
     const { data: tx } = await db
       .from('bank_transactions')
-      .select('id, direction, amount, trdt, posted_at, posted_restaurant_id')
+      .select('id, direction, amount, trdt, posted_at, posted_restaurant_id, depositor_raw, depositor_norm')
       .eq('id', bankTransactionId)
       .maybeSingle()
     if (!tx) return NextResponse.json({ error: '은행 거래를 찾을 수 없습니다.' }, { status: 404 })
@@ -57,6 +58,22 @@ export async function POST(req: Request) {
       }
       console.error('[confirm-bank-transaction] rpc error', error)
       return NextResponse.json({ error: '입금 확정 실패' }, { status: 500 })
+    }
+
+    // 처음 확정될 때(중복 클릭이 아닐 때)만 입금자명을 업체 별칭으로 남긴다. 「업체 선택」과 「입금자 별칭」
+    // 이 서로 안 맞는다는 지적(2026-09-29)에 대한 조치 — 확정하면서 고른 업체를 그대로 별칭으로 삼아,
+    // 다음번 같은 이름 입금부터는 자동 추천되게 한다. 실패해도 확정 자체는 이미 끝난 뒤라 무시한다
+    // (이미 등록된 별칭이면 unique 제약에 걸리는데, 그것도 정상 — 조용히 넘어간다).
+    if (!data?.already_posted) {
+      const alias = normalizeDepositor(tx.depositor_raw)
+      if (alias) {
+        const { error: aliasError } = await db
+          .from('depositor_aliases')
+          .insert({ restaurant_id: restaurantId, alias_raw: tx.depositor_raw, alias_norm: alias, created_by: user.id })
+        if (aliasError && aliasError.code !== '23505' && !/duplicate key/.test(aliasError.message ?? '')) {
+          console.error('[confirm-bank-transaction] 별칭 자동 등록 실패', aliasError)
+        }
+      }
     }
 
     return NextResponse.json({
