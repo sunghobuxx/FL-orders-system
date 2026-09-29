@@ -199,7 +199,8 @@ jobs:
                 "production": {
                   "env_vars": {
                     "NEXT_PUBLIC_SUPABASE_URL": {"type": "plain_text", "value": "https://nvpaggacvbotgqyxfdof.supabase.co"},
-                    "NEXT_PUBLIC_SUPABASE_ANON_KEY": {"type": "plain_text", "value": "sb_publishable_iYQqjq5q9dN-AwXy-DTYzA_Wnoz0Vw3"}
+                    "NEXT_PUBLIC_SUPABASE_ANON_KEY": {"type": "plain_text", "value": "sb_publishable_iYQqjq5q9dN-AwXy-DTYzA_Wnoz0Vw3"},
+                    "POPBILL_ENVIRONMENT": {"type": "plain_text", "value": "test"}
                   }
                 }
               }
@@ -217,6 +218,21 @@ jobs:
         run: |
           test -n "$SUPABASE_SERVICE_ROLE_KEY" || { echo "::error::SUPABASE_SERVICE_ROLE_KEY secret 이 비어 있습니다"; exit 1; }
           echo "$SUPABASE_SERVICE_ROLE_KEY" | pnpm dlx wrangler pages secret put SUPABASE_SERVICE_ROLE_KEY --project-name fruitlife
+
+      - name: Set CF Pages secrets (popbill)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          # 값은 이 파일에 적지 않는다. GitHub Actions secret 에서만 읽는다(2026-09-25 사고 이후 규칙).
+          POPBILL_LINK_ID: ${{ secrets.POPBILL_LINK_ID }}
+          POPBILL_SECRET_KEY: ${{ secrets.POPBILL_SECRET_KEY }}
+          POPBILL_CORP_NUM: ${{ secrets.POPBILL_CORP_NUM }}
+        run: |
+          for name in POPBILL_LINK_ID POPBILL_SECRET_KEY POPBILL_CORP_NUM; do
+            val="${!name}"
+            test -n "$val" || { echo "::error::$name secret 이 비어 있습니다"; exit 1; }
+            echo "$val" | pnpm dlx wrangler pages secret put "$name" --project-name fruitlife
+          done
 
       - name: Deploy to Cloudflare Pages
         working-directory: apps/web
