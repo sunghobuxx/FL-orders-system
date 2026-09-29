@@ -1,6 +1,5 @@
 export const runtime = 'edge'
 
-import Link from 'next/link'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { fetchAll } from '@/lib/supabase/fetch-all'
 import AdminSettlementShell from '@/app/admin/settlement/AdminSettlementShell'
@@ -8,6 +7,7 @@ import { normalizeDepositor } from '@/lib/payments/depositor'
 import { recommendMatches } from '@/lib/payments/recommend'
 import type { OpenReceivable } from '@/lib/payments/match'
 import ConfirmBankTransactionButton from './ConfirmBankTransactionButton'
+import FinanceTabs from '../FinanceTabs'
 
 /**
  * 「입금 확인」 화면. 아직 반영되지 않은 은행 입금을 보여주고, 추천 업체를 계산해 [확정] 으로 반영한다.
@@ -46,6 +46,10 @@ export default async function BankTransactionsPage() {
   const receivables: OpenReceivable[] = (receivableRows ?? []).map(r => ({
     id: r.id, restaurantId: r.restaurant_id, balance: Number(r.balance), dueDate: r.due_date, createdAt: r.created_at,
   }))
+  // 업체별 미수금 합계. 확정 화면에서 "이 업체는 지금 미수금이 이만큼" 을 바로 보여줘서,
+  // 이미 손으로 입력해 둔 입금과 겹쳐 확정이 막히는 이유를 누르기 전에 알 수 있게 한다(2026-09-29 확인된 혼란).
+  const balanceOf = new Map<string, number>()
+  for (const r of receivables) balanceOf.set(r.restaurantId, (balanceOf.get(r.restaurantId) ?? 0) + r.balance)
 
   const decisions = recommendMatches(
     txs.map(t => ({ id: t.id, amount: Number(t.amount), depositorRaw: t.depositor_raw, depositorNorm: t.depositor_norm })),
@@ -63,12 +67,12 @@ export default async function BankTransactionsPage() {
   return (
     <AdminSettlementShell>
       <div className="space-y-3 max-w-3xl">
-        <div className="flex items-center justify-between">
-          <h1 className="text-sm font-semibold text-gray-700">입금 확인 (미확정 {txs.length}건)</h1>
-          <Link href="/admin/finance/aliases" className="text-xs text-brand-600 underline underline-offset-2">
-            입금자 별칭 관리
-          </Link>
-        </div>
+        <FinanceTabs />
+        <h1 className="text-sm font-semibold text-gray-700">입금 확인 (미확정 {txs.length}건)</h1>
+        <p className="text-xs text-gray-400">
+          미수금보다 입금액이 많거나 업체에 미수금이 없으면 [확정] 이 막힙니다 — 이미 손으로 입력해 둔 입금일 수 있습니다.
+          그럴 땐 [이미 처리됨] 으로 건너뛰세요(미수금에는 아무 영향이 없습니다).
+        </p>
 
         {txs.length === 0 ? (
           <div className="bg-white rounded-xl border border-gray-200 py-14 text-center text-sm text-gray-400">
@@ -93,7 +97,7 @@ export default async function BankTransactionsPage() {
                   <div className="ml-auto">
                     <ConfirmBankTransactionButton
                       bankTransactionId={tx.id}
-                      restaurants={restaurants.map(r => ({ id: r.id, name: nameOf.get(r.id) ?? '알 수 없음' }))}
+                      restaurants={restaurants.map(r => ({ id: r.id, name: nameOf.get(r.id) ?? '알 수 없음', balance: balanceOf.get(r.id) ?? 0 }))}
                       recommendedRestaurantId={decision?.verdict === 'AUTO_MATCH' ? decision.restaurantId : null}
                     />
                   </div>

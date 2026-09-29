@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { fetchAll } from '@/lib/supabase/fetch-all'
 import AdminSettlementShell from '@/app/admin/settlement/AdminSettlementShell'
+import FinanceTabs from './FinanceTabs'
 
 export default async function AdminFinancePage() {
   const db = createAdminClient()
@@ -37,6 +38,7 @@ export default async function AdminFinancePage() {
   return (
     <AdminSettlementShell>
       <div className="space-y-3 max-w-3xl">
+        <FinanceTabs />
         <div className="flex items-center gap-2 text-sm">
           <span className="text-gray-500">날짜:</span>
           <span className="bg-gray-100 text-gray-500 px-4 py-1.5 rounded">{today}</span>

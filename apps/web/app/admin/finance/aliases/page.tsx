@@ -1,9 +1,9 @@
 export const runtime = 'edge'
 
-import Link from 'next/link'
 import { createAdminClient } from '@/lib/supabase/admin'
 import AdminSettlementShell from '@/app/admin/settlement/AdminSettlementShell'
 import AliasManager from './AliasManager'
+import FinanceTabs from '../FinanceTabs'
 
 /** 입금자 별칭 관리. 계좌 소유주 개인 이름으로 입금하는 업체가 많아 사장님이 직접 등록한다(2026-09-25 결정). */
 export default async function AliasesPage() {
@@ -33,12 +33,8 @@ export default async function AliasesPage() {
   return (
     <AdminSettlementShell>
       <div className="space-y-3 max-w-3xl">
-        <div className="flex items-center justify-between">
-          <h1 className="text-sm font-semibold text-gray-700">입금자 별칭 관리</h1>
-          <Link href="/admin/finance/bank-transactions" className="text-xs text-brand-600 underline underline-offset-2">
-            입금 확인으로
-          </Link>
-        </div>
+        <FinanceTabs />
+        <h1 className="text-sm font-semibold text-gray-700">입금자 별칭 관리</h1>
         <p className="text-xs text-gray-400">
           계좌 소유주 개인 이름으로 입금하는 업체가 많습니다. 통장에 찍히는 입금자명을 업체와 연결해 두면 입금 확인 화면에서 자동으로 추천됩니다.
         </p>
