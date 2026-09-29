@@ -6,25 +6,33 @@
  * insert/update/delete 는 호출 내용을 기록한다. 쓰기 뒤에 .select() 를 이으면 그 테이블의 준비된 행이 돌아온다.
  * opts.errors 로 `테이블:연산`(예: 'order_items:delete')이 실패하는 상황을 만들 수 있다.
  */
-export interface FakeWrite { table: string; op: 'insert' | 'update' | 'delete'; payload: unknown }
+export interface FakeWrite { table: string; op: 'insert' | 'update' | 'delete' | 'upsert'; payload: unknown; opts?: unknown }
 
 export function fakeDb(tables: Record<string, unknown[]>, opts: { errors?: Record<string, { message: string }> } = {}) {
   const writes: FakeWrite[] = []
   const from = (table: string) => {
-    let op: 'select' | 'insert' | 'update' | 'delete' = 'select'
+    let op: 'select' | 'insert' | 'update' | 'delete' | 'upsert' = 'select'
     let returning = false
+    let written: unknown = null
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const builder: any = new Proxy({}, {
       get(_t, prop: string) {
         if (prop === 'then') {
           return (resolve: (v: unknown) => unknown, reject: (e: unknown) => unknown) =>
             Promise.resolve({
-              data: op === 'select' || returning ? (tables[table] ?? []) : null,
+              data: op === 'select'
+                ? (tables[table] ?? [])
+                : returning
+                  ? (written != null ? (Array.isArray(written) ? written : [written]) : (tables[table] ?? []))
+                  : null,
               error: opts.errors?.[`${table}:${op}`] ?? null,
             }).then(resolve, reject)
         }
         if (prop === 'insert' || prop === 'update' || prop === 'delete') {
-          return (payload?: unknown) => { op = prop; writes.push({ table, op: prop, payload }); return builder }
+          return (payload?: unknown) => { op = prop; written = payload; writes.push({ table, op: prop, payload }); return builder }
+        }
+        if (prop === 'upsert') {
+          return (payload?: unknown, opts?: unknown) => { op = 'upsert'; written = payload; writes.push({ table, op: 'upsert', payload, opts }); return builder }
         }
         if (prop === 'single' || prop === 'maybeSingle') {
           return () => Promise.resolve({ data: (tables[table] ?? [])[0] ?? null, error: null })
