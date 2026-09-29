@@ -6,7 +6,6 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { getCarryover } from '@/lib/settlement/carryover'
 import AdminSettlementShell from '../../../AdminSettlementShell'
 import { AdminStatementPrintButton } from '@/app/admin/settlement/AdminPrintButtons'
-import IssueTaxInvoiceButton from './IssueTaxInvoiceButton'
 
 interface Props {
   params: Promise<{ restaurantId: string; statementId: string }>
@@ -18,14 +17,14 @@ export default async function AdminSettlementStatementPage({ params }: Props) {
 
   const { data: stmt } = await db
     .from('sales_statements')
-    .select('id, total_amount, outstanding_amount, confirmed_at, confirmed_total, notified_at, settlement_periods(id, period_type, start_date, end_date), restaurants(organizations(name))')
+    .select('id, total_amount, outstanding_amount, confirmed_at, confirmed_total, notified_at, settlement_periods(period_type, start_date, end_date), restaurants(organizations(name))')
     .eq('id', statementId)
     .eq('restaurant_id', restaurantId)
     .single()
 
   if (!stmt) notFound()
 
-  type Period = { id: string; period_type: string; start_date: string; end_date: string }
+  type Period = { period_type: string; start_date: string; end_date: string }
   const period = stmt.settlement_periods as unknown as Period | null
   const orgName = (stmt.restaurants as unknown as { organizations: { name: string } | null } | null)?.organizations?.name ?? '알 수 없음'
   const totalAmount = Number(stmt.total_amount ?? 0)
@@ -199,10 +198,7 @@ export default async function AdminSettlementStatementPage({ params }: Props) {
               <span className="text-sm bg-gray-100 px-4 py-1.5 rounded font-medium text-gray-700">{periodStr}</span>
             )}
           </div>
-          <div className="flex items-center gap-2">
-            {period && <IssueTaxInvoiceButton restaurantId={restaurantId} settlementPeriodId={period.id} />}
-            <AdminStatementPrintButton restaurantId={restaurantId} statementId={statementId} />
-          </div>
+          <AdminStatementPrintButton restaurantId={restaurantId} statementId={statementId} />
         </div>
 
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
