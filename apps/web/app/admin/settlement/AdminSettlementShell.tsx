@@ -9,7 +9,8 @@ const SIDEBAR_ITEMS = [
   { href: '/admin/settlement/history', label: '명세서내역', match: (p: string) => p.startsWith('/admin/settlement/history') },
   { href: '/admin/settlement', label: '주/월 정산', match: (p: string) => p === '/admin/settlement' || p.startsWith('/admin/settlement/restaurant') },
   { href: '/admin/settlement/confirm', label: '정산 확정', match: (p: string) => p.startsWith('/admin/settlement/confirm') },
-  { href: '/admin/finance', label: '입/출금', match: (p: string) => p.startsWith('/admin/finance') },
+  { href: '/admin/finance', label: '입/출금', match: (p: string) => p === '/admin/finance' || p.startsWith('/admin/finance/') && !p.startsWith('/admin/finance/bank-transactions') && !p.startsWith('/admin/finance/aliases') },
+  { href: '/admin/finance/bank-transactions', label: '입금 확인', match: (p: string) => p.startsWith('/admin/finance/bank-transactions') || p.startsWith('/admin/finance/aliases') },
   { href: '/admin/purchase', label: '매입 정산', match: (p: string) => p.startsWith('/admin/purchase') },
 ]
 
