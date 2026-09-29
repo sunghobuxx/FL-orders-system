@@ -29,8 +29,12 @@ export async function POST(req: Request) {
 
   const config = loadPopbillConfig(process.env as Record<string, string | undefined>)
   const client = new PopbillClient(config)
-  const accounts = await listBankAccounts(client) as Array<{ accountID: string; bankCode: string; accountNumber: string; state: number }>
-  const active = accounts.filter(a => a.state === 1)
+  // ListBankAccount 응답에는 내부 식별자가 없다(2026-09-29 실접속으로 확인 — accountID 는 거래 조회 결과에만 있다).
+  // 계좌번호 원문은 우리 DB 에 저장하지 않으므로(마이그레이션 주석), 은행코드 + 계좌번호 끝 4자리를 account_ref 로 쓴다.
+  const accounts = await listBankAccounts(client) as Array<{ bankCode: string; accountNumber: string; state: number }>
+  const active = accounts
+    .filter(a => a.state === 1)
+    .map(a => ({ ...a, accountRef: `${a.bankCode}-${a.accountNumber.slice(-4)}` }))
 
   const db = createAdminClient()
   const startDate = getKstDateOffset(-LOOKBACK_DAYS).replace(/-/g, '')
@@ -40,12 +44,12 @@ export async function POST(req: Request) {
   for (const acc of active) {
     try {
       const r = await collectBankTransactions(db, client, {
-        accountRef: acc.accountID, bankCode: acc.bankCode, accountNumber: acc.accountNumber, startDate, endDate,
+        accountRef: acc.accountRef, bankCode: acc.bankCode, accountNumber: acc.accountNumber, startDate, endDate,
       })
-      results.push({ accountRef: acc.accountID, jobId: r.jobId, fetched: r.fetched, saved: r.saved, error: null })
+      results.push({ accountRef: acc.accountRef, jobId: r.jobId, fetched: r.fetched, saved: r.saved, error: null })
     } catch (e) {
-      console.error('[bank-sync/collect] 계좌 수집 실패', acc.accountID, e)
-      results.push({ accountRef: acc.accountID, jobId: null, fetched: 0, saved: 0, error: e instanceof Error ? e.message : String(e) })
+      console.error('[bank-sync/collect] 계좌 수집 실패', acc.accountRef, e)
+      results.push({ accountRef: acc.accountRef, jobId: null, fetched: 0, saved: 0, error: e instanceof Error ? e.message : String(e) })
     }
   }
 
