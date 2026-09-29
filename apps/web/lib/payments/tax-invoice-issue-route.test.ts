@@ -18,8 +18,11 @@ async function post(db: unknown, body: unknown) {
 }
 
 const restaurantRow = (over: Record<string, unknown> = {}) => ({
-  id: 'r1', biz_no: '1112223334', ceo_name: '홍길동', organizations: { name: '할매솥뚜껑삼겹살 별내점' }, ...over,
+  id: 'r1', biz_no: '1112223334', organization_id: 'org1', organizations: { name: '할매솥뚜껑삼겹살 별내점' }, ...over,
 })
+// 공급받는자 대표자성명은 restaurants.ceo_name 이 아니라 회원 수정 화면의 "대표자"(contacts.name, is_primary)
+// 를 쓴다 — 61곳 중 59곳에 이미 채워져 있어 새 컬럼이 필요 없었다(2026-09-29 정정).
+const contactRow = { organization_id: 'org1', is_primary: true, name: '홍길동' }
 const periodRow = { id: 'p1', start_date: '2026-09-21', end_date: '2026-09-27' }
 const statementRow = { id: 'st1', total_amount: 110000 }
 
@@ -65,19 +68,19 @@ describe('POST /api/admin/finance/tax-invoices/issue', () => {
   })
 
   it('정산기간을 찾을 수 없으면 404', async () => {
-    const f = fakeDb({ tax_invoices: [], restaurants: [restaurantRow()], settlement_periods: [] })
+    const f = fakeDb({ tax_invoices: [], restaurants: [restaurantRow()], contacts: [contactRow], settlement_periods: [] })
     const res = await post(f.db, { restaurantId: 'r1', settlementPeriodId: 'p1' })
     expect(res.status).toBe(404)
   })
 
   it('이 기간의 명세서가 없으면 404', async () => {
-    const f = fakeDb({ tax_invoices: [], restaurants: [restaurantRow()], settlement_periods: [periodRow], sales_statements: [] })
+    const f = fakeDb({ tax_invoices: [], restaurants: [restaurantRow()], contacts: [contactRow], settlement_periods: [periodRow], sales_statements: [] })
     const res = await post(f.db, { restaurantId: 'r1', settlementPeriodId: 'p1' })
     expect(res.status).toBe(404)
   })
 
   it('이미 발행됐으면(status=issued) 다시 부르지 않고 그대로 성공 응답', async () => {
-    const f = fakeDb({ tax_invoices: [{ id: 'tx1', status: 'issued', nts_confirm_num: 'nts-old' }], restaurants: [restaurantRow()], settlement_periods: [periodRow], sales_statements: [statementRow] })
+    const f = fakeDb({ tax_invoices: [{ id: 'tx1', status: 'issued', nts_confirm_num: 'nts-old' }], restaurants: [restaurantRow()], contacts: [contactRow], settlement_periods: [periodRow], sales_statements: [statementRow] })
     const res = await post(f.db, { restaurantId: 'r1', settlementPeriodId: 'p1' })
     expect(res.status).toBe(200)
     expect((await res.json())).toEqual({ success: true, alreadyIssued: true, ntsConfirmNum: 'nts-old' })
@@ -85,7 +88,7 @@ describe('POST /api/admin/finance/tax-invoices/issue', () => {
   })
 
   it('결과 불명(status=unknown)으로 남아 있으면 409 — 자동 재시도하지 않는다(조회로 먼저 확인)', async () => {
-    const f = fakeDb({ tax_invoices: [{ id: 'tx1', status: 'unknown', nts_confirm_num: null }], restaurants: [restaurantRow()], settlement_periods: [periodRow], sales_statements: [statementRow] })
+    const f = fakeDb({ tax_invoices: [{ id: 'tx1', status: 'unknown', nts_confirm_num: null }], restaurants: [restaurantRow()], contacts: [contactRow], settlement_periods: [periodRow], sales_statements: [statementRow] })
     const res = await post(f.db, { restaurantId: 'r1', settlementPeriodId: 'p1' })
     expect(res.status).toBe(409)
     expect(m.registerAndIssue).not.toHaveBeenCalled()
@@ -93,7 +96,7 @@ describe('POST /api/admin/finance/tax-invoices/issue', () => {
 
   it('★ 명세서 총액과 세액(일일명세 vat_amount 합)으로 발행하고 결과를 tax_invoices 에 기록한다', async () => {
     const f = fakeDb({
-      tax_invoices: [], restaurants: [restaurantRow()], settlement_periods: [periodRow], sales_statements: [statementRow],
+      tax_invoices: [], restaurants: [restaurantRow()], contacts: [contactRow], settlement_periods: [periodRow], sales_statements: [statementRow],
       sales_statement_lines: [{ source_doc_id: 'ds1' }, { source_doc_id: 'ds2' }],
       daily_specs: [{ vat_amount: 6000 }, { vat_amount: 4000 }],
     })
@@ -117,7 +120,7 @@ describe('POST /api/admin/finance/tax-invoices/issue', () => {
 
   it('일일명세 연결이 없으면(구조상 드묾) 세액 0 · 전액 공급가로 본다', async () => {
     const f = fakeDb({
-      tax_invoices: [], restaurants: [restaurantRow()], settlement_periods: [periodRow], sales_statements: [statementRow],
+      tax_invoices: [], restaurants: [restaurantRow()], contacts: [contactRow], settlement_periods: [periodRow], sales_statements: [statementRow],
       sales_statement_lines: [],
     })
     await post(f.db, { restaurantId: 'r1', settlementPeriodId: 'p1' })
@@ -125,11 +128,21 @@ describe('POST /api/admin/finance/tax-invoices/issue', () => {
     expect(payload).toMatchObject({ taxTotal: '0', supplyCostTotal: '110000' })
   })
 
+  it('공급받는자 대표자성명이 없으면(2곳뿐, 아직 미입력) 빈 문자열로 발행한다', async () => {
+    const f = fakeDb({
+      tax_invoices: [], restaurants: [restaurantRow()], contacts: [], settlement_periods: [periodRow], sales_statements: [statementRow],
+      sales_statement_lines: [],
+    })
+    await post(f.db, { restaurantId: 'r1', settlementPeriodId: 'p1' })
+    const payload = m.registerAndIssue.mock.calls[0][1]
+    expect(payload).toMatchObject({ invoiceeCEOName: '' })
+  })
+
   it('팝빌이 거절하면(rejected) 400 이고 tax_invoices 에 rejected 로 남는다', async () => {
     const { PopbillError } = await import('@/lib/popbill/client')
     m.registerAndIssue.mockRejectedValue(new PopbillError('사업자번호 오류', 400, 'E001', 'rejected'))
     const f = fakeDb({
-      tax_invoices: [], restaurants: [restaurantRow()], settlement_periods: [periodRow], sales_statements: [statementRow],
+      tax_invoices: [], restaurants: [restaurantRow()], contacts: [contactRow], settlement_periods: [periodRow], sales_statements: [statementRow],
       sales_statement_lines: [],
     })
     const res = await post(f.db, { restaurantId: 'r1', settlementPeriodId: 'p1' })
@@ -142,7 +155,7 @@ describe('POST /api/admin/finance/tax-invoices/issue', () => {
     const { PopbillError } = await import('@/lib/popbill/client')
     m.registerAndIssue.mockRejectedValue(new PopbillError('시간 초과', null, null, 'unknown'))
     const f = fakeDb({
-      tax_invoices: [], restaurants: [restaurantRow()], settlement_periods: [periodRow], sales_statements: [statementRow],
+      tax_invoices: [], restaurants: [restaurantRow()], contacts: [contactRow], settlement_periods: [periodRow], sales_statements: [statementRow],
       sales_statement_lines: [],
     })
     const res = await post(f.db, { restaurantId: 'r1', settlementPeriodId: 'p1' })

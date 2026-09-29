@@ -13,6 +13,9 @@ import { buildTaxinvoicePayload, generateMgtKey } from '@/lib/payments/tax-invoi
  * daily_spec_lines 에 저장되는, 이미 나뉜 값 — ground truth). 품목별 상세(detailList)는 이 단계에서
  * 넣지 않는다(기간 합계 한 건만 발행).
  *
+ * 공급받는자 대표자성명은 별도 컬럼을 만들지 않는다 — 회원 수정 화면의 "대표자"(contacts.name, is_primary)
+ * 가 이미 61곳 중 59곳에 채워져 있어 그대로 쓴다(2026-09-29, restaurants.ceo_name 은 추가했다가 되돌림).
+ *
  * TAX_INVOICE_ISSUE_ENABLED=true 로 켜기 전까지는 항상 403 — 계획서(2026-09-25) §5 공통 원칙(기본 OFF).
  * 이미 발행된(status='issued') 건은 다시 부르지 않는다(이중 발행 차단, unique 제약과 별개의 응답 차원 방어).
  * 결과가 불명(status='unknown', 팝빌 응답을 못 받음)이면 자동 재시도하지 않는다 — 실제 처리 여부를
@@ -42,7 +45,7 @@ export async function POST(req: Request) {
 
     const { data: restaurant } = await db
       .from('restaurants')
-      .select('id, biz_no, ceo_name, organizations(name)')
+      .select('id, biz_no, organization_id, organizations(name)')
       .eq('id', restaurantId)
       .maybeSingle()
     if (!restaurant) return NextResponse.json({ error: '업체를 찾을 수 없습니다.' }, { status: 404 })
@@ -51,6 +54,15 @@ export async function POST(req: Request) {
     if (!/^\d{10}$/.test(bizNo)) {
       return NextResponse.json({ error: '이 업체는 사업자번호가 없습니다. 회원 정보에서 먼저 입력해 주세요.' }, { status: 400 })
     }
+
+    // 공급받는자 대표자성명은 회원 수정 화면의 "대표자"(contacts.name, is_primary=true) 를 그대로 쓴다 —
+    // 세금계산서용으로 별도 컬럼을 만들 필요가 없었다(61곳 중 59곳에 이미 채워져 있었다, 2026-09-29).
+    const { data: primaryContact } = await db
+      .from('contacts')
+      .select('name')
+      .eq('organization_id', restaurant.organization_id)
+      .eq('is_primary', true)
+      .maybeSingle()
 
     const { data: period } = await db.from('settlement_periods').select('id, start_date, end_date').eq('id', settlementPeriodId).maybeSingle()
     if (!period) return NextResponse.json({ error: '정산기간을 찾을 수 없습니다.' }, { status: 404 })
@@ -101,7 +113,7 @@ export async function POST(req: Request) {
       mgtKey,
       writeDate: period.end_date.replace(/-/g, ''),
       invoicer: { corpNum: config.corpNum, ...INVOICER },
-      invoicee: { corpNum: bizNo, corpName: orgName, ceoName: restaurant.ceo_name ?? undefined },
+      invoicee: { corpNum: bizNo, corpName: orgName, ceoName: primaryContact?.name ?? undefined },
       supplyCostTotal, taxTotal,
     })
 

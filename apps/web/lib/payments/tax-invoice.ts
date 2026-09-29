@@ -27,8 +27,9 @@ export interface InvoicerInfo {
 export interface InvoiceeInfo {
   corpNum: string
   corpName: string
-  /** 대표자성명. 법정 필수 항목이지만 restaurants.ceo_name 이 아직 안 채워진 업체가 있다(2026-09-29) —
-   * 없으면 빈 문자열로 보내고, 실제로 필수인지는 팝빌 응답으로 확인한다. */
+  /** 대표자성명(회원 수정 화면의 "대표자" = contacts.name, is_primary). 법정 필수 항목인데
+   * 61곳 중 2곳은 아직 안 채워져 있다(2026-09-29) — 없으면 빈 문자열로 보내고,
+   * 실제로 필수인지는 팝빌 응답으로 확인한다. */
   ceoName?: string
 }
 
