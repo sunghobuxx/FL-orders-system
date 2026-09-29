@@ -8,6 +8,7 @@ import { loadPopbillConfig } from '@/lib/popbill/config'
 import { listBankAccounts } from '@/lib/popbill/easyfinbank'
 import { collectBankTransactions } from '@/lib/popbill/collect'
 import { getKstDateOffset, getKstToday } from '@/lib/date-kst'
+import { parseAutoMatchMode, runAutoMatch } from '@/lib/payments/auto-match'
 
 /**
  * 계좌조회 수집 크론. 30~60분마다 pg_cron 이 부른다(등록은 별도 마이그레이션).
@@ -16,6 +17,9 @@ import { getKstDateOffset, getKstToday } from '@/lib/date-kst'
  * 겹쳐서 재조회한다 — 지연 반영되는 거래를 잡기 위해 매번 최근 며칠을 다시 훑는다.
  * 이미 반영된 거래는 `bank_transactions` 의 unique(account_ref, provider_tid) 가 걸러낸다.
  * 계좌 하나가 실패해도 나머지 계좌는 계속 수집한다(부분 실패가 전체를 막지 않는다).
+ *
+ * 수집 뒤에는 자동매칭 배치(runAutoMatch)를 돌린다 — PAYMENT_AUTO_MATCH_MODE 로 off/shadow/live 를 가른다
+ * (기본 off). 계좌 수집이 하나라도 실패해도 이미 저장된 거래는 있으니 자동매칭은 그대로 진행한다.
  */
 const CRON_SECRET = process.env.PUSH_CRON_SECRET
 const LOOKBACK_DAYS = 3
@@ -53,5 +57,7 @@ export async function POST(req: Request) {
     }
   }
 
-  return NextResponse.json({ success: true, results })
+  const autoMatch = await runAutoMatch(db, parseAutoMatchMode(process.env.PAYMENT_AUTO_MATCH_MODE))
+
+  return NextResponse.json({ success: true, results, autoMatch })
 }

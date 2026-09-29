@@ -200,7 +200,8 @@ jobs:
                   "env_vars": {
                     "NEXT_PUBLIC_SUPABASE_URL": {"type": "plain_text", "value": "https://nvpaggacvbotgqyxfdof.supabase.co"},
                     "NEXT_PUBLIC_SUPABASE_ANON_KEY": {"type": "plain_text", "value": "sb_publishable_iYQqjq5q9dN-AwXy-DTYzA_Wnoz0Vw3"},
-                    "POPBILL_ENVIRONMENT": {"type": "plain_text", "value": "test"}
+                    "POPBILL_ENVIRONMENT": {"type": "plain_text", "value": "test"},
+                    "PAYMENT_AUTO_MATCH_MODE": {"type": "plain_text", "value": "shadow"}
                   }
                 }
               }
