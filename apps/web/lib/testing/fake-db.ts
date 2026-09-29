@@ -8,7 +8,7 @@
  */
 export interface FakeWrite { table: string; op: 'insert' | 'update' | 'delete' | 'upsert'; payload: unknown; opts?: unknown }
 
-export function fakeDb(tables: Record<string, unknown[]>, opts: { errors?: Record<string, { message: string }> } = {}) {
+export function fakeDb(tables: Record<string, unknown[]>, opts: { errors?: Record<string, { message: string; code?: string; details?: string }> } = {}) {
   const writes: FakeWrite[] = []
   const from = (table: string) => {
     let op: 'select' | 'insert' | 'update' | 'delete' | 'upsert' = 'select'
