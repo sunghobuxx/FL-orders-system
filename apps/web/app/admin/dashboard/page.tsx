@@ -16,6 +16,14 @@ export default async function AdminDashboardPage() {
   const today = getKstToday()
   const tomorrow = getKstDateOffset(1)
 
+  // 「발주내역(농산물)」 위젯 전용 기준일. 당일배송이라 18시가 지나면 오늘 몫 배송은 사실상
+  // 끝난 것으로 보고 내일 발주를 미리 보여준다(사장님 요청, 2026-09-30) — 자정까지 기다리지 않는다.
+  // 다른 위젯(주문내역 등)은 today/tomorrow 그대로 자정 기준을 쓴다.
+  const kstHour = new Date(Date.now() + 9 * 60 * 60 * 1000).getUTCHours()
+  const dispatchDates = kstHour >= 18
+    ? [tomorrow, getKstDateOffset(2)]
+    : [today, tomorrow]
+
   // 단가 확정 경고 — 부가 정보라서 조회가 실패해도 대시보드는 그대로 뜬다.
   let priceWarningList: PriceWarning[] = []
   try {
@@ -55,6 +63,7 @@ export default async function AdminDashboardPage() {
     { data: allBatchesRaw },
     { data: pendingPastBatchesRaw },
     { data: allDispatchesRaw },
+    { data: dispatchBatchesRaw },
     { data: receivables },
     { data: notices },
     { data: inquiries },
@@ -78,10 +87,13 @@ export default async function AdminDashboardPage() {
       return filterIds ? q.in('restaurant_id', filterIds) : q
     })(),
 
-    // 오늘 + 내일 발주내역 (농산물)
+    // 발주내역 (농산물) — 18시 전엔 오늘+내일, 18시 지나면 내일+모레
     db.from('dispatch_jobs')
       .select('id, status, business_date, suppliers(organizations(name)), dispatch_job_items(qty, order_items(unit, products(standard_name)))')
-      .in('business_date', [today, tomorrow]),
+      .in('business_date', dispatchDates),
+
+    // 위 dispatch_jobs 가 아직 안 만들어졌을 때(자동발송 전)의 대체 집계용 — 같은 기준일(dispatchDates)
+    db.from('order_batches').select(BATCH_SELECT).in('business_date', dispatchDates),
 
     // 결제정보 (전체 미수금)
     fetchAll(() => db.from('receivables')
@@ -145,12 +157,16 @@ export default async function AdminDashboardPage() {
   const orgOutstandingList = [...outstandingByOrg.entries()]
     .sort((a, b) => b[1] - a[1]) // 금액 내림차순
 
-  // batchId → 식당명 맵 (breakdown용)
+  // batchId → 식당명 맵 (발주내역(농산물) breakdown 전용). dispatchDates 기준으로 만든다 —
+  // displayBatches(today/tomorrow)로 만들면 18시 이후엔 오늘치 batch 만 있어 내일+모레 발주의
+  // 식당명이 전부 "알 수 없음"으로 나온다.
+  const dispatchBatches = dispatchBatchesRaw ?? []
   const batchToRestaurant = new Map<string, string>()
-  for (const batch of displayBatches) {
+  for (const batch of dispatchBatches) {
     const restRaw = batch.restaurants as unknown as { organizations: { name: string } | null } | null
     batchToRestaurant.set(batch.id, restRaw?.organizations?.name ?? '알 수 없음')
   }
+  const dispatchBatchIds = dispatchBatches.map(b => b.id)
 
   // 당일 발주내역(농산물): dispatch_jobs 없으면 order_items에서 공급처별 집계
   type ItemBreakdown = { restaurantName: string; qty: number }
@@ -202,12 +218,12 @@ export default async function AdminDashboardPage() {
         items: [...itemMap.values()],
       }
     })
-  } else if (batchIds.length > 0) {
+  } else if (dispatchBatchIds.length > 0) {
     // dispatch_jobs 없으면 order_items → supplier_products → supplier로 집계 + 식당별 breakdown
     const { data: orderItems } = await db
       .from('order_items')
       .select('qty, unit, product_id, products(standard_name), orders!inner(batch_id)')
-      .in('orders.batch_id', batchIds)
+      .in('orders.batch_id', dispatchBatchIds)
 
     const productIds = [...new Set((orderItems ?? []).map(i => i.product_id))]
     if (productIds.length > 0) {
@@ -414,7 +430,7 @@ export default async function AdminDashboardPage() {
           )}
         </div>
 
-        {/* 발주내역 (농산물) — 오늘+내일 */}
+        {/* 발주내역 (농산물) — 18시 전엔 오늘+내일, 18시 지나면 내일+모레 */}
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
           <div className="px-5 py-3 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
             <div>
