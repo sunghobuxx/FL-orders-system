@@ -21,9 +21,8 @@ export default async function AdminOrdersPage({ searchParams }: Props) {
 
   const adminDb = createAdminClient()
 
-  // 현재 로그인 유저의 역할 + 담당 업체 확인.
-  // 오너는 원래 전체가 보이던 계정이라, 담당 업체를 하나도 안 고르면(기본값) 그대로 전체가 보인다 —
-  // 고른 경우에만 매니저처럼 좁아진다(2026-09-30, driver-api.ts 와 같은 정책).
+  // 현재 로그인 유저의 역할 + 담당 업체 확인. 오너의 담당 업체 선택은 주문관리 어플(driver-api.ts)
+  // 에서만 적용된다 — 어드민 화면은 오너라면 항상 전체가 보여야 한다(2026-09-30 사장님 정정).
   const { user } = await getSessionUser()
   let assignedRestaurantIds: string[] | null = null
   if (user) {
@@ -32,16 +31,15 @@ export default async function AdminOrdersPage({ searchParams }: Props) {
       .select('role')
       .eq('user_id', user.id)
       .maybeSingle()
-    if (membership?.role === 'manager' || membership?.role === 'owner') {
+    if (membership?.role === 'manager') {
       const { data: assigned } = await adminDb
         .from('manager_restaurants')
         .select('restaurant_id')
         .eq('user_id', user.id)
-      const ids = (assigned as { restaurant_id: string }[] | null ?? []).map(a => a.restaurant_id)
-      if (membership.role === 'manager') {
-        assignedRestaurantIds = ids
-      } else if (ids.length > 0) {
-        assignedRestaurantIds = ids
+      if (assigned && assigned.length > 0) {
+        assignedRestaurantIds = (assigned as { restaurant_id: string }[]).map(a => a.restaurant_id)
+      } else {
+        assignedRestaurantIds = []
       }
     }
   }

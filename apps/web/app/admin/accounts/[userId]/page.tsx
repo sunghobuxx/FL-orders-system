@@ -63,7 +63,7 @@ export default async function AccountDetailPage({ params }: Props) {
           <h2 className="text-sm font-semibold text-gray-700">담당 업체 설정</h2>
           <p className="text-xs text-gray-400 mt-0.5">
             {isOwner
-              ? '선택한 업체만 배송앱·발주 화면에서 보게 됩니다. 미선택 시 지금처럼 전체 업체가 보입니다.'
+              ? '선택한 업체만 주문관리 어플(배송앱)에서 보게 됩니다. 어드민 화면은 항상 전체가 보입니다. 미선택 시 배송앱도 전체 업체가 보입니다.'
               : '선택된 업체의 당일 발주만 이 매니저에게 표시됩니다. 미선택 시 전체 업체 표시.'}
           </p>
         </div>
