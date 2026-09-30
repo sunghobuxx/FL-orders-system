@@ -52,10 +52,16 @@ export async function requireDriverUser(req: Request) {
     .from('manager_restaurants')
     .select('restaurant_id')
     .eq('user_id', userData.user.id)
+  const assignedIds = (assigned ?? []).map((row: { restaurant_id: string }) => row.restaurant_id)
 
+  // 매니저는 담당 업체가 0개면 아무것도 안 보인다(관리자가 배정하기 전 기본값, admin/orders 와 같은 정책).
+  // 운영사 오너는 다르다 — 지금까지 전체가 보이던 계정이라, 담당 업체를 하나도 안 고르면(2026-09-30
+  // 기능 추가 전과 동일하게) 그대로 전체가 보여야 한다. 고른 경우에만 매니저처럼 좁아진다.
   const assignedRestaurantIds = membership.role === 'manager'
-    ? (assigned ?? []).map((row: { restaurant_id: string }) => row.restaurant_id)
-    : null
+    ? assignedIds
+    : isOperatorOwner && assignedIds.length > 0
+      ? assignedIds
+      : null
 
   return {
     db,

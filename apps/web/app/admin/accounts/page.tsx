@@ -25,19 +25,22 @@ export default async function AdminAccountsPage() {
     return mList?.some(m => m.organizations?.organization_type === 'platform' || m.organizations?.organization_type === 'operator')
   })
 
-  // 매니저별 담당 업체 조회
-  const managerIds = filtered
+  // 매니저·오너(담당 업체를 고를 수 있는 역할)별 담당 업체 조회.
+  // 오너는 원래 전체가 보이는 계정이라, 여기 나오는 건 "선택했을 때만 좁아진다"는 뜻이다
+  // (이 목록 자체가 이미 platform/operator 조직으로만 걸러져 있어 식당 손님 계정은 안 섞인다).
+  const scopableIds = filtered
     .filter(u => {
       const mList = u.memberships as unknown as Array<{ role: string }>
-      return mList?.[0]?.role === 'manager'
+      const role = mList?.[0]?.role
+      return role === 'manager' || role === 'owner'
     })
     .map(u => u.id)
 
-  const { data: managerRests } = managerIds.length > 0
+  const { data: managerRests } = scopableIds.length > 0
     ? await adminDb
         .from('manager_restaurants')
         .select('user_id, restaurants(organizations(name))')
-        .in('user_id', managerIds)
+        .in('user_id', scopableIds)
     : { data: [] }
 
   // user_id → 업체명 목록 맵
@@ -83,10 +86,12 @@ export default async function AdminAccountsPage() {
                 const org = m?.organizations
                 const isCurrentUser = u.id === currentUser?.id
                 const isManager = m?.role === 'manager'
-                const assignedRests = isManager ? (managerRestMap[u.id] ?? []) : []
+                const isOwner = m?.role === 'owner'
+                const isScopable = isManager || isOwner
+                const assignedRests = isScopable ? (managerRestMap[u.id] ?? []) : []
                 return (
                   <React.Fragment key={u.id}>
-                    <tr className={isManager ? 'border-b-0' : ''}>
+                    <tr className={isScopable ? 'border-b-0' : ''}>
                       <td className="px-5 py-3 font-medium text-gray-800 whitespace-nowrap">
                         {u.name || org?.name || '-'}
                       </td>
@@ -110,7 +115,7 @@ export default async function AdminAccountsPage() {
                       </td>
                       <td className="px-5 py-3 text-center whitespace-nowrap">
                         <div className="flex items-center gap-1 justify-center">
-                          {isManager && (
+                          {isScopable && (
                             <a href={`/admin/accounts/${u.id}`}
                               className="text-xs border border-gray-200 text-gray-600 px-2 py-1 rounded hover:bg-gray-50">
                               담당 업체 수정
@@ -129,7 +134,7 @@ export default async function AdminAccountsPage() {
                         </div>
                       </td>
                     </tr>
-                    {isManager && (
+                    {isScopable && (
                       <tr key={`${u.id}-rests`} className="bg-gray-50 border-b border-gray-100">
                         <td colSpan={6} className="px-5 py-2">
                           <div className="flex flex-wrap gap-1.5">

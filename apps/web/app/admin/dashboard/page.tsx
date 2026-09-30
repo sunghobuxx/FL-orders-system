@@ -31,16 +31,19 @@ export default async function AdminDashboardPage() {
     console.error('[admin/dashboard] 단가 확정 경고 조회 실패', e)
   }
 
-  // 매니저 담당 업체 필터
+  // 매니저(또는 담당 업체를 고른 오너) 담당 업체 필터.
+  // 오너는 원래 전체가 보이던 계정이라, 담당 업체를 하나도 안 고르면(기본값) 그대로 전체가 보인다 —
+  // 고른 경우에만 매니저처럼 좁아진다(2026-09-30, driver-api.ts 와 같은 정책).
   const { user } = await getSessionUser()
   let managerRestaurantIds: string[] | null = null
   if (user) {
     const { data: membership } = await db
       .from('memberships').select('role').eq('user_id', user.id).maybeSingle()
-    if (membership?.role === 'manager') {
+    if (membership?.role === 'manager' || membership?.role === 'owner') {
       const { data: assigned } = await db
         .from('manager_restaurants').select('restaurant_id').eq('user_id', user.id)
-      managerRestaurantIds = (assigned ?? []).map((a: { restaurant_id: string }) => a.restaurant_id)
+      const ids = (assigned ?? []).map((a: { restaurant_id: string }) => a.restaurant_id)
+      if (membership.role === 'manager' || ids.length > 0) managerRestaurantIds = ids
     }
   }
   const DUMMY_ID = '00000000-0000-0000-0000-000000000000'

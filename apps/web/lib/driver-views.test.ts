@@ -128,6 +128,21 @@ describe('배송앱 조회와 처리 권한', () => {
     expect((await dashboard(request('dashboard?scope=all'))).status).toBe(403)
     expect((await orderDetail(request('orders/batch-b'), params('batch-b'))).status).toBe(403)
   })
+  it('★ 운영사 오너는 담당 업체를 하나도 안 고르면 지금까지처럼 전체가 보인다(기본 동작 그대로)', async () => {
+    tables.memberships[0] = { user_id: 'manager-a', role: 'owner', organizations: { organization_type: 'operator' } }
+    tables.manager_restaurants = tables.manager_restaurants.filter(r => r.user_id !== 'manager-a')
+    const body = await (await dashboard(request('dashboard'))).json()
+    expect(body.orders.map((r: any) => r.id)).toEqual(['batch-a', 'batch-b', 'batch-unassigned'])
+  })
+  it('★ 운영사 오너가 담당 업체를 고르면 매니저처럼 그 업체로만 좁아진다', async () => {
+    tables.memberships[0] = { user_id: 'manager-a', role: 'owner', organizations: { organization_type: 'operator' } }
+    tables.manager_restaurants = [
+      ...tables.manager_restaurants.filter(r => r.user_id !== 'manager-a'),
+      { user_id: 'manager-a', restaurant_id: 'b', users: { name: '오너' } },
+    ]
+    const body = await (await dashboard(request('dashboard'))).json()
+    expect(body.orders.map((r: any) => r.id)).toEqual(['batch-b'])
+  })
   it('로그인 없이는 전체 조회를 할 수 없다', async () => {
     expect((await dashboard(new Request('https://example.test/api/driver/dashboard?scope=all'))).status).toBe(401)
   })
