@@ -247,21 +247,25 @@ export default function ConfirmPanel({ rows, cycle, today, periods, selectedPeri
         </div>
       </div>
 
+      {/* 업체·기간 열(1fr)만 유동폭이고 금액 열 5개가 전부 고정폭이라, 창이 좁아지면 업체명 칸이
+          거의 0으로 눌려 이름이 안 보였다. min-w 로 표 전체 최소폭을 못박고 넘치면 가로 스크롤로
+          돌린다 — 업체명은 항상 제 폭을 유지한다(2026-09-30). */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <div className="grid grid-cols-[32px_1fr_100px_100px_100px_110px_150px] gap-2 px-4 py-3 bg-gray-50 border-b border-gray-200 text-xs font-semibold text-gray-500">
-          <span></span><span>업체 · 기간</span>
-          <span className="text-right">당기</span>
-          <span className="text-right">이전</span>
-          <span className="text-right">미수</span>
-          <span className="text-right">받을 금액</span>
-          <span>상태</span>
-        </div>
-        <div className="divide-y divide-gray-100">
-          {rows.length === 0 && (
-            <p className="py-12 text-center text-sm text-gray-400">이 기간에 정산서가 없습니다</p>
-          )}
-          {rows.map(r => (
-            <div key={r.statementId} className="grid grid-cols-[32px_1fr_100px_100px_100px_110px_150px] gap-2 items-center px-4 py-3">
+        <div className="overflow-x-auto">
+          <div className="grid grid-cols-[32px_1fr_100px_100px_100px_110px_150px] gap-2 px-4 py-3 bg-gray-50 border-b border-gray-200 text-xs font-semibold text-gray-500 min-w-[700px]">
+            <span></span><span>업체 · 기간</span>
+            <span className="text-right">당기</span>
+            <span className="text-right">이전</span>
+            <span className="text-right">미수</span>
+            <span className="text-right">받을 금액</span>
+            <span>상태</span>
+          </div>
+          <div className="divide-y divide-gray-100">
+            {rows.length === 0 && (
+              <p className="py-12 text-center text-sm text-gray-400">이 기간에 정산서가 없습니다</p>
+            )}
+            {rows.map(r => (
+              <div key={r.statementId} className="grid grid-cols-[32px_1fr_100px_100px_100px_110px_150px] gap-2 items-center px-4 py-3 min-w-[700px]">
               <input
                 type="checkbox"
                 checked={picked.has(r.statementId)}
@@ -340,9 +344,10 @@ export default function ConfirmPanel({ rows, cycle, today, periods, selectedPeri
                     {r.reason || (r.phone ?? '')}
                   </span>
                 )}
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       </div>
     </div>
