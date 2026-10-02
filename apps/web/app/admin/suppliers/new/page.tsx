@@ -10,6 +10,7 @@ export default function AdminSupplierNewPage() {
   const [loading, setLoading] = useState(false)
   const [form, setForm] = useState({
     name: '',
+    address: '',
     dispatch_channel: 'kakao',
     phone: '',
   })
@@ -53,6 +54,15 @@ export default function AdminSupplierNewPage() {
               type="text" required value={form.name}
               onChange={e => set('name', e.target.value)}
               placeholder="예: 서울청과"
+              className="flex-1 bg-gray-100 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+            />
+          </div>
+          <div className="flex items-center gap-3 px-5 py-4">
+            <label className="text-sm text-gray-500 w-24 shrink-0">주소</label>
+            <input
+              type="text" value={form.address}
+              onChange={e => set('address', e.target.value)}
+              placeholder="도로명 주소 (지점 구분용)"
               className="flex-1 bg-gray-100 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
             />
           </div>

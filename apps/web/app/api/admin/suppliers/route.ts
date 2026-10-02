@@ -6,7 +6,7 @@ import { getAdminSession } from '@/lib/admin-member-user'
 
 export async function POST(req: NextRequest) {
   try {
-    const { name, dispatch_channel, phone } = await req.json()
+    const { name, address, dispatch_channel, phone } = await req.json()
     if (!name?.trim()) return NextResponse.json({ error: '공급처명을 입력하세요' }, { status: 400 })
 
     // 로그인만 보면 회원 계정으로도 통과한다. 관리자 권한까지 확인한다.
@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
     // 없어서 공급처 등록이 늘 500 으로 실패하고 있었다(2026-10-02 가락시장 등록 중 발견).
     const { data: org, error: orgErr } = await db
       .from('organizations')
-      .insert({ name: name.trim(), organization_type: 'supplier', status: 'active' })
+      .insert({ name: name.trim(), organization_type: 'supplier', status: 'active', address: address?.trim() || null })
       .select('id')
       .single()
     if (orgErr || !org) {

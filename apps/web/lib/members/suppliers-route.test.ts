@@ -66,6 +66,26 @@ describe('POST /api/admin/suppliers', () => {
     expect(f2.writes.find(w => w.table === 'contacts')).toBeUndefined()
   })
 
+  it('주소를 입력하면 organizations 생성에 포함된다', async () => {
+    m.session.mockResolvedValue({ user: { id: 'admin-1' } })
+    const f = fakeDb({ organizations: [{ id: 'org-1' }], suppliers: [{ id: 'sup-1' }] })
+    m.createDb.mockReturnValue(f.db)
+
+    await post({ name: '가락시장', address: '서울 송파구 양재대로 932' })
+    const orgWrite = f.writes.find(w => w.table === 'organizations' && w.op === 'insert')!
+    expect(orgWrite.payload).toMatchObject({ address: '서울 송파구 양재대로 932' })
+  })
+
+  it('주소를 비워두면 null 로 저장한다', async () => {
+    m.session.mockResolvedValue({ user: { id: 'admin-1' } })
+    const f = fakeDb({ organizations: [{ id: 'org-1' }], suppliers: [{ id: 'sup-1' }] })
+    m.createDb.mockReturnValue(f.db)
+
+    await post({ name: '가락시장', address: '  ' })
+    const orgWrite = f.writes.find(w => w.table === 'organizations' && w.op === 'insert')!
+    expect(orgWrite.payload).toMatchObject({ address: null })
+  })
+
   it('조직 생성이 실패하면 500 — 이후 단계는 진행하지 않는다', async () => {
     m.session.mockResolvedValue({ user: { id: 'admin-1' } })
     const f = fakeDb({}, { errors: { 'organizations:insert': { message: 'boom' } } })
