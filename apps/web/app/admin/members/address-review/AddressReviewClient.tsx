@@ -102,9 +102,10 @@ export default function AddressReviewClient({ rows }: { rows: Row[] }) {
         {rows.map(row => {
           const s = state[row.id]
           return (
-            <div key={row.id} className="px-4 py-3 flex items-center gap-3">
-              <div className="w-32 shrink-0">
-                <div className="text-sm font-medium text-gray-800 truncate">{row.name}</div>
+            <div key={row.id} className="px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+              <div className="sm:w-40 sm:shrink-0">
+                {/* 지점명이 길어 줄여 쓰면(예: "아구찜 참 잘하는 집 ○○점") 구분이 안 된다 — 안 자르고 다 보여준다 */}
+                <div className="text-sm font-medium text-gray-800">{row.name}</div>
                 <div className="text-xs text-gray-400">{row.typeLabel}</div>
               </div>
 
