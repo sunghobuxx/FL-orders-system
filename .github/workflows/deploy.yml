@@ -166,6 +166,48 @@ jobs:
               if m: print('Current / mapping:', m.group())
           PYEOF
 
+      - name: Set CF Pages project config (production branch + Supabase Seoul)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          API="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/pages/projects/fruitlife"
+
+          show() {
+            curl -sf -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$API" | python3 -c "
+          import sys, json
+          r = json.load(sys.stdin)['result']
+          print('  production_branch =', r.get('production_branch'))
+          e = r['deployment_configs']['production'].get('env_vars') or {}
+          for k, v in sorted(e.items()):
+              print(f'  {k} = {(v or {}).get(\"value\") or \"(secret)\"}')
+          "
+          }
+
+          echo "── 변경 전 ──"; show
+
+          # production_branch가 아래 deploy 스텝의 --branch 값과 다르면 CF는 그 배포를
+          # preview로 취급한다. 그러면 워크플로는 성공하는데 운영 도메인은 옛 배포를
+          # 계속 서빙한다 (2026-07-26 확인된 실제 원인). 이건 지금도 유효하다 — plain_text
+          # env_vars 쪽(POPBILL_ENVIRONMENT 등)만 Direct Upload 배포에 안 먹혔던 것이다
+          # (2026-10-02, 아래 "Set CF Pages feature flags" 스텝 주석 참고).
+          #
+          # 키 단위 merge라 SUPABASE_SERVICE_ROLE_KEY 등 나머지는 건드리지 않는다.
+          curl -sf -X PATCH -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            -H "Content-Type: application/json" "$API" -d '{
+              "production_branch": "main",
+              "deployment_configs": {
+                "production": {
+                  "env_vars": {
+                    "NEXT_PUBLIC_SUPABASE_URL": {"type": "plain_text", "value": "https://nvpaggacvbotgqyxfdof.supabase.co"},
+                    "NEXT_PUBLIC_SUPABASE_ANON_KEY": {"type": "plain_text", "value": "sb_publishable_iYQqjq5q9dN-AwXy-DTYzA_Wnoz0Vw3"}
+                  }
+                }
+              }
+            }' > /dev/null
+
+          echo "── 변경 후 ──"; show
+
       - name: Set CF Pages secrets (service role key)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -192,54 +234,15 @@ jobs:
             echo "$val" | pnpm dlx wrangler pages secret put "$name" --project-name fruitlife
           done
 
-      - name: Set CF Pages project config (production branch + Supabase Seoul)
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      - name: Set CF Pages feature flags (POPBILL_ENVIRONMENT / PAYMENT_AUTO_MATCH_MODE)
         run: |
-          API="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/pages/projects/fruitlife"
-
-          show() {
-            curl -sf -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$API" | python3 -c "
-          import sys, json
-          r = json.load(sys.stdin)['result']
-          print('  production_branch =', r.get('production_branch'))
-          e = r['deployment_configs']['production'].get('env_vars') or {}
-          for k, v in sorted(e.items()):
-              print(f'  {k} = {(v or {}).get(\"value\") or \"(secret)\"}')
-          "
-          }
-
-          echo "── 변경 전 ──"; show
-
-          # production_branch가 아래 deploy 스텝의 --branch 값과 다르면 CF는 그 배포를
-          # preview로 취급한다. 그러면 워크플로는 성공하는데 운영 도메인은 옛 배포를
-          # 계속 서빙한다 (2026-07-26 확인된 실제 원인).
-          #
-          # 이 스텝은 일부러 "Set CF Pages secrets" 두 스텝 뒤, 실제 deploy 바로 앞으로 옮겼다.
-          # POPBILL_ENVIRONMENT/PAYMENT_AUTO_MATCH_MODE 를 여기서 먼저 심었더니 production 요청에서
-          # 계속 사라져 있었다(bank-sync/collect 크론이 매 30분 500) — wrangler pages secret put 이
-          # 뒤에서 env_vars 를 다시 쓰며 plain_text 값을 날리는 것으로 보인다(2026-10-02 확인).
-          # 그래서 순서를 secret put들 다음, deploy 직전으로 옮겨 마지막에 심은 값이 남게 한다.
-          #
-          # env_vars는 대시보드 런타임 값이 build-time 값을 override하므로 여기서 Seoul로 못박는다.
-          # 키 단위 merge라 SUPABASE_SERVICE_ROLE_KEY 등 나머지는 건드리지 않는다.
-          curl -sf -X PATCH -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
-            -H "Content-Type: application/json" "$API" -d '{
-              "production_branch": "main",
-              "deployment_configs": {
-                "production": {
-                  "env_vars": {
-                    "NEXT_PUBLIC_SUPABASE_URL": {"type": "plain_text", "value": "https://nvpaggacvbotgqyxfdof.supabase.co"},
-                    "NEXT_PUBLIC_SUPABASE_ANON_KEY": {"type": "plain_text", "value": "sb_publishable_iYQqjq5q9dN-AwXy-DTYzA_Wnoz0Vw3"},
-                    "POPBILL_ENVIRONMENT": {"type": "plain_text", "value": "test"},
-                    "PAYMENT_AUTO_MATCH_MODE": {"type": "plain_text", "value": "shadow"}
-                  }
-                }
-              }
-            }' > /dev/null
-
-          echo "── 변경 후 ──"; show
+          # CF Pages project API(deployment_configs.production.env_vars, plain_text)로 심었더니
+          # 조회에는 맞게 나오는데 실제 요청(bank-sync/collect 크론)에는 반영이 안 돼 있었다 —
+          # Direct Upload(wrangler pages deploy)로 올리는 배포는 이 project-level env_vars를
+          # 아예 안 쓰는 것으로 보인다(2026-10-02, 며칠간 크론 500 확인 후 추적).
+          # wrangler pages secret put 으로 바꾼다 — 민감정보는 아니지만 이 방식만 실제로 먹힌다.
+          printf 'test' | pnpm dlx wrangler pages secret put POPBILL_ENVIRONMENT --project-name fruitlife
+          printf 'shadow' | pnpm dlx wrangler pages secret put PAYMENT_AUTO_MATCH_MODE --project-name fruitlife
 
       - name: Deploy to Cloudflare Pages
         working-directory: apps/web
