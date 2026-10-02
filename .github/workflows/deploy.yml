@@ -235,6 +235,9 @@ jobs:
           done
 
       - name: Set CF Pages feature flags (POPBILL_ENVIRONMENT / PAYMENT_AUTO_MATCH_MODE)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           # CF Pages project API(deployment_configs.production.env_vars, plain_text)로 심었더니
           # 조회에는 맞게 나오는데 실제 요청(bank-sync/collect 크론)에는 반영이 안 돼 있었다 —
