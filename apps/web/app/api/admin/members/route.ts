@@ -9,9 +9,9 @@ import { validateLoginEmail } from '@/lib/members/login-email'
 export async function POST(req: NextRequest) {
   try {
     const {
-      name, contact_name, phone, biz_no, settlement_cycle, org_type, product_ids, email, password,
+      name, address, contact_name, phone, biz_no, settlement_cycle, org_type, product_ids, email, password,
     } = await req.json() as {
-      name: string; contact_name?: string; phone?: string; biz_no?: string
+      name: string; address?: string; contact_name?: string; phone?: string; biz_no?: string
       settlement_cycle?: string; org_type: string; product_ids?: string[]
       email?: string; password?: string
     }
@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
     // 1. 조직 생성
     const { data: org, error: orgErr } = await adminDb
       .from('organizations')
-      .insert({ name, organization_type: org_type, status: 'active' })
+      .insert({ name, organization_type: org_type, status: 'active', address: address?.trim() || null })
       .select('id')
       .single()
     if (orgErr || !org) throw orgErr ?? new Error('조직 생성 실패')

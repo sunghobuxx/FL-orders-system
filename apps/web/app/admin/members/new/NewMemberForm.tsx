@@ -26,6 +26,7 @@ export default function NewMemberForm({ orgType, products }: Props) {
 
     const body = {
       name: fd.get('name'),
+      address: fd.get('address'),
       contact_name: fd.get('contact_name'),
       phone: fd.get('phone'),
       biz_no: fd.get('biz_no'),
@@ -74,6 +75,13 @@ export default function NewMemberForm({ orgType, products }: Props) {
           <input name="contact_name" placeholder="대표자명"
             className="flex-1 bg-gray-100 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
         </div>
+      </div>
+
+      {/* 주소 (서울 식당 판별에 쓴다 — 가락시장 매입 2026-10) */}
+      <div className="flex items-center gap-2 px-5 py-4 border-b border-gray-100">
+        <label className="text-sm text-gray-500 shrink-0">주소:</label>
+        <input name="address" placeholder="도로명 주소"
+          className="flex-1 bg-gray-100 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
       </div>
 
       {/* 전화번호 */}

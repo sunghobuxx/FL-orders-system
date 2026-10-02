@@ -3,12 +3,13 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import WaitingQrCode from './WaitingQrCode'
+import BizLicenseUpload from './BizLicenseUpload'
 
 interface Props {
   orgId: string
   isEdit: boolean
   isSupplier: boolean
-  org: { name: string }
+  org: { name: string; address?: string | null; biz_license_path?: string | null }
   contacts: { name: string | null; phone: string | null } | null
   rest: { id?: string | null; biz_no: string | null; settlement_cycle?: string | null; waiting_enabled?: boolean | null } | null
   memberEmail?: string | null
@@ -61,9 +62,11 @@ export default function MemberFormClient({ orgId, isEdit, isSupplier, org, conta
         method: 'PUT',
         body: JSON.stringify({
           name: formData.get('name'),
+          address: formData.get('address'),
           contact_name: formData.get('contact_name'),
           phone: formData.get('phone'),
           biz_no: formData.get('biz_no'),
+          biz_license_path: formData.get('biz_license_path'),
           settlement_cycle: formData.get('settlement_cycle'),
           waiting_enabled: !isSupplier ? waitingEnabled : undefined,
         }),
@@ -123,7 +126,12 @@ export default function MemberFormClient({ orgId, isEdit, isSupplier, org, conta
 
         <div className="flex items-center gap-2 px-5 py-4 border-b border-gray-100">
           <span className="text-sm text-gray-500 shrink-0">주소:</span>
-          <span className="flex-1 bg-gray-100 px-3 py-1.5 rounded text-sm text-gray-400">(관리자 문의)</span>
+          {isEdit ? <I name="address" defaultValue={org.address ?? ''} disabled={isLoading} /> : <F>{org.address}</F>}
+        </div>
+
+        <div className="flex items-center gap-2 px-5 py-4 border-b border-gray-100">
+          <span className="text-sm text-gray-500 shrink-0">사업자등록증:</span>
+          <BizLicenseUpload orgId={orgId} defaultPath={org.biz_license_path} editable={isEdit} disabled={isLoading} />
         </div>
 
         <div className="grid grid-cols-2 gap-4 px-5 py-4 border-b border-gray-100">

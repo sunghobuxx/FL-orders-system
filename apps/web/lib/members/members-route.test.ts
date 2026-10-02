@@ -53,4 +53,19 @@ describe('POST /api/admin/members — 로그인 이메일', () => {
     expect(mocks.from).toHaveBeenCalled()
     expect(mocks.createUser).not.toHaveBeenCalled()
   })
+
+  // 가락시장 매입(2026-10) — 서울 식당 판별에 주소가 필요해 등록 시점부터 받는다
+  it('주소를 입력하면 organizations 생성에 포함된다', async () => {
+    const orgChain = table()
+    mocks.from.mockImplementation((t: string) => (t === 'organizations' ? orgChain : table()))
+    await post({ name: '가락점', org_type: 'supplier', address: '서울시 송파구 가락동 123', email: null })
+    expect(orgChain.insert).toHaveBeenCalledWith(expect.objectContaining({ address: '서울시 송파구 가락동 123' }))
+  })
+
+  it('주소를 비워두면 null 로 저장한다', async () => {
+    const orgChain = table()
+    mocks.from.mockImplementation((t: string) => (t === 'organizations' ? orgChain : table()))
+    await post({ name: '가락점', org_type: 'supplier', address: '  ', email: null })
+    expect(orgChain.insert).toHaveBeenCalledWith(expect.objectContaining({ address: null }))
+  })
 })

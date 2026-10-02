@@ -10,9 +10,11 @@ export async function PUT(req: NextRequest, context: { params: Promise<{ id: str
     const { id: orgId } = await context.params
     const body = await req.json() as {
       name?: string
+      address?: string
       contact_name?: string
       phone?: string
       biz_no?: string
+      biz_license_path?: string
       settlement_cycle?: string
       waiting_enabled?: boolean
     }
@@ -25,8 +27,12 @@ export async function PUT(req: NextRequest, context: { params: Promise<{ id: str
     // 정책이 없으면 통째로 실패한다 (restaurant_products 는 service_role 쓰기만 허용).
     const db = createAdminClient()
 
-    if (body.name) {
-      const { error } = await db.from('organizations').update({ name: body.name }).eq('id', orgId)
+    const orgUpdate: Record<string, string | null> = {}
+    if (body.name) orgUpdate.name = body.name
+    if (body.address !== undefined) orgUpdate.address = body.address.trim() || null
+    if (body.biz_license_path !== undefined) orgUpdate.biz_license_path = body.biz_license_path || null
+    if (Object.keys(orgUpdate).length > 0) {
+      const { error } = await db.from('organizations').update(orgUpdate).eq('id', orgId)
       if (error) throw error
     }
 

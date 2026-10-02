@@ -23,7 +23,7 @@ export default async function MemberDetailPage({ params, searchParams }: Props) 
   const db = await requireAuthorizedAdminDb()
 
   const [{ data: org }, { data: contacts }, { data: rest }, { data: supplier }] = await Promise.all([
-    db.from('organizations').select('id, name, organization_type, status').eq('id', id).single(),
+    db.from('organizations').select('id, name, organization_type, status, address, biz_license_path').eq('id', id).single(),
     db.from('contacts').select('name, phone').eq('organization_id', id).eq('is_primary', true).maybeSingle(),
     db.from('restaurants').select('id, biz_no, settlement_cycle, waiting_enabled').eq('organization_id', id).maybeSingle(),
     db.from('suppliers').select('id').eq('organization_id', id).maybeSingle(),
