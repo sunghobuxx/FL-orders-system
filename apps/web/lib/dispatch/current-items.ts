@@ -1,5 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
+import { isSeoulAddress } from '@/lib/region'
+
 export interface DispatchOrderItem {
   id: string
   product_id: string
@@ -74,13 +76,22 @@ export async function getCurrentDispatchGroups(
 
   const { data: batches } = await batchQuery
   const batchIds = (batches ?? []).map((b: { id: string }) => b.id)
+  const EMPTY: {
+    batches: any[]
+    allItems: DispatchOrderItem[]
+    grouped: Record<string, DispatchOrderItem[]>
+    inactiveGrouped: Record<string, DispatchOrderItem[]>
+    unmappedItems: DispatchLine[]
+    garakItems: DispatchOrderItem[]
+  } = { batches: [], allItems: [], grouped: {}, inactiveGrouped: {}, unmappedItems: [], garakItems: [] }
   if (!batchIds.length) {
-    return { batches: [], allItems: [] as DispatchOrderItem[], grouped: {}, inactiveGrouped: {}, unmappedItems: [] as DispatchLine[] }
+    return EMPTY
   }
 
-  // 레스토랑 → 업체명 맵 + 주문 목록을 병렬로 조회
+  // 레스토랑 → 업체명/서울여부 맵 + 주문 목록을 병렬로 조회
   const restaurantIds = [...new Set((batches ?? []).map((b: { restaurant_id: string }) => b.restaurant_id).filter(Boolean) as string[])]
   const orderToRestaurantName: Record<string, string> = {}
+  const orderIsSeoul: Record<string, boolean> = {}
 
   if (restaurantIds.length) {
     const [{ data: rRows }, { data: orderRows }] = await Promise.all([
@@ -90,27 +101,39 @@ export async function getCurrentDispatchGroups(
 
     const orgIds = [...new Set((rRows ?? []).map((r: { organization_id: string }) => r.organization_id).filter(Boolean) as string[])]
     const { data: orgRows } = orgIds.length
-      ? await adminDb.from('organizations').select('id, name').in('id', orgIds)
+      ? await adminDb.from('organizations').select('id, name, address').in('id', orgIds)
       : { data: [] }
 
     const orgNameMap: Record<string, string> = Object.fromEntries(
       (orgRows ?? []).map((o: { id: string; name: string }) => [o.id, o.name])
     )
+    // 서울 식당은 가락시장에서 직접 사다 납품한다 — 품목별 공급처 발주문자 대상에서 뺀다
+    // (2026-10 가락시장 매입 시작, 사장님 기준: "서울 식당은 주소기준이야").
+    const orgIsSeoulMap: Record<string, boolean> = Object.fromEntries(
+      (orgRows ?? []).map((o: { id: string; address: string | null }) => [o.id, isSeoulAddress(o.address)])
+    )
     const restaurantNameMap: Record<string, string> = Object.fromEntries(
       (rRows ?? []).map((r: { id: string; organization_id: string }) => [r.id, orgNameMap[r.organization_id] ?? ''])
+    )
+    const restaurantIsSeoulMap: Record<string, boolean> = Object.fromEntries(
+      (rRows ?? []).map((r: { id: string; organization_id: string }) => [r.id, orgIsSeoulMap[r.organization_id] ?? false])
     )
     const batchRestaurantMap: Record<string, string> = Object.fromEntries(
       (batches ?? []).map((b: { id: string; restaurant_id: string }) => [b.id, restaurantNameMap[b.restaurant_id] ?? ''])
     )
+    const batchIsSeoulMap: Record<string, boolean> = Object.fromEntries(
+      (batches ?? []).map((b: { id: string; restaurant_id: string }) => [b.id, restaurantIsSeoulMap[b.restaurant_id] ?? false])
+    )
 
     for (const o of orderRows ?? []) {
       orderToRestaurantName[o.id] = batchRestaurantMap[o.batch_id] ?? ''
+      orderIsSeoul[o.id] = batchIsSeoulMap[o.batch_id] ?? false
     }
   }
 
   const orderIds = Object.keys(orderToRestaurantName)
   if (!orderIds.length) {
-    return { batches: batches ?? [], allItems: [] as DispatchOrderItem[], grouped: {}, inactiveGrouped: {}, unmappedItems: [] as DispatchLine[] }
+    return EMPTY
   }
 
   const { data: rawItems } = await adminDb
@@ -118,7 +141,7 @@ export async function getCurrentDispatchGroups(
     .select('id, product_id, qty, unit, supplier_product_id, order_id, products(standard_name)')
     .in('order_id', orderIds)
 
-  const items: DispatchOrderItem[] = (rawItems ?? []).map((i: any) => ({
+  const mapItem = (i: any): DispatchOrderItem => ({
     id: i.id,
     product_id: i.product_id,
     qty: i.qty,
@@ -126,10 +149,15 @@ export async function getCurrentDispatchGroups(
     supplier_product_id: i.supplier_product_id,
     products: i.products,
     restaurant_name: orderToRestaurantName[i.order_id] ?? null,
-  }))
+  })
+
+  const rawList = (rawItems ?? []) as any[]
+  // 서울 식당 품목은 공급처 매칭을 아예 거치지 않는다 — 가락 살 것 목록으로 간다.
+  const garakItems: DispatchOrderItem[] = rawList.filter(i => orderIsSeoul[i.order_id]).map(mapItem)
+  const items: DispatchOrderItem[] = rawList.filter(i => !orderIsSeoul[i.order_id]).map(mapItem)
 
   if (!items.length) {
-    return { batches: batches ?? [], allItems: [] as DispatchOrderItem[], grouped: {}, inactiveGrouped: {}, unmappedItems: [] as DispatchLine[] }
+    return { ...EMPTY, batches: batches ?? [], garakItems }
   }
 
   const { productToSupplier, supplierProductToSupplier } = await resolveSupplierMaps(adminDb, items)
@@ -176,7 +204,7 @@ export async function getCurrentDispatchGroups(
     }
   }
 
-  return { batches: batches ?? [], allItems: items, grouped, inactiveGrouped, unmappedItems: [...unmappedMap.values()] }
+  return { batches: batches ?? [], allItems: items, grouped, inactiveGrouped, unmappedItems: [...unmappedMap.values()], garakItems }
 }
 
 /**

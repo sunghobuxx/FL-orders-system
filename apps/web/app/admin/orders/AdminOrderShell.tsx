@@ -13,6 +13,8 @@ export default function AdminOrderShell({ children, date }: { children: ReactNod
   function navigateDate(newDate: string) {
     if (pathname.startsWith('/admin/orders/dispatch/')) {
       router.push(`/admin/orders/dispatch/${newDate}`)
+    } else if (pathname.startsWith('/admin/orders/garak-buylist/')) {
+      router.push(`/admin/orders/garak-buylist/${newDate}`)
     } else {
       router.push(`${pathname}?date=${newDate}`)
     }
@@ -36,6 +38,11 @@ export default function AdminOrderShell({ children, date }: { children: ReactNod
       href: `/admin/orders/dispatch/${currentDate}`,
       label: '품목별 발주',
       isActive: pathname.startsWith('/admin/orders/dispatch'),
+    },
+    {
+      href: `/admin/orders/garak-buylist/${currentDate}`,
+      label: '가락 살 것',
+      isActive: pathname.startsWith('/admin/orders/garak-buylist'),
     },
     {
       href: `/admin/orders/history?date=${currentDate}`,
