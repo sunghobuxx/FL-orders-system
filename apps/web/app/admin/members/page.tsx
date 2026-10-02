@@ -66,6 +66,12 @@ export default async function AdminMembersPage({
               {showInactive ? '← 활성 목록' : '비활성 목록'}
             </Link>
             <Link
+              href="/admin/members/address-review"
+              className="rounded-lg border border-gray-300 text-gray-600 px-4 py-2 text-sm font-medium hover:bg-gray-50"
+            >
+              주소 일괄 검색
+            </Link>
+            <Link
               href={`/admin/members/new?type=${orgType}`}
               className="rounded-lg bg-brand-600 text-white px-5 py-2 text-sm font-semibold hover:bg-brand-700"
             >
