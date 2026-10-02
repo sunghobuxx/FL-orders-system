@@ -4,25 +4,21 @@ import { requireAuthorizedAdminDb } from '@/lib/admin-member-user'
 import AdminMembersShell from '../AdminMembersShell'
 import AddressReviewClient from './AddressReviewClient'
 
-const TYPE_LABELS: Record<string, string> = {
-  restaurant: '매출 업체',
-  supplier: '매입 공급처',
-}
-
 export default async function AddressReviewPage() {
   const db = await requireAuthorizedAdminDb()
 
+  // 공급처는 주소가 굳이 필요 없다(사장님, 2026-10-02) — 서울 식당 판별용이라 매출 업체만 다룬다.
   const { data: orgs } = await db
     .from('organizations')
-    .select('id, name, organization_type, address')
-    .in('organization_type', ['restaurant', 'supplier'])
+    .select('id, name, address')
+    .eq('organization_type', 'restaurant')
     .eq('status', 'active')
     .order('name')
 
-  const rows = (orgs ?? []).map((o: { id: string; name: string; organization_type: string; address: string | null }) => ({
+  const rows = (orgs ?? []).map((o: { id: string; name: string; address: string | null }) => ({
     id: o.id,
     name: o.name,
-    typeLabel: TYPE_LABELS[o.organization_type] ?? o.organization_type,
+    typeLabel: '매출 업체',
     address: o.address,
   }))
 
