@@ -53,7 +53,10 @@ export function normalizeTransaction(row: PopbillTransactionRow, ctx: { accountR
   const accIn = Number(row.accIn)
   const accOut = Number(row.accOut)
   const direction: 'in' | 'out' = accIn > 0 ? 'in' : 'out'
-  const amount = direction === 'in' ? accIn : accOut
+  // accOut 이 간혹 음수로 온다(2026-10-01 실거래로 확인) — amount 는 항상 양의 크기로 저장한다.
+  // bank_transactions.amount CHECK(amount > 0) 를 위반해 그 계좌의 수집 배치 전체가
+  // 저장 실패하고 있었다(한 번의 upsert 가 통째로 롤백됨).
+  const amount = Math.abs(direction === 'in' ? accIn : accOut)
 
   const field = DEPOSITOR_FIELD_BY_BANK[ctx.bankCode]
   const depositorRaw = direction === 'in' && amount > 0 && field ? (row[field] || null) : null

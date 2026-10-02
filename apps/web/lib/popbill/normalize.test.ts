@@ -39,6 +39,11 @@ describe('normalizeTransaction — 팝빌 응답 한 행을 bank_transactions �
     expect(r).toMatchObject({ direction: 'out', amount: 4400, depositorRaw: null })
   })
 
+  it('★ accOut 이 음수로 와도 amount 는 양수로 저장한다 (2026-10-01 실거래: -20000 → DB CHECK(amount>0) 위반으로 그 계좌 수집 전체가 실패했었다)', () => {
+    const r = normalizeTransaction(row({ accIn: '0', accOut: '-20000' }), { accountRef: 'a', bankCode: '0011' })
+    expect(r).toMatchObject({ direction: 'out', amount: 20000 })
+  })
+
   it('농협(0011) 이외의 은행은 remark 의미를 모르므로 입금자 원문을 비워 둔다(문서: 은행마다 다르다) — 확인 전까지 UNMATCHED 로만 두기 위해', () => {
     const r = normalizeTransaction(row({ }), { accountRef: 'a', bankCode: '0004' })
     expect(r.depositorRaw).toBeNull()
