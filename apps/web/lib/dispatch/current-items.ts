@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-import { isSeoulAddress } from '@/lib/region'
+import { isGarakAddress } from '@/lib/region'
 
 export interface DispatchOrderItem {
   id: string
@@ -110,7 +110,7 @@ export async function getCurrentDispatchGroups(
     // 서울 식당은 가락시장에서 직접 사다 납품한다 — 품목별 공급처 발주문자 대상에서 뺀다
     // (2026-10 가락시장 매입 시작, 사장님 기준: "서울 식당은 주소기준이야").
     const orgIsSeoulMap: Record<string, boolean> = Object.fromEntries(
-      (orgRows ?? []).map((o: { id: string; address: string | null }) => [o.id, isSeoulAddress(o.address)])
+      (orgRows ?? []).map((o: { id: string; address: string | null }) => [o.id, isGarakAddress(o.address)])
     )
     const restaurantNameMap: Record<string, string> = Object.fromEntries(
       (rRows ?? []).map((r: { id: string; organization_id: string }) => [r.id, orgNameMap[r.organization_id] ?? ''])

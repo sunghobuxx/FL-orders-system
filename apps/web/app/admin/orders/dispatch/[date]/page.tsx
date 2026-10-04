@@ -32,7 +32,7 @@ export default async function DispatchDatePage({ params }: Props) {
   const { date: targetDate } = await params
   const adminDb = createAdminClient()
 
-  const { grouped, inactiveGrouped, unmappedItems } = await getCurrentDispatchGroups(adminDb, targetDate)
+  const { grouped, inactiveGrouped, unmappedItems, garakItems } = await getCurrentDispatchGroups(adminDb, targetDate)
 
   // 비활성 공급처는 메시지 발송에서만 제외하고 발주 내역에는 표시한다.
   // 이걸 빼먹으면 그날 발주가 전부 비활성 공급처로만 잡힌 날에 화면이 통째로 비어 버린다.
@@ -41,7 +41,9 @@ export default async function DispatchDatePage({ params }: Props) {
   const supplierIds = Object.keys(groupedMap)
   const inactiveSupplierIds = new Set(Object.keys(inactiveGrouped))
   const allItems = Object.values(groupedMap).flat()
-  const orderItemIds = allItems.map(i => i.id)
+  // 가락 매입(서울·일산) 품목도 발주 집계·단가 조회에 포함한다 — 전체 발주를 한 화면에서 본다.
+  const totalItems = [...allItems, ...garakItems]
+  const orderItemIds = totalItems.map(i => i.id)
 
   // dispatch_jobs, suppliers, order_items 단가 병렬 조회
   const [dispatchJobsResult, supplierRowsResult, priceRowsResult] = await Promise.all([
@@ -105,7 +107,7 @@ export default async function DispatchDatePage({ params }: Props) {
   // 그대로 더해서, bag 으로 시킨 수량이 kg 으로 둔갑해 나왔다
   // (2026-08-18 양파: bag 과 kg 이 11 로 합산). 단위가 다르면 줄을 따로 세운다.
   const productTotals = new Map<string, { name: string; qty: number; unit: string; amount: number }>()
-  for (const item of allItems) {
+  for (const item of totalItems) {
     const name = item.products?.standard_name ?? '알 수 없음'
     const unitPrice = priceMap.get(item.id) ?? 0
     const lineAmount = Number(item.qty) * unitPrice
@@ -143,7 +145,7 @@ export default async function DispatchDatePage({ params }: Props) {
   return (
     <AdminOrderShell date={targetDate}>
       <div className="space-y-5 max-w-3xl">
-        {supplierIds.length === 0 ? (
+        {supplierIds.length === 0 && garakItems.length === 0 ? (
           <div className="bg-white rounded-xl border border-gray-200 py-14 text-center text-sm text-gray-400">
             {targetDate} 발주 내역이 없습니다
           </div>
@@ -180,6 +182,28 @@ export default async function DispatchDatePage({ params }: Props) {
                 </div>
               </div>
             </div>
+
+            {/* 가락 매입 (서울·일산) — 공급처 문자 없이 직접 사 가는 품목 */}
+            {garakItems.length > 0 && (
+              <div>
+                <h2 className="text-xs font-semibold text-amber-700 mb-2 uppercase tracking-wide">가락 매입 (서울·일산) — 발주 문자 없음</h2>
+                <div className="bg-white rounded-xl border border-amber-200 divide-y divide-gray-50 overflow-hidden">
+                  {buildDispatchLines(garakItems).map(line => (
+                    <div key={`${line.name}-${line.unit}`} className="px-5 py-2.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-gray-800">{line.name}</span>
+                        <span className="text-sm text-gray-600 tabular-nums">{fmtQty(line.qty)} {line.unit}</span>
+                      </div>
+                      {line.byRestaurant.length > 1 && (
+                        <p className="text-xs text-gray-400 mt-0.5">
+                          {line.byRestaurant.map(r => `${shortName(r.name)} ${fmtQty(r.qty)}${line.unit}`).join('  ')}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* 발주 확정 버튼 (전체 너비) */}
             {!hasDispatchJobs && (
