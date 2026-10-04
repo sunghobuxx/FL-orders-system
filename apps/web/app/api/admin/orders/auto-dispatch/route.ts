@@ -14,6 +14,7 @@ import {
 import { sendKakaoAlimtalk } from '@/lib/messaging/kakao'
 import { getKstToday } from '@/lib/date-kst'
 import { getAdminSession } from '@/lib/admin-member-user'
+import { isDispatchBlockedDate, DISPATCH_BLOCKED_MESSAGE } from '@/lib/dispatch/no-send-days'
 
 const CRON_SECRET = process.env.PUSH_CRON_SECRET
 
@@ -36,6 +37,9 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json().catch(() => ({})) as { businessDate?: string }
     const businessDate: string = body.businessDate ?? getKstToday()
+    if (isDispatchBlockedDate(businessDate)) {
+      return NextResponse.json({ success: true, businessDate, dispatched: 0, message: DISPATCH_BLOCKED_MESSAGE })
+    }
 
     const adminDb = createAdminClient()
 

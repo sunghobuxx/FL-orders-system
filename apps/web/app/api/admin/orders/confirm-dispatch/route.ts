@@ -1,6 +1,7 @@
 export const runtime = 'edge'
 
 import { NextRequest, NextResponse } from 'next/server'
+import { isDispatchBlockedDate, DISPATCH_BLOCKED_MESSAGE } from '@/lib/dispatch/no-send-days'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getAdminSession } from '@/lib/admin-member-user'
 import {
@@ -24,6 +25,7 @@ export async function POST(req: NextRequest) {
     const { user } = session
 
     const { supplierId, businessDate } = await req.json() as { supplierId: string; businessDate: string }
+    if (isDispatchBlockedDate(businessDate)) return NextResponse.json({ error: DISPATCH_BLOCKED_MESSAGE }, { status: 400 })
 
     if (!supplierId || !businessDate) {
       return NextResponse.json({ error: '필수 값 누락 (supplierId, businessDate)' }, { status: 400 })
