@@ -359,6 +359,12 @@ export function groupEditableRows(rows: DispatchEditableRow[]) {
   return [...map.values()]
 }
 
+// 제외된 줄도 세어서, 줄이 아예 없는 job 과 줄이 전부 제외된 job 을 구별한다.
+export async function countDispatchJobItems(adminDb: any, jobId: string): Promise<number> {
+  const { data } = await adminDb.from('dispatch_job_items').select('id').eq('dispatch_job_id', jobId)
+  return (data ?? []).length
+}
+
 // 발주 사전 확정된 job → dispatch_job_items에서 직접 메시지 라인 생성
 export async function buildLinesFromDispatchJob(adminDb: any, jobId: string): Promise<DispatchLine[]> {
   const { data: rows } = await adminDb

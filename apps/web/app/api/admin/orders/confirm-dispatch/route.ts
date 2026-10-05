@@ -2,11 +2,13 @@ export const runtime = 'edge'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { isDispatchBlockedDate, DISPATCH_BLOCKED_MESSAGE } from '@/lib/dispatch/no-send-days'
+import { pickMessageSource } from '@/lib/dispatch/message-source'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getAdminSession } from '@/lib/admin-member-user'
 import {
   getCurrentDispatchGroups,
   buildLinesFromDispatchJob,
+  countDispatchJobItems,
   buildDispatchLines,
   formatDispatchLine,
   loadShowBreakdown,
@@ -84,7 +86,14 @@ export async function POST(req: NextRequest) {
     // 발주 라인 구성
     let messageLines: string
     const lines = await buildLinesFromDispatchJob(adminDb, jobId)
-    if (lines.length) {
+    const source = pickMessageSource({
+      confirmedLineCount: lines.length,
+      snapshotRowCount: await countDispatchJobItems(adminDb, jobId),
+    })
+    if (source === 'none') {
+      return NextResponse.json({ error: '모든 품목이 제외되어 보낼 문자가 없습니다' }, { status: 400 })
+    }
+    if (source === 'confirmed') {
       messageLines = lines.map((l) => formatDispatchLine(l, ': ', lineOpts)).join('\n')
     } else {
       const fallbackLines = buildDispatchLines(items)

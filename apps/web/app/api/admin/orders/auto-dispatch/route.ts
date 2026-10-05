@@ -5,6 +5,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import {
   getCurrentDispatchGroups,
   buildLinesFromDispatchJob,
+  countDispatchJobItems,
   buildDispatchLines,
   formatDispatchLine,
   loadShowBreakdown,
@@ -15,6 +16,7 @@ import { sendKakaoAlimtalk } from '@/lib/messaging/kakao'
 import { getKstToday } from '@/lib/date-kst'
 import { getAdminSession } from '@/lib/admin-member-user'
 import { isDispatchBlockedDate, DISPATCH_BLOCKED_MESSAGE } from '@/lib/dispatch/no-send-days'
+import { pickMessageSource } from '@/lib/dispatch/message-source'
 
 const CRON_SECRET = process.env.PUSH_CRON_SECRET
 
@@ -139,7 +141,12 @@ export async function POST(req: NextRequest) {
       // 발주 라인 구성 (확정 items → fallback: order items 직접)
       let messageLines: string
       const lines = await buildLinesFromDispatchJob(adminDb, jobId)
-      if (lines.length) {
+      const source = pickMessageSource({
+        confirmedLineCount: lines.length,
+        snapshotRowCount: await countDispatchJobItems(adminDb, jobId),
+      })
+      if (source === 'none') continue
+      if (source === 'confirmed') {
         messageLines = lines.map((l) => formatDispatchLine(l, ': ', lineOpts)).join('\n')
       } else {
         const fallbackLines = buildDispatchLines(items)
