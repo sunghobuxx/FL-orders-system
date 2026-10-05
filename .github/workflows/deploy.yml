@@ -245,7 +245,7 @@ jobs:
           # 아예 안 쓰는 것으로 보인다(2026-10-02, 며칠간 크론 500 확인 후 추적).
           # wrangler pages secret put 으로 바꾼다 — 민감정보는 아니지만 이 방식만 실제로 먹힌다.
           printf 'test' | pnpm dlx wrangler pages secret put POPBILL_ENVIRONMENT --project-name fruitlife
-          printf 'shadow' | pnpm dlx wrangler pages secret put PAYMENT_AUTO_MATCH_MODE --project-name fruitlife
+          printf 'live' | pnpm dlx wrangler pages secret put PAYMENT_AUTO_MATCH_MODE --project-name fruitlife
 
       - name: Deploy to Cloudflare Pages
         working-directory: apps/web
