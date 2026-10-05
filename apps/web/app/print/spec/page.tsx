@@ -89,9 +89,6 @@ export default async function AdminSpecPrintPage({ searchParams }: Props) {
     const stmtPeriodMap = new Map(
       (matchingStmts ?? []).map((s: { id: string; settlement_period_id: string }) => [s.id, s.settlement_period_id])
     )
-    const stmtTotalMap = new Map(
-      (matchingStmts ?? []).map((s: { id: string; total_amount: number }) => [s.id, Number(s.total_amount ?? 0)])
-    )
 
     // 3단계: 미납 receivables
     if (stmtIds.length > 0) {
@@ -135,23 +132,22 @@ export default async function AdminSpecPrintPage({ searchParams }: Props) {
           )
           const specIds = Object.keys(specIdToAmount)
 
+          // 이 기간의 미수금 잔액(입금 반영됨)에서 오늘 이후 매출을 뺀다.
+          // 예전에는 오늘 이전 매출 합계를 그대로 더해서, 이미 받은 입금이 빠지지 않았다(2026-10-05 수원대점 619,250 오표시).
+          // 잔액은 정산기간 전체(이월 포함)를 이미 담고 있으므로 이월을 따로 더하지 않는다.
+          let fromTodayOn = 0
           if (specIds.length > 0) {
-            const { data: prevSpecs } = await db
+            const { data: todayOnSpecs } = await db
               .from('daily_specs')
               .select('id')
               .in('id', specIds)
-              .lt('business_date', spec.business_date)
+              .gte('business_date', spec.business_date)
 
-            prevOutstanding += (prevSpecs ?? []).reduce(
+            fromTodayOn = (todayOnSpecs ?? []).reduce(
               (s: number, ps: { id: string }) => s + (specIdToAmount[ps.id] ?? 0), 0
             )
           }
-
-          // 이월 미수금: statement.total_amount - statement_lines 합계 (전주에서 이월된 금액)
-          const stmtTotal = stmtTotalMap.get(r.statement_id) ?? 0
-          const stmtSpecTotal = Object.values(specIdToAmount).reduce((s, v) => s + v, 0)
-          const carryover = Math.round(stmtTotal - stmtSpecTotal)
-          if (carryover > 0) prevOutstanding += carryover
+          prevOutstanding += Math.max(0, Number(r.balance ?? 0) - fromTodayOn)
         }
       }
 
