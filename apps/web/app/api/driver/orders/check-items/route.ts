@@ -33,6 +33,17 @@ export async function POST(req: Request) {
   const access = await requireBatchAccess(ctx, batchId)
   if ('error' in access) return access.error
 
+  // Validate every item before applyCheckStage writes; its batchGuard is checked after update.
+  const { data: orders, error: ordersError } = await ctx.db.from('orders').select('id').eq('batch_id', batchId)
+  if (ordersError) return NextResponse.json({ error: '발주 조회에 실패했습니다.' }, { status: 500 })
+  const ids = [...new Set(itemIds)]
+  if (ids.some(id => typeof id !== 'string')) return NextResponse.json({ error: '잘못된 품목입니다.' }, { status: 400 })
+  const orderIds = (orders ?? []).map(order => order.id)
+  if (!orderIds.length) return NextResponse.json({ error: '품목을 찾을 수 없습니다.' }, { status: 404 })
+  const { data: owned, error: ownedError } = await ctx.db.from('order_items').select('id').in('id', ids).in('order_id', orderIds)
+  if (ownedError) return NextResponse.json({ error: '품목 조회에 실패했습니다.' }, { status: 500 })
+  if (owned?.length !== ids.length) return NextResponse.json({ error: '해당 발주의 품목만 확인할 수 있습니다.' }, { status: 403 })
+
   try {
     const result = await applyCheckStage(ctx.db, itemIds, Number(stage), batchId)
     if ('error' in result) {

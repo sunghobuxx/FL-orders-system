@@ -1,183 +1,72 @@
-import { useFocusEffect } from 'expo-router'
-import { useCallback, useState } from 'react'
+import { useRef, useState } from 'react'
 import { Alert, Pressable, RefreshControl, ScrollView, Text, View } from 'react-native'
-
 import { Card, Empty, Loading, Muted, Page, Pill, colors } from '../../components'
-import { apiGet, apiPost } from '../../lib/api'
-import { fmtWon, getKstToday } from '../../lib/format'
-
-type DispatchResponse = {
-  businessDate: string
-  totalAmount: number
-  totals: Array<{ name: string; qty: number; unit: string; qtyText: string; amount: number }>
-  suppliers: Array<{
-    supplierId: string
-    supplierName: string
-    status: string
-    sent: boolean
-    autoDispatchExcluded: boolean
-    lines: Array<{
-      name: string
-      qty: number
-      unit: string
-      qtyText: string
-      byRestaurantText: string
-      rows: Array<{ orderItemId: string; restaurantName: string; qty: number; unit: string; checkStage: number }>
-    }>
-  }>
-  unmappedItems: Array<{ name: string; qty: number; unit: string; qtyText: string }>
-}
+import { DateSelector } from '../../components/DateSelector'
+import { useDriverResource } from '../../hooks/useDriverResource'
+import { apiPost } from '../../lib/api'
+import { fmtWon } from '../../lib/format'
+import { defaultDispatchDate, type DispatchResponse, type DispatchRow } from '../../lib/dispatch'
+import { nextOrderCheckStage, orderCheckState } from '../../lib/order-check'
 
 export default function HistoryScreen() {
-  const [data, setData] = useState<DispatchResponse | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [refreshing, setRefreshing] = useState(false)
-  const [checking, setChecking] = useState<Set<string>>(new Set())
-  const targetDate = getKstToday()
+  const [date, setDate] = useState(defaultDispatchDate)
+  const [tab, setTab] = useState<'all' | 'garak' | 'suppliers'>('all')
+  const [checking, setChecking] = useState(false)
+  const lock = useRef(false)
+  const { data, loading, refreshing, error, load, refresh } = useDriverResource<DispatchResponse>(`/api/driver/dispatch?date=${date}`, '발주 내역')
 
-  const load = useCallback(async () => {
-    const next = await apiGet<DispatchResponse>(`/api/driver/dispatch?date=${targetDate}`)
-    setData(next)
-  }, [targetDate])
-
-  useFocusEffect(useCallback(() => {
-    load().catch((error) => Alert.alert('발주 내역', error.message)).finally(() => setLoading(false))
-  }, [load]))
-
-  async function refresh() {
-    setRefreshing(true)
-    await load().catch((error) => Alert.alert('새로고침 실패', error.message))
-    setRefreshing(false)
-  }
-
-  async function toggleCheck(supplierId: string, itemId: string, currentStage: number) {
-    if (checking.has(itemId) || currentStage >= 2) return
-    const nextStage = currentStage >= 1 ? 0 : 1
-    setChecking(prev => new Set(prev).add(itemId))
+  async function toggle(row: DispatchRow) {
+    if (lock.current || !row.canManage || !row.batchId) return
+    const stage = nextOrderCheckStage(row.batchStatus, row.checkStage)
+    if (stage === null) return
+    lock.current = true
+    setChecking(true)
     try {
-      await apiPost('/api/driver/dispatch', {
-        itemId,
-        supplierId,
-        businessDate: targetDate,
-        stage: nextStage,
-      })
+      await apiPost('/api/driver/orders/check-items', { batchId: row.batchId, itemIds: [row.orderItemId], stage })
       await load()
-    } catch (error: any) {
-      Alert.alert('상차 확인 실패', error.message)
-    } finally {
-      setChecking(prev => {
-        const next = new Set(prev)
-        next.delete(itemId)
-        return next
-      })
-    }
+    } catch (e: any) {
+      Alert.alert('확인 실패', e.message)
+    } finally { lock.current = false; setChecking(false) }
   }
 
-  if (loading) return <Loading />
+  function itemRow(row: DispatchRow) {
+    const { done, requiredStage } = orderCheckState(row.batchStatus)
+    const checked = row.checkStage >= requiredStage
+    const disabled = checking || !!error || done || !row.canManage || !row.batchId || row.excluded
+    return <View key={row.orderItemId} style={{ paddingVertical: 10, borderTopWidth: 1, borderTopColor: colors.line, gap: 6 }}>
+      <Text style={{ color: colors.ink, fontWeight: '800' }}>{row.name} · {row.restaurantName || '업체 미확인'}</Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <Text style={{ flex: 1, color: colors.muted }}>{row.qty}{row.unit}{row.unitPrice > 0 ? ` · 단가 ${fmtWon(row.unitPrice)}` : ''}{row.excluded ? ' · 발주 제외' : ''}</Text>
+        <Pressable accessibilityRole="button" disabled={!!disabled} onPress={() => void toggle(row)} style={{ minHeight: 44, justifyContent: 'center', paddingHorizontal: 12, borderRadius: 8, backgroundColor: checked ? '#DCFCE7' : colors.green, opacity: disabled ? 0.55 : 1 }}>
+          <Text style={{ fontWeight: '800', color: checked ? '#166534' : 'white' }}>{!row.canManage ? '조회 전용' : done ? '배송완료' : `${checked ? '✓ ' : ''}${requiredStage === 1 ? '상차' : '배송'}`}</Text>
+        </Pressable>
+      </View>
+    </View>
+  }
 
-  return (
-    <Page>
-      <ScrollView refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />} showsVerticalScrollIndicator={false}>
-        <Text style={{ fontSize: 22, fontWeight: '900', color: colors.ink, marginBottom: 4 }}>발주내역</Text>
-        <Muted>웹 관리자 발주내역처럼 품목별 발주 집계와 공급처별 발주 내역을 표시합니다.</Muted>
-        <View style={{ height: 14 }} />
-
-        {(data?.totals.length ?? 0) === 0 ? (
-          <Empty message={`${targetDate} 발주 내역이 없습니다.`} />
-        ) : (
-          <>
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-              <Text style={{ color: '#374151', fontSize: 14, fontWeight: '900' }}>당일 발주 집계 — {data?.businessDate}</Text>
-              {(data?.totalAmount ?? 0) > 0 ? (
-                <Text style={{ color: '#374151', fontSize: 13, fontWeight: '900' }}>총 {fmtWon(data?.totalAmount ?? 0)}</Text>
-              ) : null}
-            </View>
-
-            <Card>
-              {data?.totals.map((item, index) => (
-                <View key={`${item.name}-${item.unit}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, borderTopWidth: index === 0 ? 0 : 1, borderTopColor: '#EEF2F7' }}>
-                  <Text numberOfLines={1} style={{ flex: 1, color: '#1F2937', fontSize: 14, fontWeight: '800' }}>{item.name}</Text>
-                  <View style={{ minWidth: 74, alignItems: 'center', backgroundColor: '#DCFCE7', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 }}>
-                    <Text style={{ color: '#15803D', fontSize: 13, fontWeight: '900' }}>{item.qtyText}</Text>
-                  </View>
-                  {item.amount > 0 ? (
-                    <Text style={{ minWidth: 76, textAlign: 'right', color: '#64748B', fontSize: 13, fontWeight: '800' }}>{fmtWon(item.amount)}</Text>
-                  ) : null}
-                </View>
-              ))}
-              <View style={{ marginHorizontal: -16, marginBottom: -16, marginTop: 8, paddingHorizontal: 16, paddingVertical: 10, backgroundColor: '#F9FAFB', borderTopWidth: 1, borderTopColor: '#E5E7EB' }}>
-                <Text style={{ color: '#94A3B8', fontSize: 12, fontWeight: '700' }}>총 {data?.totals.length ?? 0}종 품목 · 새벽 2:30 자동 발주</Text>
-              </View>
-            </Card>
-
-            <Text style={{ color: '#64748B', fontSize: 12, fontWeight: '900', marginTop: 8, marginBottom: 8 }}>공급처별 발주 내역</Text>
-            {data?.suppliers.map((supplier) => (
-              <Card key={supplier.supplierId}>
-                <View style={{ marginHorizontal: -16, marginTop: -16, paddingHorizontal: 16, paddingVertical: 12, backgroundColor: '#EFF6FF', borderBottomWidth: 1, borderBottomColor: '#DBEAFE', borderTopLeftRadius: 18, borderTopRightRadius: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <Text style={{ color: '#1E40AF', fontSize: 15, fontWeight: '900' }}>{supplier.supplierName}</Text>
-                  <Pill tone={supplier.sent ? 'green' : 'gray'}>
-                    {supplier.autoDispatchExcluded ? '자동발송 제외' : supplier.sent ? '전송완료' : '전송대기'}
-                  </Pill>
-                </View>
-                {supplier.lines.map((line, index) => (
-                  <View key={`${supplier.supplierId}-${line.name}-${line.unit}`} style={{ paddingVertical: 10, borderTopWidth: index === 0 ? 0 : 1, borderTopColor: '#EEF2F7' }}>
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 10 }}>
-                      <Text style={{ flex: 1, color: '#1F2937', fontSize: 14, fontWeight: '800' }}>{line.name}</Text>
-                      <Text style={{ color: '#4B5563', fontSize: 14, fontWeight: '800' }}>{line.qtyText}</Text>
-                    </View>
-                    {line.byRestaurantText ? (
-                      <Text style={{ marginTop: 3, color: '#94A3B8', fontSize: 12, fontWeight: '700' }}>{line.byRestaurantText}</Text>
-                    ) : null}
-                    {line.rows.map(row => {
-                      const checked = row.checkStage >= 1
-                      const delivered = row.checkStage >= 2
-                      return (
-                        <View key={row.orderItemId} style={{ marginTop: 7, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                          <Text numberOfLines={1} style={{ flex: 1, color: '#64748B', fontSize: 12, fontWeight: '700' }}>
-                            {row.restaurantName || '업체 미확인'}
-                          </Text>
-                          <Text style={{ color: '#64748B', fontSize: 12, fontWeight: '800' }}>
-                            {row.qty % 1 === 0 ? row.qty : row.qty.toFixed(1)}{row.unit}
-                          </Text>
-                          <Pressable
-                            onPress={() => toggleCheck(supplier.supplierId, row.orderItemId, row.checkStage)}
-                            disabled={checking.has(row.orderItemId) || delivered}
-                            style={{
-                              minWidth: 48,
-                              alignItems: 'center',
-                              borderRadius: 7,
-                              paddingHorizontal: 9,
-                              paddingVertical: 6,
-                              backgroundColor: checked ? '#22C55E' : '#16A34A',
-                              opacity: checking.has(row.orderItemId) || delivered ? 0.6 : 1,
-                            }}
-                          >
-                            <Text style={{ color: '#FFFFFF', fontSize: 11, fontWeight: '900' }}>
-                              {checking.has(row.orderItemId) ? '처리중' : checked ? '✓' : '확인'}
-                            </Text>
-                          </Pressable>
-                        </View>
-                      )
-                    })}
-                  </View>
-                ))}
-              </Card>
-            ))}
-
-            {(data?.unmappedItems.length ?? 0) > 0 ? (
-              <Card>
-                <Text style={{ color: '#C2410C', fontWeight: '900', marginBottom: 8 }}>⚠ 공급처 미배정 품목</Text>
-                {data?.unmappedItems.map((item) => (
-                  <View key={`${item.name}-${item.unit}`} style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8, borderTopWidth: 1, borderTopColor: '#FFEDD5' }}>
-                    <Text style={{ color: '#1F2937', fontWeight: '800' }}>{item.name}</Text>
-                    <Text style={{ color: '#64748B', fontWeight: '800' }}>{item.qtyText}</Text>
-                  </View>
-                ))}
-              </Card>
-            ) : null}
-          </>
-        )}
-      </ScrollView>
-    </Page>
-  )
+  return <Page><ScrollView refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}>
+    <Text style={{ fontSize: 22, fontWeight: '900', color: colors.ink }}>발주내역</Text>
+    <View pointerEvents={checking ? 'none' : 'auto'}><DateSelector value={date} onChange={setDate} /></View>
+    <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
+      {(['all', 'garak', 'suppliers'] as const).map((value, index) => <Pressable key={value} accessibilityRole="tab" accessibilityState={{ selected: tab === value }} onPress={() => setTab(value)} style={{ flex: 1, alignItems: 'center', padding: 12, borderRadius: 8, backgroundColor: tab === value ? colors.green : colors.soft }}><Text style={{ fontWeight: '800', color: tab === value ? 'white' : colors.ink }}>{['전체', '가락', '기존'][index]}</Text></Pressable>)}
+    </View>
+    {error ? <Muted>조회 실패: {error} · 아래로 당겨 다시 시도해 주세요.</Muted> : null}
+    {loading ? <Loading /> : !data ? <Empty message="조회된 내역이 없습니다." /> : <>
+      {tab === 'all' ? <>
+        <Muted>당일 발주 집계 (전체) · {data.businessDate}</Muted>
+        <Text style={{ fontWeight: '800', marginVertical: 10 }}>총 {fmtWon(data.totalAmount)}</Text>
+        {!data.totals.length ? <Empty message="이 날짜의 발주가 없습니다." /> : <Card>{data.totals.map(i => <View key={`${i.productId}-${i.unit}`} style={{ paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.line, gap: 4 }}><Text style={{ fontWeight: '800' }}>{i.name} · {i.qtyText}</Text><Muted>{fmtWon(i.amount)}</Muted></View>)}</Card>}
+      </> : tab === 'garak' ? <>
+        <Muted>가락 매입 (서울·일산) — 발주 문자 없음</Muted>
+        {!data.garakItems?.length ? <Empty message="가락 매입 품목이 없습니다." /> : <Card>{data.garakItems.map(itemRow)}</Card>}
+      </> : <>
+        <Muted>기존 공급처별 발주 내역</Muted>
+        {!data.suppliers.length ? <Empty message="기존 공급처 발주가 없습니다." /> : data.suppliers.map(supplier => <Card key={supplier.supplierId}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}><Text style={{ flex: 1, fontWeight: '900', color: '#1E40AF' }}>{supplier.supplierName}</Text><Pill tone={supplier.sent ? 'green' : 'gray'}>{supplier.autoDispatchExcluded ? '자동발송 제외' : supplier.sent ? '전송완료' : '전송대기'}</Pill></View>
+          {supplier.lines.map((line, i) => <View key={`${line.name}-${line.unit}-${i}`} style={{ marginTop: 12 }}><Text style={{ fontWeight: '800' }}>{line.name} · {line.qtyText}</Text>{line.rows.map(itemRow)}</View>)}
+        </Card>)}
+      </>}
+      {tab !== 'garak' && data.unmappedItems.length ? <Card><Text style={{ fontWeight: '800', color: '#C2410C' }}>공급처 미배정 품목</Text>{data.unmappedItems.map((i, index) => <Muted key={index}>{i.name} · {i.qtyText}</Muted>)}</Card> : null}
+    </>}
+  </ScrollView></Page>
 }
