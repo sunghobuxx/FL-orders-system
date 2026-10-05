@@ -13,6 +13,7 @@ import DispatchSendButton from '../../DispatchSendButton'
 import DispatchValidateButton from './DispatchValidateButton'
 import DispatchQtyEditor from './DispatchQtyEditor'
 import DispatchResendButton from './DispatchResendButton'
+import GarakCheckList from './GarakCheckList'
 import DispatchAdditionalButton from './DispatchAdditionalButton'
 
 interface Props {
@@ -183,25 +184,21 @@ export default async function DispatchDatePage({ params }: Props) {
               </div>
             </div>
 
-            {/* 가락 매입 (서울·일산) — 공급처 문자 없이 직접 사 가는 품목 */}
+            {/* 가락 매입 (서울·일산) — 공급처 문자 없이 직접 사 가는 품목. 공급처 내역과 같은 확인 버튼을 쓴다. */}
             {garakItems.length > 0 && (
               <div>
                 <h2 className="text-xs font-semibold text-amber-700 mb-2 uppercase tracking-wide">가락 매입 (서울·일산) — 발주 문자 없음</h2>
-                <div className="bg-white rounded-xl border border-amber-200 divide-y divide-gray-50 overflow-hidden">
-                  {buildDispatchLines(garakItems).map(line => (
-                    <div key={`${line.name}-${line.unit}`} className="px-5 py-2.5">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm text-gray-800">{line.name}</span>
-                        <span className="text-sm text-gray-600 tabular-nums">{fmtQty(line.qty)} {line.unit}</span>
-                      </div>
-                      {line.byRestaurant.length > 1 && (
-                        <p className="text-xs text-gray-400 mt-0.5">
-                          {line.byRestaurant.map(r => `${shortName(r.name)} ${fmtQty(r.qty)}${line.unit}`).join('  ')}
-                        </p>
-                      )}
-                    </div>
-                  ))}
-                </div>
+                <GarakCheckList
+                  rows={garakItems.map(i => ({
+                    id: i.id,
+                    name: i.products?.standard_name ?? '품목',
+                    restaurant: i.restaurant_name ?? '',
+                    qty: Number(i.qty),
+                    unit: i.unit,
+                    stage: Number(i.check_stage ?? 0),
+                    batchStatus: i.batch_status ?? '',
+                  }))}
+                />
               </div>
             )}
 

@@ -10,6 +10,10 @@ export interface DispatchOrderItem {
   supplier_product_id: string | null
   products: { standard_name: string } | null
   restaurant_name: string | null
+  /** 0 미확인 / 1 상차확인 / 2 배송확인 (order_items.check_stage) */
+  check_stage?: number
+  /** 이 품목이 속한 배치 상태 — 확인 버튼이 1단계인지 2단계인지 정한다 */
+  batch_status?: string
 }
 
 export interface DispatchLine {
@@ -64,7 +68,7 @@ export async function getCurrentDispatchGroups(
 ) {
   let batchQuery = adminDb
     .from('order_batches')
-    .select('id, business_date, restaurant_id')
+    .select('id, business_date, restaurant_id, status')
     .eq('business_date', businessDate)
 
   if (options.batchStatuses?.length) {
@@ -92,6 +96,7 @@ export async function getCurrentDispatchGroups(
   const restaurantIds = [...new Set((batches ?? []).map((b: { restaurant_id: string }) => b.restaurant_id).filter(Boolean) as string[])]
   const orderToRestaurantName: Record<string, string> = {}
   const orderIsSeoul: Record<string, boolean> = {}
+  const orderBatchStatus: Record<string, string> = {}
 
   if (restaurantIds.length) {
     const [{ data: rRows }, { data: orderRows }] = await Promise.all([
@@ -128,6 +133,7 @@ export async function getCurrentDispatchGroups(
     for (const o of orderRows ?? []) {
       orderToRestaurantName[o.id] = batchRestaurantMap[o.batch_id] ?? ''
       orderIsSeoul[o.id] = batchIsSeoulMap[o.batch_id] ?? false
+      orderBatchStatus[o.id] = (batches ?? []).find((b: { id: string }) => b.id === o.batch_id)?.status ?? ''
     }
   }
 
@@ -138,7 +144,7 @@ export async function getCurrentDispatchGroups(
 
   const { data: rawItems } = await adminDb
     .from('order_items')
-    .select('id, product_id, qty, unit, supplier_product_id, order_id, products(standard_name)')
+    .select('id, product_id, qty, unit, supplier_product_id, order_id, check_stage, products(standard_name)')
     .in('order_id', orderIds)
 
   const mapItem = (i: any): DispatchOrderItem => ({
@@ -149,6 +155,8 @@ export async function getCurrentDispatchGroups(
     supplier_product_id: i.supplier_product_id,
     products: i.products,
     restaurant_name: orderToRestaurantName[i.order_id] ?? null,
+    check_stage: Number(i.check_stage ?? 0),
+    batch_status: orderBatchStatus[i.order_id] ?? '',
   })
 
   const rawList = (rawItems ?? []) as any[]
