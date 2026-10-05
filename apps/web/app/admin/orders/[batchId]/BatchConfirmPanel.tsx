@@ -153,9 +153,10 @@ export function BatchConfirmPanel({
       const data = await res.json() as { error?: string; batchStatus?: string }
       if (!res.ok) throw new Error(data.error ?? '확인 처리 실패')
 
+      // 서버 값을 다시 받아 화면을 맞춘다. 낙관적 표시만 남으면 다시 열었을 때 안 눌린 것처럼 보인다.
+      startTransition(() => router.refresh())
       if (data.batchStatus && data.batchStatus !== currentStatus) {
         setCheckNotice('')
-        startTransition(() => router.refresh())
       } else if (nextStage < cur) {
         // 체크를 풀어도 진행 표시는 뒤로 가지 않는다.
         //
