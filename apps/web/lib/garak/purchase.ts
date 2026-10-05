@@ -4,6 +4,7 @@ export interface GarakPurchaseInput {
   unit?: string
   qty?: number
   unitPrice?: number
+  salePrice?: number
 }
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
@@ -15,5 +16,6 @@ export function validateGarakPurchase(input: GarakPurchaseInput): string | null 
   if (!input.unit?.trim()) return '단위를 입력하세요'
   if (typeof input.qty !== 'number' || !Number.isFinite(input.qty) || input.qty <= 0) return '수량은 0보다 커야 합니다'
   if (typeof input.unitPrice !== 'number' || !Number.isFinite(input.unitPrice) || input.unitPrice < 0) return '매입가를 확인하세요'
+  if (typeof input.salePrice !== 'number' || !Number.isFinite(input.salePrice) || input.salePrice < 0) return '공급가를 확인하세요'
   return null
 }

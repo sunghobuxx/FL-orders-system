@@ -21,6 +21,7 @@ import { generateStatements } from '@/lib/settlement/generate'
 import { splitVat } from '@/lib/specs/vat'
 import { keptSpecLine } from '@/lib/specs/kept-line'
 import { normalizeUnit } from '@/lib/units'
+import { pickGarakSalePrice } from '@/lib/garak/allocation'
 import { toPackQty, type PackSpec } from '@/lib/products/pack-size'
 
 /**
@@ -227,6 +228,22 @@ export async function syncSpecFromOrders(
   const { priceMap, orgOverrides } = await buildPriceMapByProduct(
     adminDb, productIds, businessDate, organizationId, unitOf)
 
+  // 가락 배정: 배정된 발주 줄은 가락 공급가를 쓴다. 잠긴 줄은 아래에서 그대로 둔다.
+  const { data: allocRows } = await adminDb
+    .from('garak_allocations').select('order_item_id')
+    .eq('business_date', businessDate).in('product_id', productIds)
+  const allocatedItemIds = new Set((allocRows ?? []).map((a: { order_item_id: string }) => a.order_item_id))
+  const { data: garakRows } = allocatedItemIds.size
+    ? await adminDb.from('garak_purchases').select('product_id, unit, sale_price')
+        .eq('business_date', businessDate).in('product_id', productIds)
+    : { data: [] as Array<{ product_id: string; unit: string; sale_price: number | null }> }
+  const garakByProduct = new Map<string, Array<{ unit: string; sale_price: number | null }>>()
+  for (const g of garakRows ?? []) {
+    const list = garakByProduct.get(g.product_id) ?? []
+    list.push(g)
+    garakByProduct.set(g.product_id, list)
+  }
+
   // 과세 여부를 보고 부가세를 계산한다.
   // 예전에는 vat_amount 를 무조건 0 으로 넣었다. 그래서 발주로 새로 만들어진 명세서 줄은
   // 과세 품목이어도 부가세가 빠졌고, 나중에 단가를 다시 등록하거나 재계산 버튼을 눌러야만
@@ -272,7 +289,10 @@ export async function syncSpecFromOrders(
       // 고정단가 품목의 발주 수정이 명세서에 안 옮겨졌다 → lib/specs/kept-line.ts
       if (kept) return keptSpecLine(kept, item, Boolean(taxable.get(item.product_id)))
       const entered = priceMap[item.product_id] ?? 0
-      const split = splitOf(item.product_id, Number(item.qty), entered)
+      const garakPrice = allocatedItemIds.has(item.id)
+        ? pickGarakSalePrice(garakByProduct.get(item.product_id) ?? [], item.unit, normalizeUnit)
+        : null
+      const split = splitOf(item.product_id, Number(item.qty), garakPrice ?? entered)
       return {
         order_item_id: item.id,
         product_id: item.product_id,

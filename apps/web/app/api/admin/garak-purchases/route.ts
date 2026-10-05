@@ -12,7 +12,7 @@ export async function GET(req: NextRequest) {
   const db = createAdminClient()
   const { data, error } = await db
     .from('garak_purchases')
-    .select('id, business_date, product_id, unit, qty, unit_price, products(standard_name)')
+    .select('id, business_date, product_id, unit, qty, unit_price, sale_price, products(standard_name)')
     .eq('business_date', date)
     .order('created_at')
   if (error) return NextResponse.json({ error: '조회 실패' }, { status: 500 })
@@ -34,6 +34,7 @@ export async function POST(req: NextRequest) {
     unit: input.unit!.trim(),
     qty: input.qty,
     unit_price: input.unitPrice,
+    sale_price: input.salePrice,
   }, { onConflict: 'business_date,product_id,unit' })
   if (error) return NextResponse.json({ error: '저장 실패' }, { status: 500 })
   return NextResponse.json({ success: true })

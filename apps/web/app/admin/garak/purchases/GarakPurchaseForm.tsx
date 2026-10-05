@@ -12,6 +12,7 @@ export default function GarakPurchaseForm({ date, products, rows }: { date: stri
   const [unit, setUnit] = useState('')
   const [qty, setQty] = useState('')
   const [unitPrice, setUnitPrice] = useState('')
+  const [salePrice, setSalePrice] = useState('')
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
 
@@ -34,12 +35,14 @@ export default function GarakPurchaseForm({ date, products, rows }: { date: stri
           unit,
           qty: Number(qty),
           unitPrice: Number(unitPrice),
+          salePrice: Number(salePrice),
         }),
       })
       const data = await res.json() as { error?: string }
       if (!res.ok) throw new Error(data.error ?? '저장 실패')
       setQty('')
       setUnitPrice('')
+      setSalePrice('')
       router.refresh()
     } catch (e) {
       setMessage(e instanceof Error ? e.message : '저장 실패')
@@ -71,10 +74,11 @@ export default function GarakPurchaseForm({ date, products, rows }: { date: stri
           <option value="">품목 선택</option>
           {products.map(p => <option key={p.id} value={p.id}>{p.standard_name}</option>)}
         </select>
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-4 gap-2">
           <input value={unit} onChange={e => setUnit(e.target.value)} placeholder="단위" className="border border-gray-200 rounded-lg px-3 py-2 text-sm" />
           <input value={qty} onChange={e => setQty(e.target.value)} type="number" min="0" step="0.1" placeholder="수량" className="border border-gray-200 rounded-lg px-3 py-2 text-sm" />
           <input value={unitPrice} onChange={e => setUnitPrice(e.target.value)} type="number" min="0" step="100" placeholder="매입가" className="border border-gray-200 rounded-lg px-3 py-2 text-sm" />
+          <input value={salePrice} onChange={e => setSalePrice(e.target.value)} type="number" min="0" step="100" placeholder="공급가" className="border border-gray-200 rounded-lg px-3 py-2 text-sm" />
         </div>
         {message && <p className="text-xs text-red-500">{message}</p>}
         <button type="submit" disabled={busy || !productId} className="w-full py-2.5 rounded-lg bg-brand-600 text-white text-sm font-semibold hover:bg-brand-700 disabled:opacity-50">

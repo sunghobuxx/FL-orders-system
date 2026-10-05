@@ -24,3 +24,14 @@ export function allocationWarning(purchaseQty: number, lineQty: number): string 
   if (Number(purchaseQty) === Number(lineQty)) return null
   return `가락 매입 ${purchaseQty}개와 고른 줄 ${lineQty}개가 다릅니다. 그래도 저장은 됩니다.`
 }
+
+/** 배정된 줄에 적용할 가락 공급가. 단위가 맞고 공급가가 입력돼 있을 때만 값을 준다. */
+export function pickGarakSalePrice(
+  purchases: Array<{ unit: string; sale_price: number | null }>,
+  itemUnit: string,
+  normalize: (u: string) => string | null,
+): number | null {
+  const want = normalize(itemUnit)
+  const hit = purchases.find(p => p.sale_price !== null && normalize(p.unit) === want)
+  return hit ? Number(hit.sale_price) : null
+}

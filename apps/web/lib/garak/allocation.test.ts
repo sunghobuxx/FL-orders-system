@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { allocationWarning, isEligibleAddress, sortCandidates } from './allocation'
+import { allocationWarning, isEligibleAddress, pickGarakSalePrice, sortCandidates } from './allocation'
 
 describe('가락 배정', () => {
   it('서울·일산 주소는 배정 후보에서 뺀다', () => {
@@ -20,5 +20,16 @@ describe('가락 배정', () => {
   it('수량이 다르면 경고, 같으면 경고 없음', () => {
     expect(allocationWarning(2, 5)).toContain('다릅니다')
     expect(allocationWarning(2, 2)).toBeNull()
+  })
+})
+
+describe('pickGarakSalePrice', () => {
+  const norm = (u: string) => u.trim()
+  it('단위가 맞는 가락 공급가를 준다', () => {
+    expect(pickGarakSalePrice([{ unit: 'kg', sale_price: 9000 }], 'kg', norm)).toBe(9000)
+  })
+  it('단위가 다르거나 공급가가 없으면 null (기존 단가 유지)', () => {
+    expect(pickGarakSalePrice([{ unit: 'kg', sale_price: 9000 }], 'box', norm)).toBeNull()
+    expect(pickGarakSalePrice([{ unit: 'kg', sale_price: null }], 'kg', norm)).toBeNull()
   })
 })
