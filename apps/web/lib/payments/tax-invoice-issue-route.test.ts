@@ -23,6 +23,13 @@ const restaurantRow = (over: Record<string, unknown> = {}) => ({
 // 공급받는자 대표자성명은 회원 수정 화면의 "대표자"(contacts.name, is_primary) 를 쓴다.
 const contactRow = { organization_id: 'org1', is_primary: true, name: '홍길동' }
 
+// 과세/면세는 품목(products.taxable_flag) 기준으로 나뉜다.
+const TAXABLE = { id: 'pt', taxable_flag: true }
+const EXEMPT = { id: 'pe', taxable_flag: false }
+const specRows = [{ id: 'sp1' }]
+const taxableLine = (amount: number, vat: number) => ({ daily_spec_id: 'sp1', product_id: 'pt', amount, vat_amount: vat })
+const exemptLine = (amount: number) => ({ daily_spec_id: 'sp1', product_id: 'pe', amount, vat_amount: 0 })
+
 describe('POST /api/admin/finance/tax-invoices/issue', () => {
   beforeEach(() => {
     vi.resetModules(); vi.clearAllMocks()
@@ -70,59 +77,93 @@ describe('POST /api/admin/finance/tax-invoices/issue', () => {
   })
 
   it('이 달에 거래 내역이 없으면 404', async () => {
-    const f = fakeDb({ tax_invoices: [], restaurants: [restaurantRow()], contacts: [contactRow], daily_specs: [] })
+    const f = fakeDb({ tax_invoices: [], restaurants: [restaurantRow()], contacts: [contactRow], daily_specs: [], daily_spec_lines: [], products: [] })
     const res = await post(f.db, { restaurantId: 'r1', month: '2026-09' })
     expect(res.status).toBe(404)
   })
 
-  it('이미 발행됐으면(status=issued) 다시 부르지 않고 그대로 성공 응답', async () => {
+  it('이미 발행됐으면(과세 status=issued) 다시 부르지 않고 기존 결과로 성공 응답', async () => {
     const f = fakeDb({
-      tax_invoices: [{ id: 'tx1', status: 'issued', nts_confirm_num: 'nts-old' }],
-      restaurants: [restaurantRow()], contacts: [contactRow], daily_specs: [{ total_amount: 10000, vat_amount: 1000 }],
+      tax_invoices: [{ id: 'tx1', tax_type: '과세', status: 'issued', nts_confirm_num: 'nts-old' }],
+      restaurants: [restaurantRow()], contacts: [contactRow],
+      daily_specs: specRows, daily_spec_lines: [taxableLine(100000, 10000)], products: [TAXABLE],
     })
     const res = await post(f.db, { restaurantId: 'r1', month: '2026-09' })
     expect(res.status).toBe(200)
-    expect((await res.json())).toEqual({ success: true, alreadyIssued: true, ntsConfirmNum: 'nts-old' })
+    expect(await res.json()).toMatchObject({ success: true, ntsConfirmNum: 'nts-old' })
     expect(m.registerAndIssue).not.toHaveBeenCalled()
   })
 
   it('결과 불명(status=unknown)으로 남아 있으면 409 — 자동 재시도하지 않는다(조회로 먼저 확인)', async () => {
     const f = fakeDb({
-      tax_invoices: [{ id: 'tx1', status: 'unknown', nts_confirm_num: null }],
-      restaurants: [restaurantRow()], contacts: [contactRow], daily_specs: [{ total_amount: 10000, vat_amount: 1000 }],
+      tax_invoices: [{ id: 'tx1', tax_type: '과세', status: 'unknown', nts_confirm_num: null }],
+      restaurants: [restaurantRow()], contacts: [contactRow],
+      daily_specs: specRows, daily_spec_lines: [taxableLine(100000, 10000)], products: [TAXABLE],
     })
     const res = await post(f.db, { restaurantId: 'r1', month: '2026-09' })
     expect(res.status).toBe(409)
     expect(m.registerAndIssue).not.toHaveBeenCalled()
   })
 
-  it('★ 그 달 daily_specs 총액·세액을 더해 발행하고 결과를 tax_invoices 에 기록한다(작성일자=말일)', async () => {
+  it('★ 과세 품목만 있는 달: 그 달 공급가·세액을 더해 한 장을 발행하고 tax_invoices 에 기록한다(작성일자=말일)', async () => {
     const f = fakeDb({
       tax_invoices: [], restaurants: [restaurantRow()], contacts: [contactRow],
-      daily_specs: [{ total_amount: 55000, vat_amount: 5000 }, { total_amount: 55000, vat_amount: 5000 }],
+      daily_specs: [{ id: 'sp1' }, { id: 'sp2' }],
+      daily_spec_lines: [
+        { daily_spec_id: 'sp1', product_id: 'pt', amount: 55000, vat_amount: 5500 },
+        { daily_spec_id: 'sp2', product_id: 'pt', amount: 45000, vat_amount: 4500 },
+      ],
+      products: [TAXABLE],
     })
     const res = await post(f.db, { restaurantId: 'r1', month: '2026-09' })
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ success: true, ntsConfirmNum: 'nts-1' })
+    expect(await res.json()).toMatchObject({ success: true, ntsConfirmNum: 'nts-1' })
 
     expect(m.registerAndIssue).toHaveBeenCalledTimes(1)
     const payload = m.registerAndIssue.mock.calls[0][1]
     expect(payload).toMatchObject({
-      writeDate: '20260930', taxTotal: '10000', supplyCostTotal: '100000', totalAmount: '110000',
+      writeDate: '20260930', taxType: '과세', taxTotal: '10000', supplyCostTotal: '100000', totalAmount: '110000',
       invoiceeCorpNum: '1112223334', invoiceeCorpName: '할매솥뚜껑삼겹살 별내점', invoiceeCEOName: '홍길동',
     })
 
     const w = f.writes.find(w => w.table === 'tax_invoices' && w.op === 'upsert')!
     expect(w.payload).toMatchObject({
-      restaurant_id: 'r1', invoice_month: '2026-09-01', status: 'issued',
+      restaurant_id: 'r1', invoice_month: '2026-09-01', tax_type: '과세', status: 'issued',
       supply_cost_total: 100000, tax_total: 10000, total_amount: 110000, nts_confirm_num: 'nts-1', created_by: 'admin-1',
     })
+  })
+
+  it('★ 과세와 면세가 섞이면 과세 장과 면세 장을 따로 발행한다', async () => {
+    const f = fakeDb({
+      tax_invoices: [], restaurants: [restaurantRow()], contacts: [contactRow],
+      daily_specs: specRows,
+      daily_spec_lines: [taxableLine(50000, 5000), exemptLine(1000000)],
+      products: [TAXABLE, EXEMPT],
+    })
+    const res = await post(f.db, { restaurantId: 'r1', month: '2026-09' })
+    expect(res.status).toBe(200)
+    expect(m.registerAndIssue).toHaveBeenCalledTimes(2)
+    const first = m.registerAndIssue.mock.calls[0][1]
+    const second = m.registerAndIssue.mock.calls[1][1]
+    expect(first).toMatchObject({ taxType: '과세', taxTotal: '5000', supplyCostTotal: '50000' })
+    expect(second).toMatchObject({ taxType: '면세', taxTotal: '0', supplyCostTotal: '1000000' })
+    const types = f.writes.filter(w => w.table === 'tax_invoices' && w.op === 'upsert').map(w => (w.payload as { tax_type: string }).tax_type)
+    expect(types).toEqual(['과세', '면세'])
+  })
+
+  it('★ 과세 품목인데 세액이 0 이어도 면세로 나가지 않는다(taxType 을 품목 기준으로 명시)', async () => {
+    const f = fakeDb({
+      tax_invoices: [], restaurants: [restaurantRow()], contacts: [contactRow],
+      daily_specs: specRows, daily_spec_lines: [taxableLine(10000, 0)], products: [TAXABLE],
+    })
+    await post(f.db, { restaurantId: 'r1', month: '2026-09' })
+    expect(m.registerAndIssue.mock.calls[0][1]).toMatchObject({ taxType: '과세' })
   })
 
   it('공급받는자 대표자성명이 없으면(2곳뿐, 아직 미입력) 빈 문자열로 발행한다', async () => {
     const f = fakeDb({
       tax_invoices: [], restaurants: [restaurantRow()], contacts: [],
-      daily_specs: [{ total_amount: 10000, vat_amount: 1000 }],
+      daily_specs: specRows, daily_spec_lines: [taxableLine(10000, 1000)], products: [TAXABLE],
     })
     await post(f.db, { restaurantId: 'r1', month: '2026-09' })
     const payload = m.registerAndIssue.mock.calls[0][1]
@@ -134,12 +175,12 @@ describe('POST /api/admin/finance/tax-invoices/issue', () => {
     m.registerAndIssue.mockRejectedValue(new PopbillError('사업자번호 오류', 400, 'E001', 'rejected'))
     const f = fakeDb({
       tax_invoices: [], restaurants: [restaurantRow()], contacts: [contactRow],
-      daily_specs: [{ total_amount: 10000, vat_amount: 1000 }],
+      daily_specs: specRows, daily_spec_lines: [taxableLine(10000, 1000)], products: [TAXABLE],
     })
     const res = await post(f.db, { restaurantId: 'r1', month: '2026-09' })
     expect(res.status).toBe(400)
     const w = f.writes.find(w => w.table === 'tax_invoices' && w.op === 'upsert')!
-    expect(w.payload).toMatchObject({ status: 'rejected' })
+    expect(w.payload).toMatchObject({ tax_type: '과세', status: 'rejected' })
   })
 
   it('결과가 불명(unknown, 예: 네트워크 오류)이면 502 이고 tax_invoices 에 unknown 으로 남는다 — 이후 재시도는 막힌다', async () => {
@@ -147,11 +188,11 @@ describe('POST /api/admin/finance/tax-invoices/issue', () => {
     m.registerAndIssue.mockRejectedValue(new PopbillError('시간 초과', null, null, 'unknown'))
     const f = fakeDb({
       tax_invoices: [], restaurants: [restaurantRow()], contacts: [contactRow],
-      daily_specs: [{ total_amount: 10000, vat_amount: 1000 }],
+      daily_specs: specRows, daily_spec_lines: [taxableLine(10000, 1000)], products: [TAXABLE],
     })
     const res = await post(f.db, { restaurantId: 'r1', month: '2026-09' })
     expect(res.status).toBe(502)
     const w = f.writes.find(w => w.table === 'tax_invoices' && w.op === 'upsert')!
-    expect(w.payload).toMatchObject({ status: 'unknown' })
+    expect(w.payload).toMatchObject({ tax_type: '과세', status: 'unknown' })
   })
 })

@@ -43,11 +43,17 @@ export default async function TaxInvoicesPage({ searchParams }: Props) {
     specsByRestaurant.set(s.restaurant_id, list)
   }
 
+  // 과세·면세는 한 업체·한 달에 장이 두 개일 수 있다. 상태는 가장 나쁜 쪽을 보여준다(불명 > 거절 > 발행).
   const { data: existingRows } = await db
     .from('tax_invoices')
     .select('restaurant_id, status')
     .eq('invoice_month', range.start)
-  const existingByRestaurant = new Map((existingRows ?? []).map((r: { restaurant_id: string; status: string }) => [r.restaurant_id, r.status]))
+  const SEVERITY: Record<string, number> = { issued: 1, rejected: 2, unknown: 3 }
+  const existingByRestaurant = new Map<string, string>()
+  for (const r of (existingRows ?? []) as Array<{ restaurant_id: string; status: string }>) {
+    const prev = existingByRestaurant.get(r.restaurant_id)
+    if (!prev || (SEVERITY[r.status] ?? 0) > (SEVERITY[prev] ?? 0)) existingByRestaurant.set(r.restaurant_id, r.status)
+  }
 
   const rows = restaurants
     .map(r => {

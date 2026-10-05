@@ -41,8 +41,10 @@ export interface BuildTaxinvoiceInput {
   invoicee: InvoiceeInfo
   /** 공급가액 합계(원 단위) */
   supplyCostTotal: number
-  /** 세액 합계(원 단위). 0 이면 면세로 분류한다 */
+  /** 세액 합계(원 단위). taxType 을 안 주면 0 이면 면세로 분류한다 */
   taxTotal: number
+  /** 과세/면세 구분. 과세 품목인데 세액이 0 인 경우를 면세로 잘못 보내지 않도록 호출자가 명시한다 */
+  taxType?: '과세' | '면세'
 }
 
 function assertAmount(n: number, label: string) {
@@ -60,9 +62,9 @@ export function buildTaxinvoicePayload(input: BuildTaxinvoiceInput): Record<stri
     invoicerMgtKey: input.mgtKey,
     writeDate: input.writeDate,
     issueType: '정발행',
-    // 세액 합계가 0 이면 면세로 본다 — 과세·면세 품목이 섞인 정산기간은 이 단계(합계 발행)에서
-    // 세액 합계로만 가른다. 품목별 detailList 로 나누는 건 다음 단계.
-    taxType: taxTotal > 0 ? '과세' : '면세',
+    // 과세·면세는 호출자가 품목 기준으로 나눠서 넘긴다(tax-invoice-split). 안 넘기면 세액 합계로 추정한다.
+    // 품목별 detailList 로 나누는 건 다음 단계.
+    taxType: input.taxType ?? (taxTotal > 0 ? '과세' : '면세'),
     chargeDirection: '정과금',
     purposeType: '청구',
     supplyCostTotal: String(supplyCostTotal),
