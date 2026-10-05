@@ -4,10 +4,15 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getAdminSession } from '@/lib/admin-member-user'
 
+const DISPATCH_GROUPS = ['existing', 'common', 'garak']
+
 export async function PUT(req: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
     const { id: supplierId } = await context.params
-    const { name, dispatch_channel, status, phone, dispatch_show_breakdown } = await req.json()
+    const { name, dispatch_channel, status, phone, dispatch_show_breakdown, dispatch_group } = await req.json()
+    if (dispatch_group !== undefined && !DISPATCH_GROUPS.includes(dispatch_group)) {
+      return NextResponse.json({ error: '발주 구분이 올바르지 않습니다' }, { status: 400 })
+    }
 
     // 로그인만 보면 회원 계정으로도 통과한다. 관리자 권한까지 확인한다.
     const session = await getAdminSession()
@@ -25,6 +30,7 @@ export async function PUT(req: NextRequest, context: { params: Promise<{ id: str
         status,
         // 이 값을 안 보내는 옛 화면이 설정을 켜짐으로 되돌리지 않게, 불리언일 때만 쓴다.
         ...(typeof dispatch_show_breakdown === 'boolean' ? { dispatch_show_breakdown } : {}),
+        ...(dispatch_group !== undefined ? { dispatch_group } : {}),
       })
       .eq('id', supplierId)
 

@@ -14,7 +14,7 @@ export default async function AdminSupplierEditPage({ params }: Props) {
 
   const { data: supplier } = await db
     .from('suppliers')
-    .select('id, status, dispatch_channel, dispatch_show_breakdown, organization_id, organizations(name)')
+    .select('id, status, dispatch_channel, dispatch_show_breakdown, dispatch_group, organization_id, organizations(name)')
     .eq('id', supplierId)
     .single()
 
@@ -40,6 +40,7 @@ export default async function AdminSupplierEditPage({ params }: Props) {
         dispatch_show_breakdown: supplier.dispatch_show_breakdown !== false,
         status: supplier.status,
         phone: contact?.phone ?? null,
+        dispatch_group: supplier.dispatch_group ?? 'existing',
       }} />
     </div>
   )

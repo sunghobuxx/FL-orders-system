@@ -11,6 +11,8 @@ interface SupplierData {
   dispatch_show_breakdown: boolean
   status: string
   phone: string | null
+  /** 발주 구분: existing 기존 / common 공통업체 / garak 가락업체 */
+  dispatch_group: string
 }
 
 export default function SupplierEditForm({ data }: { data: SupplierData }) {
@@ -22,6 +24,7 @@ export default function SupplierEditForm({ data }: { data: SupplierData }) {
     dispatch_show_breakdown: data.dispatch_show_breakdown,
     status: data.status,
     phone: data.phone ?? '',
+    dispatch_group: data.dispatch_group,
   })
 
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }))
@@ -94,6 +97,18 @@ export default function SupplierEditForm({ data }: { data: SupplierData }) {
           <option value="sms">SMS</option>
           <option value="email">이메일</option>
         </select>
+      </div>
+      <div>
+        <label htmlFor="s-group" className={labelClass}>발주 구분</label>
+        <select
+          id="s-group" value={form.dispatch_group} onChange={e => set('dispatch_group', e.target.value)}
+          className={inputClass}
+        >
+          <option value="existing">기존 공급처</option>
+          <option value="common">공통업체 (전 지역 주문을 한 통으로)</option>
+          <option value="garak">가락업체 (가락 매입 품목 문자)</option>
+        </select>
+        <p className="text-xs text-gray-400 mt-1">가락업체는 일반 품목을 가로채지 않습니다. 가락 매입 품목만 받습니다.</p>
       </div>
       <div>
         <label className="flex items-start gap-2.5 cursor-pointer">
