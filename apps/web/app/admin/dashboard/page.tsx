@@ -233,9 +233,18 @@ export default async function AdminDashboardPage() {
         .in('product_id', productIds).eq('status', 'active')
         .order('updated_at', { ascending: false })
 
+      // 가락업체(garak) 연결은 후보에서 뺀다 — 발주 화면(getCurrentDispatchGroups)과 같은 규칙.
+      // 안 빼면 가락 연결이 최신인 품목(청양고추 등)이 가락업체 블록으로 잡힌다.
+      const spSupplierIds = [...new Set((spRows ?? []).map(sp => sp.supplier_id))]
+      const { data: spGroupRows } = spSupplierIds.length > 0
+        ? await db.from('suppliers').select('id, dispatch_group').in('id', spSupplierIds)
+        : { data: [] as { id: string; dispatch_group: string | null }[] }
+      const garakSupplierIds = new Set((spGroupRows ?? []).filter(g => g.dispatch_group === 'garak').map(g => g.id))
+
       // 품목당 최신 공급처 1개
       const productToSupplier: Record<string, string> = {}
       for (const sp of spRows ?? []) {
+        if (garakSupplierIds.has(sp.supplier_id)) continue
         if (!productToSupplier[sp.product_id]) productToSupplier[sp.product_id] = sp.supplier_id
       }
 
