@@ -17,6 +17,7 @@ import { getKstToday } from '@/lib/date-kst'
 import { getAdminSession } from '@/lib/admin-member-user'
 import { isDispatchBlockedDate, DISPATCH_BLOCKED_MESSAGE } from '@/lib/dispatch/no-send-days'
 import { pickMessageSource } from '@/lib/dispatch/message-source'
+import { isGarakDispatchGroup } from '@/lib/dispatch/garak-suppliers'
 
 const CRON_SECRET = process.env.PUSH_CRON_SECRET
 
@@ -88,8 +89,11 @@ export async function POST(req: NextRequest) {
     // 3. 공급처 연락처 일괄 조회
     const { data: supplierRows } = await adminDb
       .from('suppliers')
-      .select('id, organization_id')
+      .select('id, organization_id, dispatch_group')
       .in('id', supplierIds)
+    const garakSupplierIds = new Set(
+      (supplierRows ?? []).filter((s: { dispatch_group: string | null }) => isGarakDispatchGroup(s.dispatch_group)).map((s: { id: string }) => s.id),
+    )
 
     const orgIds = (supplierRows ?? []).map((s: { organization_id: string }) => s.organization_id).filter(Boolean) as string[]
     const { data: contacts } = orgIds.length
@@ -108,6 +112,7 @@ export async function POST(req: NextRequest) {
     // 공급처마다 「업체별 수량 표시」 설정을 따른다 (인숙이네는 총합만)
     const breakdownOf = await loadShowBreakdown(adminDb, supplierIds)
     for (const supplierId of supplierIds) {
+      if (garakSupplierIds.has(supplierId)) continue
       const lineOpts = { showBreakdown: breakdownOf.get(supplierId) !== false }
       const items = (grouped as Record<string, DispatchOrderItem[]>)[supplierId]
 

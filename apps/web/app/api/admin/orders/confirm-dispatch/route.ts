@@ -3,6 +3,7 @@ export const runtime = 'edge'
 import { NextRequest, NextResponse } from 'next/server'
 import { isDispatchBlockedDate, DISPATCH_BLOCKED_MESSAGE } from '@/lib/dispatch/no-send-days'
 import { pickMessageSource } from '@/lib/dispatch/message-source'
+import { isGarakDispatchGroup, GARAK_SUPPLIER_BLOCKED_MESSAGE } from '@/lib/dispatch/garak-suppliers'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getAdminSession } from '@/lib/admin-member-user'
 import {
@@ -34,6 +35,8 @@ export async function POST(req: NextRequest) {
     }
 
     const adminDb = createAdminClient()
+    const { data: garakCheck } = await adminDb.from('suppliers').select('dispatch_group').eq('id', supplierId).maybeSingle()
+    if (isGarakDispatchGroup(garakCheck?.dispatch_group)) return NextResponse.json({ error: GARAK_SUPPLIER_BLOCKED_MESSAGE }, { status: 400 })
 
     // 해당 공급처 발주 items 조회
     const { grouped } = await getCurrentDispatchGroups(adminDb, businessDate)

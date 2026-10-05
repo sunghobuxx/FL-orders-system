@@ -2,6 +2,7 @@ export const runtime = 'edge'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { isDispatchBlockedDate, DISPATCH_BLOCKED_MESSAGE } from '@/lib/dispatch/no-send-days'
+import { isGarakDispatchGroup, GARAK_SUPPLIER_BLOCKED_MESSAGE } from '@/lib/dispatch/garak-suppliers'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getAdminSession } from '@/lib/admin-member-user'
 import {
@@ -39,6 +40,8 @@ export async function POST(req: NextRequest) {
     }
 
     const adminDb = createAdminClient()
+    const { data: garakCheck } = await adminDb.from('suppliers').select('dispatch_group').eq('id', supplierId).maybeSingle()
+    if (isGarakDispatchGroup(garakCheck?.dispatch_group)) return NextResponse.json({ error: GARAK_SUPPLIER_BLOCKED_MESSAGE }, { status: 400 })
 
     // 비활성 공급처는 grouped 에 들어오지 않는다. 문자 대상이 아니라는 뜻이다.
     const { grouped } = await getCurrentDispatchGroups(adminDb, businessDate)

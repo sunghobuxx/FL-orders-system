@@ -6,6 +6,7 @@ import { getAdminSession } from '@/lib/admin-member-user'
 import { buildLinesFromDispatchJob, formatDispatchLine, loadShowBreakdown } from '@/lib/dispatch/current-items'
 import { sendKakaoAlimtalk } from '@/lib/messaging/kakao'
 import { isDispatchBlockedDate, DISPATCH_BLOCKED_MESSAGE } from '@/lib/dispatch/no-send-days'
+import { isGarakDispatchGroup, GARAK_SUPPLIER_BLOCKED_MESSAGE } from '@/lib/dispatch/garak-suppliers'
 
 // 이미 확정된 dispatch_job 재발송
 export async function POST(req: NextRequest) {
@@ -33,6 +34,11 @@ export async function POST(req: NextRequest) {
 
     if (!job) {
       return NextResponse.json({ error: '발주건을 찾을 수 없습니다' }, { status: 404 })
+    }
+
+    const { data: resendGroup } = await adminDb.from('suppliers').select('dispatch_group').eq('id', job.supplier_id).maybeSingle()
+    if (isGarakDispatchGroup(resendGroup?.dispatch_group)) {
+      return NextResponse.json({ error: GARAK_SUPPLIER_BLOCKED_MESSAGE }, { status: 400 })
     }
 
     if (isDispatchBlockedDate(job.business_date)) {
