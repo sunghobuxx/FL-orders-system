@@ -142,3 +142,30 @@ describe('getCurrentDispatchGroups — 발주 문자 3분류', () => {
     expect(r.unmappedItems.map(i => i.name)).toEqual(['양파'])
   })
 })
+
+describe('getCurrentDispatchGroups — 일반 품목이 가락업체 행을 물고 있을 때', () => {
+  it('역곡·인계처럼 주소가 경기인 식당의 품목은 supplier_product_id 가 가락업체여도 기존 공급처로 간다', async () => {
+    const f = fakeDb({
+      order_batches: [{ id: 'b1', business_date: '2026-10-06', restaurant_id: 'r1', status: 'submitted' }],
+      restaurants: [{ id: 'r1', organization_id: 'o1' }],
+      orders: [{ id: 'ord1', batch_id: 'b1' }],
+      organizations: [{ id: 'o1', name: '역곡점', address: '경기 부천시 원미구 역곡로 44' }],
+      order_items: [
+        { id: 'item-kkaennip', product_id: 'prod-kkae', qty: 2, unit: 'box', supplier_product_id: 'sp-garak', order_id: 'ord1', check_stage: 0, products: { standard_name: '깻잎' } },
+      ],
+      supplier_products: [
+        { id: 'sp-garak', product_id: 'prod-kkae', supplier_id: 'sup-garak', updated_at: '2026-01-02' },
+        { id: 'sp-exist', product_id: 'prod-kkae', supplier_id: 'sup-exist', updated_at: '2026-01-01' },
+      ],
+      suppliers: [
+        { id: 'sup-garak', status: 'active', dispatch_group: 'garak' },
+        { id: 'sup-exist', status: 'active', dispatch_group: 'existing' },
+      ],
+    })
+    const r = await getCurrentDispatchGroups(f.db, '2026-10-06')
+    expect(r.grouped['sup-garak']).toBeUndefined()
+    expect(r.grouped['sup-exist']?.map(i => i.id)).toEqual(['item-kkaennip'])
+    expect(r.garakItems).toEqual([])
+  })
+})
+

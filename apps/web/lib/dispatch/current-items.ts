@@ -69,8 +69,11 @@ async function resolveSupplierMaps(adminDb: any, items: DispatchOrderItem[]) {
     if (!productToSupplier[row.product_id]) productToSupplier[row.product_id] = row.supplier_id
   }
 
+  // 주문 품목이 가락업체의 공급처 행을 물고 있어도(supplier_product_id) 일반 품목은 가락업체로 가지 않는다.
   const supplierProductToSupplier = Object.fromEntries(
-    (supplierProductRows ?? []).map((row: { id: string; supplier_id: string }) => [row.id, row.supplier_id]),
+    (supplierProductRows ?? [])
+      .filter((row: { supplier_id: string }) => groupOf[row.supplier_id] !== 'garak')
+      .map((row: { id: string; supplier_id: string }) => [row.id, row.supplier_id]),
   )
 
   // 가락 매입 품목: 공통업체가 있으면 공통업체, 없으면 가락업체로 문자를 보낸다.
