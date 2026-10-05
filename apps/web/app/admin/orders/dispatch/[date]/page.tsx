@@ -43,7 +43,8 @@ export default async function DispatchDatePage({ params }: Props) {
   const inactiveSupplierIds = new Set(Object.keys(inactiveGrouped))
   const allItems = Object.values(groupedMap).flat()
   // 가락 매입(서울·일산) 품목도 발주 집계·단가 조회에 포함한다 — 전체 발주를 한 화면에서 본다.
-  const totalItems = [...allItems, ...garakItems]
+  // 공통·가락업체로 나간 가락 품목은 공급처 블록과 가락 구역에 둘 다 있으므로 id 로 한 번만 센다.
+  const totalItems = [...new Map([...allItems, ...garakItems].map(i => [i.id, i])).values()]
   const orderItemIds = totalItems.map(i => i.id)
 
   // dispatch_jobs, suppliers, order_items 단가 병렬 조회

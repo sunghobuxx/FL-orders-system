@@ -47,18 +47,35 @@ async function resolveSupplierMaps(adminDb: any, items: DispatchOrderItem[]) {
       : Promise.resolve({ data: [] }),
   ])
 
+  const supplierIds = [...new Set((productSupplierRows ?? []).map((r: { supplier_id: string }) => r.supplier_id))]
+  const { data: groupRows } = supplierIds.length
+    ? await adminDb.from('suppliers').select('id, dispatch_group').in('id', supplierIds)
+    : { data: [] }
+  const groupOf: Record<string, string> = Object.fromEntries(
+    (groupRows ?? []).map((g: { id: string; dispatch_group: string | null }) => [g.id, g.dispatch_group ?? 'existing']),
+  )
+
+  // 일반 품목은 가락업체(garak)에 절대 잡히지 않는다. 가장 최근 연결이 이긴다.
   const productToSupplier: Record<string, string> = {}
+  const productToCommon: Record<string, string> = {}
+  const productToGarak: Record<string, string> = {}
   for (const row of productSupplierRows ?? []) {
-    if (!productToSupplier[row.product_id]) {
-      productToSupplier[row.product_id] = row.supplier_id
+    const group = groupOf[row.supplier_id] ?? 'existing'
+    if (group === 'garak') {
+      if (!productToGarak[row.product_id]) productToGarak[row.product_id] = row.supplier_id
+      continue
     }
+    if (group === 'common' && !productToCommon[row.product_id]) productToCommon[row.product_id] = row.supplier_id
+    if (!productToSupplier[row.product_id]) productToSupplier[row.product_id] = row.supplier_id
   }
 
   const supplierProductToSupplier = Object.fromEntries(
     (supplierProductRows ?? []).map((row: { id: string; supplier_id: string }) => [row.id, row.supplier_id]),
   )
 
-  return { productToSupplier, supplierProductToSupplier }
+  // 가락 매입 품목: 공통업체가 있으면 공통업체, 없으면 가락업체로 문자를 보낸다.
+  const productToGarakRoute: Record<string, string> = { ...productToGarak, ...productToCommon }
+  return { productToSupplier, supplierProductToSupplier, productToGarakRoute }
 }
 
 export async function getCurrentDispatchGroups(
@@ -164,11 +181,11 @@ export async function getCurrentDispatchGroups(
   const garakItems: DispatchOrderItem[] = rawList.filter(i => orderIsSeoul[i.order_id]).map(mapItem)
   const items: DispatchOrderItem[] = rawList.filter(i => !orderIsSeoul[i.order_id]).map(mapItem)
 
-  if (!items.length) {
-    return { ...EMPTY, batches: batches ?? [], garakItems }
+  if (!items.length && !garakItems.length) {
+    return { ...EMPTY, batches: batches ?? [] }
   }
 
-  const { productToSupplier, supplierProductToSupplier } = await resolveSupplierMaps(adminDb, items)
+  const { productToSupplier, supplierProductToSupplier, productToGarakRoute } = await resolveSupplierMaps(adminDb, [...items, ...garakItems])
   const grouped: Record<string, DispatchOrderItem[]> = {}
   const unmappedMap = new Map<string, DispatchLine>()
 
@@ -192,6 +209,15 @@ export async function getCurrentDispatchGroups(
 
     grouped[supplierId] ??= []
     grouped[supplierId].push(item)
+  }
+
+  // 가락 매입 품목 중 공통업체·가락업체에 연결된 것은 그 업체 문자에도 들어간다.
+  // (가락 살 것 목록에는 그대로 남는다 — 확인 버튼이 그쪽에 있다)
+  for (const item of garakItems) {
+    const routed = productToGarakRoute[item.product_id]
+    if (!routed) continue
+    grouped[routed] ??= []
+    grouped[routed].push(item)
   }
 
   // 비활성(inactive) 공급처는 메시지 발송 제외하되 발주 내역에는 표시

@@ -67,3 +67,56 @@ describe('getCurrentDispatchGroups — 서울 식당 분리', () => {
     expect(result.garakItems).toEqual([])
   })
 })
+
+describe('getCurrentDispatchGroups — 발주 문자 3분류', () => {
+  function base(extra: Record<string, unknown> = {}) {
+    return fakeDb({
+      order_batches: [{ id: 'batch-seoul', business_date: '2026-10-05', restaurant_id: 'rest-seoul', status: 'submitted' }],
+      restaurants: [{ id: 'rest-seoul', organization_id: 'org-seoul' }],
+      orders: [{ id: 'order-seoul', batch_id: 'batch-seoul' }],
+      organizations: [{ id: 'org-seoul', name: '서울식당', address: '서울 송파구' }],
+      order_items: [
+        { id: 'item-bean', product_id: 'prod-bean', qty: 4, unit: 'kg', supplier_product_id: null, order_id: 'order-seoul', check_stage: 0, products: { standard_name: '콩나물' } },
+        { id: 'item-onion', product_id: 'prod-onion', qty: 2, unit: 'kg', supplier_product_id: null, order_id: 'order-seoul', check_stage: 0, products: { standard_name: '양파' } },
+      ],
+      supplier_products: [
+        { id: 'sp-common', product_id: 'prod-bean', supplier_id: 'sup-common', updated_at: '2026-01-01' },
+        { id: 'sp-garak', product_id: 'prod-onion', supplier_id: 'sup-garak', updated_at: '2026-01-02' },
+      ],
+      suppliers: [
+        { id: 'sup-common', status: 'active', dispatch_group: 'common' },
+        { id: 'sup-garak', status: 'active', dispatch_group: 'garak' },
+      ],
+      ...extra,
+    })
+  }
+
+  it('가락 품목이 공통업체에 연결돼 있으면 공통업체 문자에도 들어간다 (가락 목록에도 남는다)', async () => {
+    const f = base()
+    const r = await getCurrentDispatchGroups(f.db, '2026-10-05')
+    expect(r.garakItems.map(i => i.id)).toEqual(['item-bean', 'item-onion'])
+    expect(r.grouped['sup-common']?.map(i => i.id)).toEqual(['item-bean'])
+  })
+
+  it('가락업체에 연결된 가락 품목은 가락업체 문자로 간다', async () => {
+    const r = await getCurrentDispatchGroups(base().db, '2026-10-05')
+    expect(r.grouped['sup-garak']?.map(i => i.id)).toEqual(['item-onion'])
+  })
+
+  it('가락업체는 일반 품목을 가로채지 않는다', async () => {
+    const f = fakeDb({
+      order_batches: [{ id: 'b1', business_date: '2026-10-05', restaurant_id: 'r1', status: 'submitted' }],
+      restaurants: [{ id: 'r1', organization_id: 'o1' }],
+      orders: [{ id: 'ord1', batch_id: 'b1' }],
+      organizations: [{ id: 'o1', name: '지방식당', address: '경기 수원시' }],
+      order_items: [
+        { id: 'item-normal', product_id: 'prod-onion', qty: 3, unit: 'kg', supplier_product_id: null, order_id: 'ord1', check_stage: 0, products: { standard_name: '양파' } },
+      ],
+      supplier_products: [{ id: 'sp-garak', product_id: 'prod-onion', supplier_id: 'sup-garak', updated_at: '2026-01-02' }],
+      suppliers: [{ id: 'sup-garak', status: 'active', dispatch_group: 'garak' }],
+    })
+    const r = await getCurrentDispatchGroups(f.db, '2026-10-05')
+    expect(r.grouped['sup-garak']).toBeUndefined()
+    expect(r.unmappedItems.map(i => i.name)).toEqual(['양파'])
+  })
+})
