@@ -177,15 +177,18 @@ export async function getCurrentDispatchGroups(
   })
 
   const rawList = (rawItems ?? []) as any[]
-  // 서울 식당 품목은 공급처 매칭을 아예 거치지 않는다 — 가락 살 것 목록으로 간다.
-  const garakItems: DispatchOrderItem[] = rawList.filter(i => orderIsSeoul[i.order_id]).map(mapItem)
-  const items: DispatchOrderItem[] = rawList.filter(i => !orderIsSeoul[i.order_id]).map(mapItem)
-
-  if (!items.length && !garakItems.length) {
+  if (!rawList.length) {
     return { ...EMPTY, batches: batches ?? [] }
   }
+  const seoulItems: DispatchOrderItem[] = rawList.filter(i => orderIsSeoul[i.order_id]).map(mapItem)
+  const localItems: DispatchOrderItem[] = rawList.filter(i => !orderIsSeoul[i.order_id]).map(mapItem)
 
-  const { productToSupplier, supplierProductToSupplier, productToGarakRoute } = await resolveSupplierMaps(adminDb, [...items, ...garakItems])
+  const { productToSupplier, supplierProductToSupplier, productToGarakRoute } = await resolveSupplierMaps(adminDb, [...localItems, ...seoulItems])
+
+  // 서울·일산 식당 품목 중 가락/공통업체에 연결된 것만 가락 살 것 목록으로 간다.
+  // 그 밖(예: 미나리 — 시흥미나리 기존 공급처)은 주소와 무관하게 기존 공급처 문자로 간다.
+  const garakItems: DispatchOrderItem[] = seoulItems.filter(i => productToGarakRoute[i.product_id])
+  const items: DispatchOrderItem[] = [...localItems, ...seoulItems.filter(i => !productToGarakRoute[i.product_id])]
   const grouped: Record<string, DispatchOrderItem[]> = {}
   const unmappedMap = new Map<string, DispatchLine>()
 

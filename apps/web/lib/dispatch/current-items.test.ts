@@ -31,15 +31,37 @@ describe('getCurrentDispatchGroups — 서울 식당 분리', () => {
       ],
       supplier_products: [
         { id: 'sp-1', product_id: 'prod-2', supplier_id: 'sup-1', updated_at: '2026-01-01' },
+        { id: 'sp-2', product_id: 'prod-1', supplier_id: 'sup-garak', updated_at: '2026-01-01' },
       ],
-      suppliers: [{ id: 'sup-1', status: 'active' }],
+      suppliers: [
+        { id: 'sup-1', status: 'active', dispatch_group: 'existing' },
+        { id: 'sup-garak', status: 'active', dispatch_group: 'garak' },
+      ],
     })
 
     const result = await getCurrentDispatchGroups(f.db, '2026-10-05')
 
     expect(result.garakItems.map(i => i.id)).toEqual(['item-seoul'])
+    expect(result.grouped['sup-garak']?.map(i => i.id)).toEqual(['item-seoul'])
     expect(result.grouped['sup-1']?.map(i => i.id)).toEqual(['item-local'])
     expect(result.unmappedItems).toEqual([])
+  })
+
+  it('서울 식당이라도 가락/공통에 연결 안 된 품목은 가락 목록이 아니라 기존 공급처로 간다 (미나리)', async () => {
+    const f = fakeDb({
+      order_batches: [{ id: 'b1', business_date: '2026-10-05', restaurant_id: 'r1', status: 'submitted' }],
+      restaurants: [{ id: 'r1', organization_id: 'o1' }],
+      orders: [{ id: 'ord1', batch_id: 'b1' }],
+      organizations: [{ id: 'o1', name: '찬란한아구', address: '서울 마포구 마포대로 92' }],
+      order_items: [
+        { id: 'item-mina', product_id: 'prod-mina', qty: 1, unit: 'box', supplier_product_id: null, order_id: 'ord1', check_stage: 0, products: { standard_name: '미나리' } },
+      ],
+      supplier_products: [{ id: 'sp-mina', product_id: 'prod-mina', supplier_id: 'sup-mina', updated_at: '2026-01-01' }],
+      suppliers: [{ id: 'sup-mina', status: 'active', dispatch_group: 'existing' }],
+    })
+    const r = await getCurrentDispatchGroups(f.db, '2026-10-05')
+    expect(r.garakItems).toEqual([])
+    expect(r.grouped['sup-mina']?.map(i => i.id)).toEqual(['item-mina'])
   })
 
   it('주소가 없으면 서울로 보지 않는다', async () => {
