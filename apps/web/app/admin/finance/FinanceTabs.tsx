@@ -10,9 +10,10 @@ import { usePathname } from 'next/navigation'
 const TABS = [
   {
     href: '/admin/finance', label: '미수금 현황',
-    match: (p: string) => !p.startsWith('/admin/finance/bank-transactions') && !p.startsWith('/admin/finance/aliases') && !p.startsWith('/admin/finance/tax-invoices'),
+    match: (p: string) => !p.startsWith('/admin/finance/bank-transactions') && !p.startsWith('/admin/finance/aliases') && !p.startsWith('/admin/finance/tax-invoices') && !p.startsWith('/admin/finance/credits'),
   },
   { href: '/admin/finance/bank-transactions', label: '입금 확인', match: (p: string) => p.startsWith('/admin/finance/bank-transactions') },
+  { href: '/admin/finance/credits', label: '적립금', match: (p: string) => p.startsWith('/admin/finance/credits') },
   { href: '/admin/finance/aliases', label: '입금자 별칭', match: (p: string) => p.startsWith('/admin/finance/aliases') },
   { href: '/admin/finance/tax-invoices', label: '세금계산서', match: (p: string) => p.startsWith('/admin/finance/tax-invoices') },
 ]
