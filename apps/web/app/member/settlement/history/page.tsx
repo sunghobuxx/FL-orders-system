@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 
 import { getSessionUser } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 
 import SettlementShell from '../SettlementShell'
 import MonthPicker from './MonthPicker'
@@ -104,6 +105,15 @@ export default async function SpecHistoryPage({ searchParams }: Props) {
     : { data: [] }
   const prevOutstanding = (prevRecvs ?? []).reduce((s, r) => s + Number(r.balance), 0)
   const totalWithPrev = totalAmount + prevOutstanding
+
+  // 적립금 잔액: 주간 정산서에만 참고로 보여준다. 최종 금액 계산에는 넣지 않는다(상계는 사장님이 따로 한다).
+  // 원장은 회원 권한으로 읽히지 않으므로 이 업체 ID 로만 서버에서 조회한다.
+  let creditBalance = 0
+  if (isWeekRange && restaurant?.id) {
+    const { data: creditRows } = await createAdminClient()
+      .from('restaurant_credit_ledger').select('amount').eq('restaurant_id', restaurant.id)
+    creditBalance = (creditRows ?? []).reduce((s, r) => s + Number(r.amount), 0)
+  }
 
   // 프린트 제목 계산
   const [pYear, pMon, pDay] = startDate.split('-').map(Number)
@@ -230,6 +240,9 @@ export default async function SpecHistoryPage({ searchParams }: Props) {
           <div className="flex items-center gap-3">
             <div className="text-xs text-gray-400 text-right">
               <div>{periodLabel} 납품합계: <span className="font-semibold text-gray-700">{fmt(totalAmount)}</span></div>
+              {isWeekRange && creditBalance > 0 && (
+                <div>적립금: <span className="font-semibold text-blue-700">{fmt(creditBalance)}</span></div>
+              )}
               {prevOutstanding > 0 && (
                 <>
                   <div>이전 미수금: <span className="font-semibold text-red-500">{fmt(prevOutstanding)}</span></div>
