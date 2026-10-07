@@ -23,11 +23,27 @@ describe('POST /api/admin/finance/confirm-bank-transaction', () => {
     ;(f.db as any).rpc = vi.fn().mockResolvedValue({ data: { applied: 48000, updated_count: 1, leftover: 0, already_posted: false }, error: null })
     const res = await post(f.db, { bankTransactionId: 'bt-1', restaurantId: 'r1' })
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ success: true, applied: 48000, updatedCount: 1, alreadyPosted: false })
+    expect(await res.json()).toEqual({ success: true, applied: 48000, updatedCount: 1, alreadyPosted: false, credited: 0 })
     expect((f.db as any).rpc).toHaveBeenCalledWith('record_receivable_payment', {
       p_restaurant_id: 'r1', p_amount: 48000, p_method: 'transfer', p_paid_at: undefined,
       p_created_by: 'admin-1', p_bank_transaction_id: 'bt-1',
     })
+  })
+
+  it('★ allowCredit 을 안 보내면(기본 확정) 초과분을 적립하는 함수를 부르지 않는다', async () => {
+    const f = fakeDb({ bank_transactions: [txRow()] }, { errors: {} })
+    ;(f.db as any).rpc = vi.fn().mockResolvedValue({ data: { applied: 48000, updated_count: 1, leftover: 0, credited: 0, already_posted: false }, error: null })
+    await post(f.db, { bankTransactionId: 'bt-1', restaurantId: 'r1' })
+    expect((f.db as any).rpc).toHaveBeenCalledWith('record_receivable_payment', expect.anything())
+  })
+
+  it('★ allowCredit: true 일 때만 초과분을 적립하는 함수(record_receivable_payment_with_credit)를 부른다', async () => {
+    const f = fakeDb({ bank_transactions: [txRow()] }, { errors: {} })
+    ;(f.db as any).rpc = vi.fn().mockResolvedValue({ data: { applied: 10000, updated_count: 1, leftover: 0, credited: 38000, already_posted: false }, error: null })
+    const res = await post(f.db, { bankTransactionId: 'bt-1', restaurantId: 'r1', allowCredit: true })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ success: true, credited: 38000 })
+    expect((f.db as any).rpc).toHaveBeenCalledWith('record_receivable_payment_with_credit', expect.anything())
   })
 
   it('필수 값이 없으면 400, DB 를 건드리지 않는다', async () => {

@@ -11,7 +11,7 @@ import { normalizeDepositor } from './depositor'
  */
 
 export type ApplyMatchResult =
-  | { ok: true; alreadyPosted: boolean; applied: number; updatedCount: number }
+  | { ok: true; alreadyPosted: boolean; applied: number; updatedCount: number; credited: number }
   | { ok: false; reason: 'NOT_FOUND' }
   | { ok: false; reason: 'NOT_INBOUND' }
   | { ok: false; reason: 'ALREADY_POSTED_OTHER' }
@@ -20,7 +20,7 @@ export type ApplyMatchResult =
 export async function applyMatch(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   db: any,
-  { bankTransactionId, restaurantId, createdBy }: { bankTransactionId: string; restaurantId: string; createdBy: string | null },
+  { bankTransactionId, restaurantId, createdBy, allowCredit }: { bankTransactionId: string; restaurantId: string; createdBy: string | null; allowCredit?: boolean },
 ): Promise<ApplyMatchResult> {
   const { data: tx } = await db
     .from('bank_transactions')
@@ -33,7 +33,11 @@ export async function applyMatch(
   // 중복(재확정)으로 보고 record_receivable_payment 의 already_posted 로 넘긴다.
   if (tx.posted_at && tx.posted_restaurant_id !== restaurantId) return { ok: false, reason: 'ALREADY_POSTED_OTHER' }
 
-  const { data, error } = await db.rpc('record_receivable_payment', {
+  // allowCredit 이 true 일 때만 초과분을 적립금으로 넣는 함수를 부른다 — 「입금 확인」 화면에서 사람이
+  // 금액을 보고 "초과분 적립 처리" 를 따로 눌렀을 때만 true 다. 기본 확정·auto-match 는 항상 false 로,
+  // 미수금을 넘으면 거절한다(2026-10-06 자동 적립 사고 이후 원칙).
+  const rpcName = allowCredit ? 'record_receivable_payment_with_credit' : 'record_receivable_payment'
+  const { data, error } = await db.rpc(rpcName, {
     p_restaurant_id: restaurantId,
     p_amount: tx.amount,
     p_method: 'transfer',
@@ -56,5 +60,11 @@ export async function applyMatch(
     }
   }
 
-  return { ok: true, alreadyPosted: Boolean(data?.already_posted), applied: data?.applied ?? 0, updatedCount: data?.updated_count ?? 0 }
+  return {
+    ok: true,
+    alreadyPosted: Boolean(data?.already_posted),
+    applied: data?.applied ?? 0,
+    updatedCount: data?.updated_count ?? 0,
+    credited: data?.credited ?? 0,
+  }
 }

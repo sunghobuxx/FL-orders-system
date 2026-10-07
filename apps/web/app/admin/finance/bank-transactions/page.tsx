@@ -97,6 +97,7 @@ export default async function BankTransactionsPage() {
                   <div className="ml-auto">
                     <ConfirmBankTransactionButton
                       bankTransactionId={tx.id}
+                      amount={Number(tx.amount)}
                       restaurants={restaurants.map(r => ({ id: r.id, name: nameOf.get(r.id) ?? '알 수 없음', balance: balanceOf.get(r.id) ?? 0 }))}
                       recommendedRestaurantId={decision?.verdict === 'AUTO_MATCH' ? decision.restaurantId : null}
                     />

@@ -20,7 +20,7 @@ describe('applyMatch', () => {
 
     const result = await applyMatch(f.db, { bankTransactionId: 'bt-1', restaurantId: 'r1', createdBy: 'admin-1' })
 
-    expect(result).toEqual({ ok: true, alreadyPosted: false, applied: 48000, updatedCount: 1 })
+    expect(result).toEqual({ ok: true, alreadyPosted: false, applied: 48000, updatedCount: 1, credited: 0 })
     expect((f.db as any).rpc).toHaveBeenCalledWith('record_receivable_payment', {
       p_restaurant_id: 'r1', p_amount: 48000, p_method: 'transfer', p_paid_at: '2026-09-29T00:00:00Z',
       p_created_by: 'admin-1', p_bank_transaction_id: 'bt-1',
@@ -62,7 +62,7 @@ describe('applyMatch', () => {
     const f = fakeDb({ bank_transactions: [txRow({ posted_at: '2026-09-29T00:00:00Z', posted_restaurant_id: 'r1' })] })
     ;(f.db as any).rpc = vi.fn().mockResolvedValue({ data: { applied: 0, updated_count: 0, leftover: 0, already_posted: true }, error: null })
     const result = await applyMatch(f.db, { bankTransactionId: 'bt-1', restaurantId: 'r1', createdBy: null })
-    expect(result).toEqual({ ok: true, alreadyPosted: true, applied: 0, updatedCount: 0 })
+    expect(result).toEqual({ ok: true, alreadyPosted: true, applied: 0, updatedCount: 0, credited: 0 })
     expect(f.writes.find(w => w.table === 'depositor_aliases')).toBeUndefined()
   })
 

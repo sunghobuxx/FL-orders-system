@@ -13,7 +13,7 @@ const won = (n: number) => Math.round(n).toLocaleString('ko-KR')
  */
 export async function POST(req: Request) {
   try {
-    const { bankTransactionId, restaurantId } = await req.json() as { bankTransactionId?: string; restaurantId?: string }
+    const { bankTransactionId, restaurantId, allowCredit } = await req.json() as { bankTransactionId?: string; restaurantId?: string; allowCredit?: boolean }
     if (!bankTransactionId || !restaurantId) {
       return NextResponse.json({ error: '필수 값이 없습니다.' }, { status: 400 })
     }
@@ -23,7 +23,8 @@ export async function POST(req: Request) {
     if (!session) return NextResponse.json({ error: '권한이 없습니다' }, { status: 403 })
     const { user, db } = session
 
-    const result = await applyMatch(db, { bankTransactionId, restaurantId, createdBy: user.id })
+    // allowCredit 은 화면에서 "초과분 적립 처리" 를 따로 눌렀을 때만 true 다(2026-10-07).
+    const result = await applyMatch(db, { bankTransactionId, restaurantId, createdBy: user.id, allowCredit: allowCredit === true })
 
     if (!result.ok) {
       switch (result.reason) {
@@ -54,6 +55,7 @@ export async function POST(req: Request) {
       applied: result.applied,
       updatedCount: result.updatedCount,
       alreadyPosted: result.alreadyPosted,
+      credited: result.credited,
     })
   } catch (e) {
     console.error('[confirm-bank-transaction] unexpected error', e)
