@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fakeDb } from '@/lib/testing/fake-db'
 
-const m = vi.hoisted(() => ({ session: vi.fn(), registerAndIssue: vi.fn() }))
+const m = vi.hoisted(() => ({ session: vi.fn(), registerAndIssue: vi.fn(), getInfo: vi.fn() }))
 vi.mock('@/lib/admin-member-user', () => ({ getAdminSession: m.session }))
-vi.mock('@/lib/popbill/taxinvoice', () => ({ registerAndIssue: m.registerAndIssue, TAXINVOICE_SCOPES: ['110'] }))
+vi.mock('@/lib/popbill/taxinvoice', () => ({ registerAndIssue: m.registerAndIssue, getInfo: m.getInfo, TAXINVOICE_SCOPES: ['110'] }))
 vi.mock('@/lib/popbill/config', () => ({ loadPopbillConfig: () => ({ environment: 'test', corpNum: '1234567890', apiBase: 'https://x', linkId: 'l', secretKey: 's', serviceId: 'POPBILL_TEST', authUrl: 'https://a' }) }))
 vi.mock('@/lib/popbill/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/popbill/client')>()
@@ -131,6 +131,21 @@ describe('POST /api/admin/finance/tax-invoices/issue', () => {
       restaurant_id: 'r1', invoice_month: '2026-09-01', tax_type: '과세', status: 'issued',
       supply_cost_total: 100000, tax_total: 10000, total_amount: 110000, nts_confirm_num: 'nts-1', created_by: 'admin-1',
     })
+  })
+
+  it('★ 즉시발행 응답에 승인번호가 비어 있으면 조회(getInfo)로 한 번 더 받는다(2026-10-07 바닷가아구찜에서 확인)', async () => {
+    const f = fakeDb({
+      tax_invoices: [], restaurants: [restaurantRow()], contacts: [contactRow],
+      daily_specs: specRows, daily_spec_lines: [taxableLine(10000, 1000)], products: [TAXABLE],
+    })
+    m.registerAndIssue.mockResolvedValue({})
+    m.getInfo.mockResolvedValue({ ntsconfirmNum: 'nts-from-getinfo' })
+    const res = await post(f.db, { restaurantId: 'r1', month: '2026-09' })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ success: true, ntsConfirmNum: 'nts-from-getinfo' })
+    expect(m.getInfo).toHaveBeenCalledWith(expect.anything(), { keyType: 'SELL', mgtKey: expect.any(String) })
+    const w = f.writes.find(w => w.table === 'tax_invoices' && w.op === 'upsert')!
+    expect(w.payload).toMatchObject({ nts_confirm_num: 'nts-from-getinfo' })
   })
 
   it('★ 과세와 면세가 섞이면 과세 장과 면세 장을 따로 발행한다', async () => {

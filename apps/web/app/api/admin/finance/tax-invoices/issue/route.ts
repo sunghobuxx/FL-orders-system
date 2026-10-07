@@ -4,7 +4,7 @@ import { NextResponse } from 'next/server'
 import { getAdminSession } from '@/lib/admin-member-user'
 import { loadPopbillConfig } from '@/lib/popbill/config'
 import { PopbillClient, PopbillError } from '@/lib/popbill/client'
-import { registerAndIssue } from '@/lib/popbill/taxinvoice'
+import { registerAndIssue, getInfo } from '@/lib/popbill/taxinvoice'
 import { buildTaxinvoicePayload, generateMgtKey } from '@/lib/payments/tax-invoice'
 import { monthRange } from '@/lib/payments/tax-invoice-month'
 import { splitTaxByTaxability } from '@/lib/payments/tax-invoice-split'
@@ -142,7 +142,17 @@ export async function POST(req: Request) {
       const client = new PopbillClient(config)
       try {
         const result = await registerAndIssue(client, payload) as { ntsconfirmNum?: string } | null
-        const ntsConfirmNum = result?.ntsconfirmNum ?? null
+        let ntsConfirmNum = result?.ntsconfirmNum ?? null
+        // 즉시발행 응답에 승인번호가 비어 올 때가 있다(2026-10-07 바닷가아구찜에서 확인 — 조회(GetInfo)에는
+        // 있었다). 발행 자체는 끝난 뒤라 실패로 보지 않고, 조회로 한 번 더 받아 본다.
+        if (!ntsConfirmNum) {
+          try {
+            const info = await getInfo(client, { keyType: 'SELL', mgtKey }) as { ntsconfirmNum?: string } | null
+            ntsConfirmNum = info?.ntsconfirmNum ?? null
+          } catch (e) {
+            console.error('[tax-invoices/issue] 승인번호 조회 실패', group.taxType, e)
+          }
+        }
         await db.from('tax_invoices').upsert({
           restaurant_id: restaurantId, invoice_month: range.start, tax_type: group.taxType, mgt_key: mgtKey,
           status: 'issued', supply_cost_total: group.supplyCostTotal, tax_total: group.taxTotal,
