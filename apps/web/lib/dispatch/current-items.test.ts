@@ -131,7 +131,7 @@ describe('getCurrentDispatchGroups — 발주 문자 3분류', () => {
     expect(byId).toEqual({ 'item-bean': 'sup-common', 'item-onion': 'sup-garak' })
   })
 
-  it('가락업체는 일반 품목을 가로채지 않는다', async () => {
+  it('남촌(기존) 연결이 있으면 가락업체는 일반 품목을 가로채지 않는다', async () => {
     const f = fakeDb({
       order_batches: [{ id: 'b1', business_date: '2026-10-05', restaurant_id: 'r1', status: 'submitted' }],
       restaurants: [{ id: 'r1', organization_id: 'o1' }],
@@ -140,12 +140,35 @@ describe('getCurrentDispatchGroups — 발주 문자 3분류', () => {
       order_items: [
         { id: 'item-normal', product_id: 'prod-onion', qty: 3, unit: 'kg', supplier_product_id: null, order_id: 'ord1', check_stage: 0, products: { standard_name: '양파' } },
       ],
-      supplier_products: [{ id: 'sp-garak', product_id: 'prod-onion', supplier_id: 'sup-garak', updated_at: '2026-01-02' }],
-      suppliers: [{ id: 'sup-garak', status: 'active', dispatch_group: 'garak' }],
+      supplier_products: [
+        { id: 'sp-exist', product_id: 'prod-onion', supplier_id: 'sup-exist', updated_at: '2026-01-02' },
+        { id: 'sp-garak', product_id: 'prod-onion', supplier_id: 'sup-garak', updated_at: '2026-01-02' },
+      ],
+      suppliers: [
+        { id: 'sup-exist', status: 'active', dispatch_group: 'existing' },
+        { id: 'sup-garak', status: 'active', dispatch_group: 'garak' },
+      ],
     })
     const r = await getCurrentDispatchGroups(f.db, '2026-10-05')
     expect(r.grouped['sup-garak']).toBeUndefined()
-    expect(r.unmappedItems.map(i => i.name)).toEqual(['양파'])
+    expect(r.grouped['sup-exist']?.map(i => i.id)).toEqual(['item-normal'])
+  })
+
+  it('★ 남촌(기존) 연결이 아예 없으면 가락업체로 대체한다 — "미배정"으로 빠지지 않는다 (재우 숙주 사례, 2026-10-09)', async () => {
+    const f = fakeDb({
+      order_batches: [{ id: 'b1', business_date: '2026-10-05', restaurant_id: 'r1', status: 'submitted' }],
+      restaurants: [{ id: 'r1', organization_id: 'o1' }],
+      orders: [{ id: 'ord1', batch_id: 'b1' }],
+      organizations: [{ id: 'o1', name: '마라명가', address: '경기 시흥시' }],
+      order_items: [
+        { id: 'item-jaewoo', product_id: 'prod-jaewoo', qty: 4, unit: 'box', supplier_product_id: null, order_id: 'ord1', check_stage: 0, products: { standard_name: '재우 숙주' } },
+      ],
+      supplier_products: [{ id: 'sp-garak', product_id: 'prod-jaewoo', supplier_id: 'sup-garak', updated_at: '2026-01-02' }],
+      suppliers: [{ id: 'sup-garak', status: 'active', dispatch_group: 'garak' }],
+    })
+    const r = await getCurrentDispatchGroups(f.db, '2026-10-05')
+    expect(r.grouped['sup-garak']?.map(i => i.id)).toEqual(['item-jaewoo'])
+    expect(r.unmappedItems).toEqual([])
   })
 })
 

@@ -58,7 +58,7 @@ async function resolveSupplierMaps(adminDb: any, items: DispatchOrderItem[]) {
     (groupRows ?? []).map((g: { id: string; dispatch_group: string | null }) => [g.id, g.dispatch_group ?? 'existing']),
   )
 
-  // 일반 품목은 가락업체(garak)에 절대 잡히지 않는다. 가장 최근 연결이 이긴다.
+  // 남촌(existing)·공통업체 연결이 있으면 그게 우선이다. 가장 최근 연결이 이긴다.
   const productToSupplier: Record<string, string> = {}
   const productToCommon: Record<string, string> = {}
   const productToGarak: Record<string, string> = {}
@@ -70,6 +70,12 @@ async function resolveSupplierMaps(adminDb: any, items: DispatchOrderItem[]) {
     }
     if (group === 'common' && !productToCommon[row.product_id]) productToCommon[row.product_id] = row.supplier_id
     if (!productToSupplier[row.product_id]) productToSupplier[row.product_id] = row.supplier_id
+  }
+  // 남촌 쪽 연결이 아예 없는 품목만 가락업체로 대체한다 — 둘 다 있으면 남촌이 이긴다(위 우선순위 그대로).
+  // 재우 숙주처럼 장원농산(가락)만 연결돼 있고 남촌 연결이 없는 품목이, 서울·일산이 아닌 식당
+  // (마라명가 등)이 시켜도 "공급처 미배정"으로 빠지던 것을 막는다(2026-10-09).
+  for (const [productId, garakSupplierId] of Object.entries(productToGarak)) {
+    if (productToSupplier[productId] === undefined) productToSupplier[productId] = garakSupplierId
   }
 
   // 주문 품목이 가락업체의 공급처 행을 물고 있어도(supplier_product_id) 일반 품목은 가락업체로 가지 않는다.
