@@ -5,6 +5,7 @@ export function defaultDispatchDate(now = new Date()) {
 }
 
 export type DispatchRow = {
+  productId?: string; supplierId?: string; supplierName?: string
   orderItemId: string; name: string; restaurantName: string; qty: number; unit: string
   checkStage: number; batchId: string; batchStatus: string; canManage: boolean; unitPrice: number; excluded?: boolean
 }
@@ -37,4 +38,20 @@ export function updateDispatchCheck(data: DispatchResponse, itemId: string, stag
   return { ...data, garakItems: data.garakItems.map(update), suppliers: data.suppliers.map(supplier => ({ ...supplier,
     lines: supplier.lines.map(line => ({ ...line, rows: line.rows.map(update) })),
   })) }
+}
+
+/** Same supplier → product/unit → restaurant hierarchy as the web Garak list. */
+export function groupGarakRows(rows: DispatchRow[]) {
+  const suppliers = new Map<string, { supplierId: string; supplierName: string; lines: Map<string, { key: string; name: string; unit: string; qty: number; rows: DispatchRow[] }> }>()
+  for (const row of rows) {
+    const supplierId = row.supplierId || 'unassigned'
+    const supplier = suppliers.get(supplierId) ?? { supplierId, supplierName: row.supplierName || '미지정', lines: new Map() }
+    const key = `${row.productId || row.name}:${row.unit}`
+    const line = supplier.lines.get(key) ?? { key, name: row.name, unit: row.unit, qty: 0, rows: [] }
+    line.qty += row.qty
+    line.rows.push(row)
+    supplier.lines.set(key, line)
+    suppliers.set(supplierId, supplier)
+  }
+  return [...suppliers.values()].map(supplier => ({ ...supplier, lines: [...supplier.lines.values()] }))
 }

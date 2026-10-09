@@ -63,6 +63,13 @@ describe('배송앱 발주 날짜와 세 구분', () => {
     expect(result.suppliers).toEqual([])
     expect(result.totalAmount).toBe(300)
   })
+  it('가락 전용 공급처도 웹 라우팅 ID와 이름을 내려준다', async () => {
+    mocks.groups.mockResolvedValue({ allItems: [], garakItems: [{ ...item('garak', 3), routed_supplier_id: 'garak-supplier' }], grouped: { 'garak-supplier': [item('garak', 3)] }, inactiveGrouped: {}, unmappedItems: [] })
+    tables.suppliers.push({ id: 'garak-supplier', organizations: { name: '가락상회' } })
+    const result = await loadDriverDispatch(dbFor(tables), '2026-10-09', null)
+    expect(result.garakItems[0]).toMatchObject({ supplierId: 'garak-supplier', supplierName: '가락상회', productId: 'onion' })
+    expect(result.suppliers).toEqual([])
+  })
   it('가락만 있는 날에도 집계가 표시된다', async () => {
     mocks.groups.mockResolvedValue({ allItems: [], garakItems: [item('garak', 3)], grouped: {}, inactiveGrouped: {}, unmappedItems: [] })
     const result = await loadDriverDispatch(dbFor(tables), '2026-10-05', null)

@@ -5,7 +5,7 @@ import { DateSelector } from '../../components/DateSelector'
 import { useDriverResource } from '../../hooks/useDriverResource'
 import { apiPost } from '../../lib/api'
 import { fmtWon } from '../../lib/format'
-import { defaultDispatchDate, dispatchCheckState, updateDispatchCheck, type DispatchResponse, type DispatchRow } from '../../lib/dispatch'
+import { defaultDispatchDate, groupGarakRows, dispatchCheckState, updateDispatchCheck, type DispatchResponse, type DispatchRow } from '../../lib/dispatch'
 
 export default function HistoryScreen() {
   const [date, setDate] = useState(defaultDispatchDate)
@@ -47,13 +47,13 @@ export default function HistoryScreen() {
     const state = dispatchCheckState(row, source)
     const checked = state.checked
     const pending = checking.has(row.orderItemId)
-    const disabled = pending || !!error || state.disabled || !row.canManage || !row.batchId || row.excluded
+    const disabled = pending || state.disabled || !row.canManage || !row.batchId || row.excluded
     return <View key={row.orderItemId} style={{ paddingVertical: 10, borderTopWidth: 1, borderTopColor: colors.line, gap: 6 }}>
       <Text style={{ color: colors.ink, fontWeight: '800' }}>{row.name} · {row.restaurantName || '업체 미확인'}</Text>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
         <Text style={{ flex: 1, color: colors.muted }}>{row.qty}{row.unit}{row.unitPrice > 0 ? ` · 단가 ${fmtWon(row.unitPrice)}` : ''}{row.excluded ? ' · 발주 제외' : ''}</Text>
-        <Pressable accessibilityRole="button" disabled={!!disabled} onPress={() => void toggle(row, source)} style={{ minHeight: 44, justifyContent: 'center', paddingHorizontal: 12, borderRadius: 8, backgroundColor: checked ? '#DCFCE7' : colors.green, opacity: disabled ? 0.55 : 1 }}>
-          <Text style={{ fontWeight: '800', color: checked ? '#166534' : 'white' }}>{!row.canManage ? '조회 전용' : pending ? '저장 중…' : state.label}</Text>
+        <Pressable accessibilityRole="button" accessibilityState={{ checked, busy: pending, disabled: !!disabled }} disabled={!!disabled} onPress={() => void toggle(row, source)} style={{ minHeight: 44, justifyContent: 'center', paddingHorizontal: 12, borderRadius: 8, backgroundColor: checked ? '#DCFCE7' : colors.green, opacity: disabled && !pending ? 0.55 : 1 }}>
+          <Text style={{ fontWeight: '800', color: checked ? '#166534' : 'white' }}>{!row.canManage ? '조회 전용' : state.label}</Text>
         </Pressable>
       </View>
     </View>
@@ -73,7 +73,10 @@ export default function HistoryScreen() {
         {!data.totals.length ? <Empty message="이 날짜의 발주가 없습니다." /> : <Card>{data.totals.map(i => <View key={`${i.productId}-${i.unit}`} style={{ paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.line, gap: 4 }}><Text style={{ fontWeight: '800' }}>{i.name} · {i.qtyText}</Text><Muted>{fmtWon(i.amount)}</Muted></View>)}</Card>}
       </> : tab === 'garak' ? <>
         <Muted>가락 매입 (서울·일산) — 발주 문자 없음</Muted>
-        {!data.garakItems?.length ? <Empty message="가락 매입 품목이 없습니다." /> : <Card>{data.garakItems.map(row => itemRow(row, 'garak'))}</Card>}
+        {!data.garakItems?.length ? <Empty message="가락 매입 품목이 없습니다." /> : groupGarakRows(data.garakItems).map(supplier => <Card key={supplier.supplierId}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}><Text style={{ flex: 1, fontWeight: '900', color: '#1E40AF' }}>{supplier.supplierName}</Text><Pill tone="gray">발주 문자 없음</Pill></View>
+          {supplier.lines.map(line => <View key={line.key} style={{ marginTop: 12 }}><Text style={{ fontWeight: '800' }}>{line.name} · {Number(line.qty.toFixed(2))} {line.unit}</Text>{line.rows.map(row => itemRow(row, 'garak'))}</View>)}
+        </Card>)}
       </> : <>
         <Muted>남촌 공급처별 발주 내역</Muted>
         {!data.suppliers.length ? <Empty message="남촌 공급처 발주가 없습니다." /> : data.suppliers.map(supplier => <Card key={supplier.supplierId}>

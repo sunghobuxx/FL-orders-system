@@ -11,9 +11,10 @@ export async function loadDriverDispatch(db: ReturnType<typeof createAdminClient
     .map(([id, items]) => [id, items.filter(item => !garakIds.has(item.id))] as const)
     .filter(([, items]) => items.length))
   const supplierIds = Object.keys(supplierGroups)
+  const lookupSupplierIds = [...new Set([...supplierIds, ...garakItems.map(item => item.routed_supplier_id).filter((id): id is string => !!id)])]
   const [jobsRes, suppliersRes, itemsRes] = await Promise.all([
     supplierIds.length ? db.from('dispatch_jobs').select('id, supplier_id, status').eq('business_date', businessDate).in('supplier_id', supplierIds) : { data: [], error: null },
-    supplierIds.length ? db.from('suppliers').select('id, organizations(name)').in('id', supplierIds) : { data: [], error: null },
+    lookupSupplierIds.length ? db.from('suppliers').select('id, organizations(name)').in('id', lookupSupplierIds) : { data: [], error: null },
     current.length ? db.from('order_items').select('id, unit_price_snapshot, orders(batch_id, order_batches(status, restaurant_id))').in('id', current.map(i => i.id)) : { data: [], error: null },
   ])
   for (const result of [jobsRes, suppliersRes, itemsRes]) if (result.error) throw result.error
@@ -24,7 +25,7 @@ export async function loadDriverDispatch(db: ReturnType<typeof createAdminClient
     return [item.id, { batchId: order?.batch_id ?? '', batchStatus: batch?.status ?? '', unitPrice: Number(item.unit_price_snapshot ?? 0), canManage: !!order?.batch_id && (assignedIds === null || assignedIds.includes(batch?.restaurant_id)) }] as const
   }))
   const row = (item: DispatchOrderItem) => ({
-    orderItemId: item.id, name: item.products?.standard_name ?? '품목', restaurantName: item.restaurant_name ?? '',
+    orderItemId: item.id, productId: item.product_id, supplierId: item.routed_supplier_id ?? '', supplierName: one((suppliersRes.data ?? []).find(s => s.id === item.routed_supplier_id)?.organizations)?.name ?? '미지정', name: item.products?.standard_name ?? '품목', restaurantName: item.restaurant_name ?? '',
     qty: Number(item.qty), unit: item.unit, checkStage: Number(item.check_stage ?? 0),
     batchId: '', batchStatus: item.batch_status ?? '', canManage: false, unitPrice: 0, ...meta.get(item.id),
   })
