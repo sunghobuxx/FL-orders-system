@@ -141,7 +141,7 @@ export default function DashboardScreen() {
           <DashboardCard style={{ flex: 1 }}>
             <CardHeader title="발주내역 (농산물)" action="전체보기 →" onPress={() => router.push('/history')} />
             <Text style={{ color: '#94A3B8', fontSize: 12, fontWeight: '700', marginTop: -8, marginBottom: 12, paddingHorizontal: 18 }}>
-              새벽 02:30 문자 발송 대상
+              {scope === 'all' ? '전체 업체 발주처' : '담당 업체 발주처'} · 새벽 02:30 문자 발송 대상
             </Text>
             {(data?.dispatches.length ?? 0) === 0 ? (
               <EmptyLine text="발주 대상 농산물이 없습니다." />

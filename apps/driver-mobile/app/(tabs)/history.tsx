@@ -63,7 +63,7 @@ export default function HistoryScreen() {
     <Text style={{ fontSize: 22, fontWeight: '900', color: colors.ink }}>발주내역</Text>
     <View pointerEvents={checking.size ? 'none' : 'auto'}><DateSelector value={date} onChange={setDate} /></View>
     <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
-      {(['all', 'garak', 'suppliers'] as const).map((value, index) => <Pressable key={value} accessibilityRole="tab" accessibilityState={{ selected: tab === value }} onPress={() => setTab(value)} style={{ flex: 1, alignItems: 'center', padding: 12, borderRadius: 8, backgroundColor: tab === value ? colors.green : colors.soft }}><Text style={{ fontWeight: '800', color: tab === value ? 'white' : colors.ink }}>{['전체', '가락', '기존'][index]}</Text></Pressable>)}
+      {(['all', 'garak', 'suppliers'] as const).map((value, index) => <Pressable key={value} accessibilityRole="tab" accessibilityState={{ selected: tab === value }} onPress={() => setTab(value)} style={{ flex: 1, alignItems: 'center', padding: 12, borderRadius: 8, backgroundColor: tab === value ? colors.green : colors.soft }}><Text style={{ fontWeight: '800', color: tab === value ? 'white' : colors.ink }}>{['전체', '가락', '남촌'][index]}</Text></Pressable>)}
     </View>
     {error ? <Muted>조회 실패: {error} · 아래로 당겨 다시 시도해 주세요.</Muted> : null}
     {loading ? <Loading /> : !data ? <Empty message="조회된 내역이 없습니다." /> : <>
@@ -75,8 +75,8 @@ export default function HistoryScreen() {
         <Muted>가락 매입 (서울·일산) — 발주 문자 없음</Muted>
         {!data.garakItems?.length ? <Empty message="가락 매입 품목이 없습니다." /> : <Card>{data.garakItems.map(row => itemRow(row, 'garak'))}</Card>}
       </> : <>
-        <Muted>기존 공급처별 발주 내역</Muted>
-        {!data.suppliers.length ? <Empty message="기존 공급처 발주가 없습니다." /> : data.suppliers.map(supplier => <Card key={supplier.supplierId}>
+        <Muted>남촌 공급처별 발주 내역</Muted>
+        {!data.suppliers.length ? <Empty message="남촌 공급처 발주가 없습니다." /> : data.suppliers.map(supplier => <Card key={supplier.supplierId}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}><Text style={{ flex: 1, fontWeight: '900', color: '#1E40AF' }}>{supplier.supplierName}</Text><Pill tone={supplier.sent ? 'green' : 'gray'}>{supplier.autoDispatchExcluded ? '자동발송 제외' : supplier.sent ? '전송완료' : '전송대기'}</Pill></View>
           {supplier.lines.map((line, i) => <View key={`${line.name}-${line.unit}-${i}`} style={{ marginTop: 12 }}><Text style={{ fontWeight: '800' }}>{line.name} · {line.qtyText}</Text>{line.rows.map(row => itemRow(row, 'suppliers'))}</View>)}
         </Card>)}

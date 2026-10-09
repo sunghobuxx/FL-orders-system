@@ -3,6 +3,7 @@ export const runtime = 'edge'
 import { NextResponse } from 'next/server'
 
 import { addDays, applyAssignedFilter, getKstToday, orgNameFromRestaurant, requireDriverUser, DRIVER_NOTE_CATEGORY } from '@/lib/driver-api'
+import { filterDashboardDispatchJobs } from '@/lib/driver-dashboard-dispatch'
 import { normalizeUnit } from '@/lib/units'
 
 export async function GET(req: Request) {
@@ -53,7 +54,7 @@ export async function GET(req: Request) {
       .limit(5),
     ctx.db
       .from('dispatch_jobs')
-      .select('id, status, business_date, suppliers(organizations(name)), dispatch_job_items(qty, order_items(unit, products(standard_name)))')
+      .select('id, status, business_date, suppliers(organizations(name)), dispatch_job_items(qty, order_items(unit, products(standard_name), orders(batch_id)))')
       .in('business_date', [today, tomorrow]),
   ])
 
@@ -84,7 +85,9 @@ export async function GET(req: Request) {
     submittedAt: batch.submitted_at ?? batch.created_at,
   }))
 
-  let dispatches = (dispatchesRes.data ?? []).map((job: any) => {
+  if (dispatchesRes.error) return NextResponse.json({ error: dispatchesRes.error.message }, { status: 500 })
+  const visibleBatchIds = all || ctx.assignedRestaurantIds === null ? null : new Set(orders.map(order => order.id))
+  let dispatches = filterDashboardDispatchJobs(dispatchesRes.data ?? [], visibleBatchIds).map((job: any) => {
     const supplier = Array.isArray(job.suppliers?.organizations)
       ? job.suppliers?.organizations[0]
       : job.suppliers?.organizations
