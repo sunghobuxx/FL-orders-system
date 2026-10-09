@@ -20,6 +20,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/admin/purchase', label: '매입 정산' },
   { href: '/admin/sales', label: '전체 매출관리' },
   { type: 'section', label: '운영' },
+  { href: '/admin/garak/closed-dates', label: '가락시장 휴무일' },
   { href: '/admin/waiting', label: '웨이팅 현황' },
   { href: '/admin/push', label: '푸쉬메시지 설정' },
   { href: '/admin/notices', label: '공지 관리' },
