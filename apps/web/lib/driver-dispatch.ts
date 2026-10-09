@@ -3,8 +3,13 @@ import type { createAdminClient } from './supabase/admin'
 
 export async function loadDriverDispatch(db: ReturnType<typeof createAdminClient>, businessDate: string, assignedIds: string[] | null) {
   const { allItems, garakItems, grouped, inactiveGrouped, unmappedItems } = await getCurrentDispatchGroups(db, businessDate)
-  const current = [...allItems, ...garakItems]
-  const supplierGroups = { ...grouped, ...inactiveGrouped }
+  const current = [...new Map([...allItems, ...garakItems].map(item => [item.id, item])).values()]
+  // Shared web routing can include a Garak row in a common supplier's message.
+  // Mobile tabs represent purchase sources, so display that order row only in Garak.
+  const garakIds = new Set(garakItems.map(item => item.id))
+  const supplierGroups = Object.fromEntries(Object.entries({ ...grouped, ...inactiveGrouped })
+    .map(([id, items]) => [id, items.filter(item => !garakIds.has(item.id))] as const)
+    .filter(([, items]) => items.length))
   const supplierIds = Object.keys(supplierGroups)
   const [jobsRes, suppliersRes, itemsRes] = await Promise.all([
     supplierIds.length ? db.from('dispatch_jobs').select('id, supplier_id, status').eq('business_date', businessDate).in('supplier_id', supplierIds) : { data: [], error: null },
@@ -37,7 +42,9 @@ export async function loadDriverDispatch(db: ReturnType<typeof createAdminClient
     const job = (jobsRes.data ?? []).find(j => j.supplier_id === supplierId)
     const supplier = (suppliersRes.data ?? []).find(s => s.id === supplierId)
     // Match the web: use saved quantities/exclusions if rows exist, otherwise current orders.
-    const saved = job ? await getDispatchJobItemRows(db, job.id) : []
+    const currentIds = new Set(supplierGroups[supplierId].map(item => item.id))
+    // Old dispatch snapshots must not resurrect rows moved to Garak/another supplier.
+    const saved = (job ? await getDispatchJobItemRows(db, job.id) : []).filter(item => currentIds.has(item.orderItemId))
     const currentRows = supplierGroups[supplierId].map(row)
     const groups = saved.length ? groupEditableRows(saved) : groupEditableRows(currentRows.map(i => ({
       id: i.orderItemId, orderItemId: i.orderItemId, productId: supplierGroups[supplierId].find(x => x.id === i.orderItemId)!.product_id,

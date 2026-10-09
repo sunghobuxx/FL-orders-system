@@ -56,10 +56,19 @@ export function useDriverResource<T>(path: string, title: string, pollMs = 0) {
     }
   }, [load, title, pollMs]))
 
+  const mutate = useCallback((update: (data: T) => T) => {
+    // A GET started before a local confirmation must not overwrite that confirmation.
+    request.current++
+    busy.current = false
+    setLoading(false)
+    setRefreshing(false)
+    setResult(previous => previous?.path === path ? { path, data: update(previous.data) } : previous)
+  }, [path])
+
   const refresh = useCallback(async () => {
     setRefreshing(true)
     await load().catch(e => Alert.alert('새로고침 실패', e.message))
   }, [load])
 
-  return { data: result?.path === path ? result.data : null, loading, refreshing, error, load, refresh }
+  return { data: result?.path === path ? result.data : null, loading, refreshing, error, load, refresh, mutate }
 }
