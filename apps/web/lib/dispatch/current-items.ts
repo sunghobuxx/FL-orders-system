@@ -121,6 +121,11 @@ export async function getCurrentDispatchGroups(
     return EMPTY
   }
 
+  // 가락시장 휴무일(사장님이 직접 토글)이면 서울·일산 식당도 가락이 아니라 남촌(기존) 공급처로 간다.
+  const { data: closedRow } = await adminDb
+    .from('garak_closed_dates').select('business_date').eq('business_date', businessDate).maybeSingle()
+  const garakOpenToday = !closedRow
+
   // 레스토랑 → 업체명/서울여부 맵 + 주문 목록을 병렬로 조회
   const restaurantIds = [...new Set((batches ?? []).map((b: { restaurant_id: string }) => b.restaurant_id).filter(Boolean) as string[])]
   const orderToRestaurantName: Record<string, string> = {}
@@ -143,8 +148,9 @@ export async function getCurrentDispatchGroups(
     )
     // 서울 식당은 가락시장에서 직접 사다 납품한다 — 품목별 공급처 발주문자 대상에서 뺀다
     // (2026-10 가락시장 매입 시작, 사장님 기준: "서울 식당은 주소기준이야").
+    // 가락시장 휴무일에는 이 구분을 통째로 끈다 — 전부 남촌(기존) 공급처 발주문자로 간다.
     const orgIsSeoulMap: Record<string, boolean> = Object.fromEntries(
-      (orgRows ?? []).map((o: { id: string; address: string | null }) => [o.id, isGarakAddress(o.address)])
+      (orgRows ?? []).map((o: { id: string; address: string | null }) => [o.id, garakOpenToday && isGarakAddress(o.address)])
     )
     const restaurantNameMap: Record<string, string> = Object.fromEntries(
       (rRows ?? []).map((r: { id: string; organization_id: string }) => [r.id, orgNameMap[r.organization_id] ?? ''])

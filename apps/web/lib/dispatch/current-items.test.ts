@@ -120,6 +120,36 @@ describe('getCurrentDispatchGroups — 발주 문자 3분류', () => {
     expect(r.grouped['sup-common']?.map(i => i.id)).toEqual(['item-bean'])
   })
 
+  it('★ 가락시장 휴무일로 등록된 날짜는 서울 식당도 남촌(기존) 공급처로 간다', async () => {
+    const f = fakeDb({
+      order_batches: [{ id: 'batch-seoul', business_date: '2026-10-09', restaurant_id: 'rest-seoul', status: 'submitted' }],
+      restaurants: [{ id: 'rest-seoul', organization_id: 'org-seoul' }],
+      orders: [{ id: 'order-seoul', batch_id: 'batch-seoul' }],
+      organizations: [{ id: 'org-seoul', name: '서울식당', address: '서울 송파구' }],
+      order_items: [
+        { id: 'item-onion', product_id: 'prod-onion', qty: 2, unit: 'kg', supplier_product_id: null, order_id: 'order-seoul', check_stage: 0, products: { standard_name: '양파' } },
+      ],
+      supplier_products: [
+        { id: 'sp-exist', product_id: 'prod-onion', supplier_id: 'sup-exist', updated_at: '2026-01-01' },
+        { id: 'sp-garak', product_id: 'prod-onion', supplier_id: 'sup-garak', updated_at: '2026-01-02' },
+      ],
+      suppliers: [
+        { id: 'sup-exist', status: 'active', dispatch_group: 'existing' },
+        { id: 'sup-garak', status: 'active', dispatch_group: 'garak' },
+      ],
+      garak_closed_dates: [{ business_date: '2026-10-09' }],
+    })
+    const r = await getCurrentDispatchGroups(f.db, '2026-10-09')
+    expect(r.garakItems).toEqual([])
+    expect(r.grouped['sup-exist']?.map(i => i.id)).toEqual(['item-onion'])
+    expect(r.grouped['sup-garak']).toBeUndefined()
+  })
+
+  it('가락시장 휴무가 아닌 보통 날은 그대로 가락 목록으로 간다 (휴무일 등록과 무관)', async () => {
+    const r = await getCurrentDispatchGroups(base().db, '2026-10-05')
+    expect(r.garakItems.length).toBeGreaterThan(0)
+  })
+
   it('가락업체에 연결된 가락 품목은 가락업체 문자로 간다', async () => {
     const r = await getCurrentDispatchGroups(base().db, '2026-10-05')
     expect(r.grouped['sup-garak']?.map(i => i.id)).toEqual(['item-onion'])
