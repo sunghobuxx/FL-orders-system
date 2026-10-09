@@ -23,6 +23,7 @@ import { keptSpecLine } from '@/lib/specs/kept-line'
 import { normalizeUnit } from '@/lib/units'
 import { pickGarakSalePrice } from '@/lib/garak/allocation'
 import { toPackQty, type PackSpec } from '@/lib/products/pack-size'
+import { isGarakAddress } from '@/lib/region'
 
 /**
  * 단가 우선순위: 업체 고정단가 → 당일단가 → 고정단가 품목 → carry-forward
@@ -195,6 +196,16 @@ export async function syncSpecFromOrders(
     organizationId = r?.organization_id ?? null
   }
 
+  // 서울·일산 식당은 가락 목록으로 따로 가고(배정 대상에서도 빠진다), 그 외 지역만 아래
+  // "기존 단가 없으면 가락 단가로 대체" 가 적용된다 — 가락 배정과 같은 지역 기준이다.
+  let orgAddress: string | null = null
+  if (organizationId) {
+    const { data: org } = await adminDb
+      .from('organizations').select('address').eq('id', organizationId).maybeSingle()
+    orgAddress = org?.address ?? null
+  }
+  const nonSeoulRestaurant = !isGarakAddress(orgAddress)
+
   const productIds = [...new Set(rawItems.map((i: { product_id: string }) => i.product_id))] as string[]
 
   const { data: productRows } = await adminDb
@@ -233,7 +244,8 @@ export async function syncSpecFromOrders(
     .from('garak_allocations').select('order_item_id')
     .eq('business_date', businessDate).in('product_id', productIds)
   const allocatedItemIds = new Set((allocRows ?? []).map((a: { order_item_id: string }) => a.order_item_id))
-  const { data: garakRows } = allocatedItemIds.size
+  // 배정 여부와 상관없이 가져온다 — 비서울 식당이 기존 단가가 없을 때의 대체 단가로도 쓴다(아래).
+  const { data: garakRows } = productIds.length
     ? await adminDb.from('garak_purchases').select('product_id, unit, sale_price')
         .eq('business_date', businessDate).in('product_id', productIds)
     : { data: [] as Array<{ product_id: string; unit: string; sale_price: number | null }> }
@@ -288,10 +300,16 @@ export async function syncSpecFromOrders(
       // 잠긴 줄도 수량은 최신 발주를 따른다(단가만 잠금). 2026-09-26 이전에는 수량까지 얼려서
       // 고정단가 품목의 발주 수정이 명세서에 안 옮겨졌다 → lib/specs/kept-line.ts
       if (kept) return keptSpecLine(kept, item, Boolean(taxable.get(item.product_id)))
-      const entered = priceMap[item.product_id] ?? 0
-      const garakPrice = allocatedItemIds.has(item.id)
+      const enteredPrice = priceMap[item.product_id]
+      const hasEnteredPrice = enteredPrice !== undefined
+      // 단가 우선순위: 가락 배정 줄(기존, 최우선) → 기존 업체 단가 → 비서울 식당이고 기존 단가가
+      // 전혀 없으면 가락 매입 단가(2026-10-09, 깻잎·상추처럼 기존 거래처엔 당일 단가가 없고
+      // 가락에만 있는 품목이 0원으로 나가던 것을 막는다). 서울·일산은 건드리지 않는다 —
+      // 거기는 가락 살 것 목록으로 따로 가서 이 함수가 매기는 단가를 쓰지 않는다.
+      const garakPrice = allocatedItemIds.has(item.id) || (nonSeoulRestaurant && !hasEnteredPrice)
         ? pickGarakSalePrice(garakByProduct.get(item.product_id) ?? [], item.unit, normalizeUnit)
         : null
+      const entered = enteredPrice ?? 0
       const split = splitOf(item.product_id, Number(item.qty), garakPrice ?? entered)
       return {
         order_item_id: item.id,
