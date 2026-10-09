@@ -14,6 +14,9 @@ export interface DispatchOrderItem {
   check_stage?: number
   /** 이 품목이 속한 배치 상태 — 확인 버튼이 1단계인지 2단계인지 정한다 */
   batch_status?: string
+  /** 가락 살 것 목록 전용: 이 품목이 실제 라우팅되는 공급처(공통업체·가락업체) id.
+   * 일반 품목(garakItems 가 아닌 것)에는 안 쓴다. */
+  routed_supplier_id?: string | null
 }
 
 export interface DispatchLine {
@@ -190,7 +193,9 @@ export async function getCurrentDispatchGroups(
 
   // 서울·일산 식당 품목 중 가락/공통업체에 연결된 것만 가락 살 것 목록으로 간다.
   // 그 밖(예: 미나리 — 시흥미나리 기존 공급처)은 주소와 무관하게 기존 공급처 문자로 간다.
-  const garakItems: DispatchOrderItem[] = seoulItems.filter(i => productToGarakRoute[i.product_id])
+  const garakItems: DispatchOrderItem[] = seoulItems
+    .filter(i => productToGarakRoute[i.product_id])
+    .map(i => ({ ...i, routed_supplier_id: productToGarakRoute[i.product_id] ?? null }))
   const items: DispatchOrderItem[] = [...localItems, ...seoulItems.filter(i => !productToGarakRoute[i.product_id])]
   const grouped: Record<string, DispatchOrderItem[]> = {}
   const unmappedMap = new Map<string, DispatchLine>()

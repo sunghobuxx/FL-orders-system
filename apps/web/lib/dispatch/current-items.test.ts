@@ -125,6 +125,12 @@ describe('getCurrentDispatchGroups — 발주 문자 3분류', () => {
     expect(r.grouped['sup-garak']?.map(i => i.id)).toEqual(['item-onion'])
   })
 
+  it('★ 가락 목록 각 품목에 실제 라우팅된 공급처 id 가 붙는다 (가락 살 것 화면을 업체별로 묶는 기준)', async () => {
+    const r = await getCurrentDispatchGroups(base().db, '2026-10-05')
+    const byId = Object.fromEntries(r.garakItems.map(i => [i.id, i.routed_supplier_id]))
+    expect(byId).toEqual({ 'item-bean': 'sup-common', 'item-onion': 'sup-garak' })
+  })
+
   it('가락업체는 일반 품목을 가로채지 않는다', async () => {
     const f = fakeDb({
       order_batches: [{ id: 'b1', business_date: '2026-10-05', restaurant_id: 'r1', status: 'submitted' }],

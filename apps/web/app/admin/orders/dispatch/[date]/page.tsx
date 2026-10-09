@@ -198,6 +198,8 @@ export default async function DispatchDatePage({ params }: Props) {
                     unit: i.unit,
                     stage: Number(i.check_stage ?? 0),
                     batchStatus: i.batch_status ?? '',
+                    supplierId: i.routed_supplier_id ?? '',
+                    supplierName: supplierNameMap.get(i.routed_supplier_id ?? '') ?? '미지정',
                   }))}
                 />
               </div>
