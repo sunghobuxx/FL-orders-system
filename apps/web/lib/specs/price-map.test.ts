@@ -27,9 +27,10 @@ function fakeDb(rows: Record<string, unknown[]>) {
 
 const 기본행 = {
   supplier_products: [
-    { id: 'sp-onion', product_id: 양파 },
-    { id: 'sp-minari', product_id: 미나리 },
+    { id: 'sp-onion', product_id: 양파, supplier_id: 'sup-exist' },
+    { id: 'sp-minari', product_id: 미나리, supplier_id: 'sup-exist' },
   ],
+  suppliers: [{ id: 'sup-exist', dispatch_group: 'existing' }],
   products: [
     // 양파는 kg·bag 둘 다 쓴다 (다단위)
     { id: 양파, is_fixed_price: false, default_unit: 'kg', allowed_units: ['kg', 'bag'] },
@@ -86,5 +87,27 @@ describe('buildPriceMapByProduct — 단위', () => {
     })
     const { priceMap } = await buildPriceMapByProduct(db, [양파], '2026-09-12', null)
     expect(priceMap[양파]).toBe(24000)
+  })
+
+  it('★ 가락업체 단가는 명세서 단가로 안 쓴다 — 남촌·가락이 같은 날 등록돼도 가락 쪽이 섞여 들어가면 안 된다 (2026-10-10 수원대점 양파)', async () => {
+    const db = fakeDb({
+      ...기본행,
+      supplier_products: [
+        { id: 'sp-onion-exist', product_id: 양파, supplier_id: 'sup-exist' },
+        { id: 'sp-onion-garak', product_id: 양파, supplier_id: 'sup-garak' },
+      ],
+      suppliers: [
+        { id: 'sup-exist', dispatch_group: 'existing' },
+        { id: 'sup-garak', dispatch_group: 'garak' },
+      ],
+      // 가락 쪽을 먼저 두어도(시각·정렬에 유리해도) 가락이면 아예 후보에서 빠져야 한다.
+      price_snapshots: [
+        { supplier_product_id: 'sp-onion-garak', sale_price: 1900, unit: 'kg', effective_from: '2026-10-06', created_at: '2026-10-06T12:41:30Z' },
+        { supplier_product_id: 'sp-onion-exist', sale_price: 1800, unit: 'kg', effective_from: '2026-10-06', created_at: '2026-10-06T12:41:00Z' },
+      ],
+    })
+    const { priceMap } = await buildPriceMapByProduct(
+      db, [양파], '2026-10-08', null, { [양파]: 'kg' })
+    expect(priceMap[양파]).toBe(1800)
   })
 })

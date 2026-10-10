@@ -105,9 +105,21 @@ export async function buildPriceMapByProduct(
     }
   }
 
-  const { data: spRows } = await adminDb
-    .from('supplier_products').select('id, product_id')
+  const { data: rawSpRows } = await adminDb
+    .from('supplier_products').select('id, product_id, supplier_id')
     .in('product_id', productIds).eq('status', 'active')
+
+  // 명세서 단가는 남촌(기존) 공급처 것만 쓴다. 가락업체 단가도 같은 품목에 걸려 있으면
+  // 구분 없이 섞여서, 등록 시각이 더 최근인 쪽이 아무 기준 없이 뽑혔다 — 양파가 남촌
+  // 1,800원·가락 1,900원 같은 날 등록됐는데 가락 쪽이 남촌 식당 명세서에 붙었다
+  // (2026-10-10 수원대점). 가락 단가는 비서울 식당의 "남촌 단가 자체가 없을 때"
+  // 대체용으로만 쓴다 — 그건 이 함수가 아니라 sync.ts 의 가락 매입 대체 로직이 한다.
+  const spSupplierIds = [...new Set((rawSpRows ?? []).map((r: { supplier_id: string }) => r.supplier_id))]
+  const { data: spGroupRows } = spSupplierIds.length
+    ? await adminDb.from('suppliers').select('id, dispatch_group').in('id', spSupplierIds)
+    : { data: [] as { id: string; dispatch_group: string | null }[] }
+  const garakSupplierIds = new Set((spGroupRows ?? []).filter((g: { dispatch_group: string | null }) => g.dispatch_group === 'garak').map((g: { id: string }) => g.id))
+  const spRows = (rawSpRows ?? []).filter((r: { supplier_id: string }) => !garakSupplierIds.has(r.supplier_id))
   if (!spRows?.length) return { priceMap, orgOverrides }
 
   const spIds = (spRows as Array<{ id: string; product_id: string }>).map(r => r.id)
