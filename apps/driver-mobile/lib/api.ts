@@ -9,12 +9,13 @@ export function getApiBaseUrl() {
   return process.env.EXPO_PUBLIC_API_BASE_URL ?? extra?.apiBaseUrl ?? fallbackBaseUrl
 }
 
-export async function apiGet<T>(path: string): Promise<T> {
+export async function apiGet<T>(path: string, signal?: AbortSignal): Promise<T> {
   const { data: sessionData } = await supabase.auth.getSession()
   const token = sessionData.session?.access_token
   if (!token) throw new Error('로그인이 필요합니다.')
 
   const res = await fetch(`${getApiBaseUrl()}${path}`, {
+    signal,
     headers: {
       Authorization: `Bearer ${token}`,
       'ngrok-skip-browser-warning': 'true',

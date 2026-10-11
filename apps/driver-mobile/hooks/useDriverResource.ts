@@ -9,16 +9,22 @@ export function useDriverResource<T>(path: string, title: string, pollMs = 0) {
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const resultRef = useRef(result)
+  resultRef.current = result
+  const controller = useRef<AbortController | null>(null)
   const generation = useRef(0)
   const request = useRef(0)
   const busy = useRef(false)
 
   const load = useCallback(async () => {
+    if (busy.current) return
     const current = generation.current
     const id = ++request.current
     busy.current = true
+    const abort = new AbortController()
+    controller.current = abort
     try {
-      const data = await apiGet<T>(path)
+      const data = await apiGet<T>(path, abort.signal)
       if (current === generation.current && id === request.current) {
         setResult({ path, data })
         setError(null)
@@ -40,17 +46,19 @@ export function useDriverResource<T>(path: string, title: string, pollMs = 0) {
   useFocusEffect(useCallback(() => {
     generation.current++
     busy.current = false
-    setLoading(true)
+    setLoading(resultRef.current?.path !== path)
     setError(null)
     void load().catch(e => Alert.alert(title, e.message))
     const subscription = AppState.addEventListener('change', state => {
-      if (state === 'active') void load().catch(() => undefined)
+      if (state === 'active' && !busy.current) void load().catch(() => undefined)
     })
     const timer = pollMs ? setInterval(() => {
       if (!busy.current && AppState.currentState === 'active') void load().catch(() => undefined)
     }, pollMs) : undefined
     return () => {
       generation.current++
+      controller.current?.abort()
+      busy.current = false
       subscription.remove()
       if (timer) clearInterval(timer)
     }
@@ -59,6 +67,7 @@ export function useDriverResource<T>(path: string, title: string, pollMs = 0) {
   const mutate = useCallback((update: (data: T) => T) => {
     // A GET started before a local confirmation must not overwrite that confirmation.
     request.current++
+    controller.current?.abort()
     busy.current = false
     setLoading(false)
     setRefreshing(false)
@@ -66,6 +75,7 @@ export function useDriverResource<T>(path: string, title: string, pollMs = 0) {
   }, [path])
 
   const refresh = useCallback(async () => {
+    if (busy.current) return
     setRefreshing(true)
     await load().catch(e => Alert.alert('새로고침 실패', e.message))
   }, [load])
