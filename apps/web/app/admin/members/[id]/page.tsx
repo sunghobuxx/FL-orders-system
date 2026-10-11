@@ -10,6 +10,7 @@ import DeleteMemberButton from '../DeleteMemberButton'
 import ProductSelectForm from '../ProductSelectForm'
 import MemberFormClient from './MemberFormClient'
 import ImpersonateButton from './ImpersonateButton'
+import RestaurantGarakOverrideForm from './RestaurantGarakOverrideForm'
 
 interface Props {
   params: Promise<{ id: string }>
@@ -63,6 +64,18 @@ export default async function MemberDetailPage({ params, searchParams }: Props) 
       .select('product_id')
       .eq('restaurant_id', rest.id)
     restaurantLinkedIds = new Set((rpLinks ?? []).map((r: { product_id: string }) => r.product_id))
+  }
+
+  // 식당별 가락 예외: 가락이 열려 있어도 이 식당만 특정 날짜는 남촌(기존)으로 보낸다
+  let garakOverrides: { business_date: string; note: string | null }[] = []
+  if (!isSupplier && rest) {
+    const { data } = await db
+      .from('restaurant_garak_overrides')
+      .select('business_date, note')
+      .eq('restaurant_id', rest.id)
+      .gte('business_date', new Date().toISOString().slice(0, 10))
+      .order('business_date')
+    garakOverrides = data ?? []
   }
 
   // entityId: 폼에서 hidden input으로 전달 (bind 불필요)
@@ -135,6 +148,21 @@ export default async function MemberDetailPage({ params, searchParams }: Props) 
               allProducts={(allProducts ?? []) as { id: string; standard_name: string; default_unit: string; category: string }[]}
               linkedIds={[...linkedIds]}
             />
+          </div>
+        )}
+
+        {/* 식당별 가락 예외: 가락이 열려 있어도 이 식당만 특정 날짜는 남촌(기존)으로 */}
+        {!isSupplier && rest && (
+          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <div className="px-5 py-3 bg-gray-50 border-b border-gray-200">
+              <h2 className="text-sm font-semibold text-gray-700">가락 대신 남촌 발주(임시)</h2>
+              <p className="text-xs text-gray-400 mt-0.5">
+                서울·일산이라 평소엔 가락으로 가는 식당도, 등록한 날짜만 이 식당 혼자 남촌(기존) 공급처로 보냅니다
+              </p>
+            </div>
+            <div className="px-5 py-4">
+              <RestaurantGarakOverrideForm restaurantId={rest.id} rows={garakOverrides} />
+            </div>
           </div>
         )}
       </div>

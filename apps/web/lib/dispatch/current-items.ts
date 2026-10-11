@@ -158,6 +158,15 @@ export async function getCurrentDispatchGroups(
     const restaurantIsSeoulMap: Record<string, boolean> = Object.fromEntries(
       (rRows ?? []).map((r: { id: string; organization_id: string }) => [r.id, orgIsSeoulMap[r.organization_id] ?? false])
     )
+
+    // 식당별 가락 예외: 가락시장이 열려 있어도, 이 식당만 이 날짜는 남촌(기존)으로 간다.
+    // 신규 지점이 가락 매입을 아직 못 시작했을 때 쓴다(2026-10-11, 화곡중앙시장점).
+    const { data: overrideRows } = await adminDb
+      .from('restaurant_garak_overrides').select('restaurant_id')
+      .eq('business_date', businessDate).in('restaurant_id', restaurantIds)
+    for (const o of (overrideRows ?? []) as Array<{ restaurant_id: string }>) {
+      restaurantIsSeoulMap[o.restaurant_id] = false
+    }
     const batchRestaurantMap: Record<string, string> = Object.fromEntries(
       (batches ?? []).map((b: { id: string; restaurant_id: string }) => [b.id, restaurantNameMap[b.restaurant_id] ?? ''])
     )

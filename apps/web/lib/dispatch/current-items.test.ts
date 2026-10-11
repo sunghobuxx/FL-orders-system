@@ -150,6 +150,16 @@ describe('getCurrentDispatchGroups — 발주 문자 3분류', () => {
     expect(r.garakItems.length).toBeGreaterThan(0)
   })
 
+  it('★ 식당별 가락 예외로 등록된 식당·날짜는 가락이 열려 있어도 혼자만 남촌(기존)으로 간다 (화곡중앙, 2026-10-11)', async () => {
+    const f = base({ restaurant_garak_overrides: [{ restaurant_id: 'rest-seoul', business_date: '2026-10-05' }] })
+    const r = await getCurrentDispatchGroups(f.db, '2026-10-05')
+    expect(r.garakItems).toEqual([])
+    expect(r.grouped['sup-common']?.map(i => i.id)).toEqual(['item-bean'])
+    // 양파는 남촌 연결이 없고 가락업체 뿐이라, 예외 상태에서도 가락업체 문자로는 간다(미배정 방지) —
+    // 다만 "가락 살 것 목록"(garakItems) 에는 더 이상 안 뜬다.
+    expect(r.grouped['sup-garak']?.map(i => i.id)).toEqual(['item-onion'])
+  })
+
   it('가락업체에 연결된 가락 품목은 가락업체 문자로 간다', async () => {
     const r = await getCurrentDispatchGroups(base().db, '2026-10-05')
     expect(r.grouped['sup-garak']?.map(i => i.id)).toEqual(['item-onion'])
