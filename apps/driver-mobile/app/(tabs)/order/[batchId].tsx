@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { Card, Loading, Muted, colors } from '../../../components'
 import { apiDelete, apiGet, apiPost } from '../../../lib/api'
-import { nextOrderCheckStage, orderCheckState } from '../../../lib/order-check'
+import { nextOrderCheckStage, orderCheckState, pendingOrderCheckIds, orderCheckPresentation } from '../../../lib/order-check'
 
 type DetailResponse = {
   canManage?: boolean
@@ -64,39 +64,48 @@ export default function OrderDetailScreen() {
   }, [load]))
 
   async function refresh() {
+    if (checkInFlight.current || saving) return
     setRefreshing(true)
     await load().catch((error) => Alert.alert('새로고침 실패', error.message))
     setRefreshing(false)
   }
 
-  async function toggle(itemId: string) {
-    if (!data || data.canManage === false || checkInFlight.current) return
-    const item = data.items.find(item => item.id === itemId)
-    if (!item) return
-    const stage = nextOrderCheckStage(data.batch.status, Number(item.check_stage ?? item.checkStage ?? 0))
-    if (stage === null) return
+  async function checkItems(itemIds: string[], stage: number) {
+    if (!data || data.canManage === false || checkInFlight.current || saving || !itemIds.length) return
+    const before = data
     checkInFlight.current = true
     ++loadVersion.current
-    setCheckingIds(prev => new Set(prev).add(itemId))
+    setCheckingIds(new Set(itemIds))
+    setData(current => current && ({ ...current, items: current.items.map(item => itemIds.includes(item.id) ? { ...item, check_stage: stage, checkStage: stage } : item) }))
     try {
-      await apiPost('/api/driver/orders/check-items', {
-        batchId: data.batch.id,
-        itemIds: [itemId],
-        stage,
-      })
-      await load(true)
+      const result = await apiPost<{ batchStatus: string }>('/api/driver/orders/check-items', { batchId: before.batch.id, itemIds, stage })
+      const labels: Record<string, string> = { open: '상차시작', submitted: '알림톡발송', validated: '당일발주', ordered: '배송중', dispatched: '배송완료', completed: '배송완료' }
+      setData(current => current && ({ ...current, batch: { ...current.batch, status: result.batchStatus, statusLabel: labels[result.batchStatus] ?? current.batch.statusLabel } }))
+    } catch (error) {
+      setData(before)
+      throw error
     } finally {
       checkInFlight.current = false
-      setCheckingIds(prev => {
-        const next = new Set(prev)
-        next.delete(itemId)
-        return next
-      })
+      setCheckingIds(new Set())
     }
   }
 
-  async function save() {
+  async function toggle(itemId: string) {
     if (!data) return
+    const item = data.items.find(item => item.id === itemId)
+    if (!item) return
+    const stage = nextOrderCheckStage(data.batch.status, Number(item.check_stage ?? item.checkStage ?? 0))
+    if (stage !== null) await checkItems([itemId], stage)
+  }
+
+  async function advanceStage() {
+    if (!data) return
+    await checkItems(pendingOrderCheckIds(data.batch.status, data.items), orderCheckState(data.batch.status).requiredStage)
+  }
+
+  async function save() {
+    if (!data || checkInFlight.current || saving) return
+    ++loadVersion.current
     setSaving(true)
     try {
       await apiPost('/api/driver/orders/items', {
@@ -148,6 +157,7 @@ export default function OrderDetailScreen() {
     .map(item => item.id))
   const total = data.items.length
   const confirmedCount = confirmed.size
+  const phase = orderCheckPresentation(data.batch.status)
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg, paddingTop: insets.top + 14, paddingHorizontal: 18 }}>
@@ -163,8 +173,8 @@ export default function OrderDetailScreen() {
           <Text numberOfLines={1} style={{ flex: 1, color: '#1F2937', fontSize: 15, fontWeight: '900', backgroundColor: '#F3F4F6', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8 }}>
             {data.batch.restaurantName}
           </Text>
-          <View style={{ backgroundColor: '#DBEAFE', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6 }}>
-            <Text style={{ color: '#1D4ED8', fontSize: 12, fontWeight: '900' }}>{data.batch.statusLabel}</Text>
+          <View style={{ backgroundColor: phase.background, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6 }}>
+            <Text style={{ color: phase.color, fontSize: 12, fontWeight: '900' }}>{data.batch.statusLabel}</Text>
           </View>
         </View>
 
@@ -206,14 +216,15 @@ export default function OrderDetailScreen() {
                   />
                   <Pressable
                     onPress={() => toggle(item.id).catch((error) => Alert.alert('확인 실패', error.message))}
-                    disabled={!canManage || isDone || checkingIds.size > 0}
-                    style={{ width: 56, alignItems: 'center', borderRadius: 8, paddingVertical: 9, backgroundColor: isConfirmed ? '#22C55E' : '#16A34A', opacity: isChecking ? 0.5 : 1 }}
+                    accessibilityRole="button" accessibilityState={{ checked: isConfirmed, busy: isChecking }}
+                    disabled={!canManage || isDone || saving || checkingIds.size > 0}
+                    style={{ width: 56, alignItems: 'center', borderRadius: 8, paddingVertical: 9, backgroundColor: isConfirmed ? '#22C55E' : '#16A34A', opacity: 1 }}
                   >
-                    <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '900' }}>{isChecking ? '처리 중' : isConfirmed ? '✓' : '확인'}</Text>
+                    <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '900' }}>{isConfirmed ? '✓' : '확인'}</Text>
                   </Pressable>
                 </View>
                 <View style={{ alignItems: 'flex-end' }}>
-                  <Pressable disabled={!canManage} style={{ display: canManage ? 'flex' : 'none' }} onPress={() => deleteItem(item.id, item.productName)}>
+                  <Pressable disabled={!canManage || saving || checkingIds.size > 0} style={{ display: canManage ? 'flex' : 'none' }} onPress={() => deleteItem(item.id, item.productName)}>
                     <Text style={{ color: '#EF4444', fontSize: 12, fontWeight: '800' }}>삭제</Text>
                   </Pressable>
                 </View>
@@ -224,28 +235,27 @@ export default function OrderDetailScreen() {
           <View style={{ marginTop: 10, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
             <Text style={{ color: '#64748B', fontSize: 12, fontWeight: '800' }}>{checkLabel}: {confirmedCount} / {total}</Text>
             <View style={{ flex: 1, height: 6, backgroundColor: '#E5E7EB', borderRadius: 999, overflow: 'hidden' }}>
-              <View style={{ width: total > 0 ? `${(confirmedCount / total) * 100}%` : '0%', height: 6, backgroundColor: '#22C55E' }} />
+              <View style={{ width: total > 0 ? `${(confirmedCount / total) * 100}%` : '0%', height: 6, backgroundColor: phase.color }} />
             </View>
           </View>
         </Card>
 
         <View style={{ display: canManage ? 'flex' : 'none', flexDirection: 'row', justifyContent: 'flex-end', gap: 10, marginBottom: 14 }}>
-          <Pressable onPress={save} disabled={!canManage || saving} style={{ backgroundColor: '#1F2937', borderRadius: 10, paddingHorizontal: 18, paddingVertical: 12, opacity: saving ? 0.5 : 1 }}>
+          <Pressable onPress={save} disabled={!canManage || saving || checkingIds.size > 0} style={{ backgroundColor: '#1F2937', borderRadius: 10, paddingHorizontal: 18, paddingVertical: 12, opacity: saving ? 0.5 : 1 }}>
             <Text style={{ color: '#FFFFFF', fontWeight: '900' }}>{saving ? '저장 중...' : '수정 저장'}</Text>
           </Pressable>
         </View>
 
-        <View style={{ alignItems: 'flex-end' }}>
-          {isDone ? (
-            <View style={{ borderRadius: 10, borderWidth: 1, borderColor: '#BBF7D0', backgroundColor: '#F0FDF4', paddingHorizontal: 18, paddingVertical: 12 }}>
-              <Text style={{ color: '#16A34A', fontWeight: '900' }}>배송완료 처리됨</Text>
-            </View>
-          ) : (
-            <View style={{ borderRadius: 10, borderWidth: 1, borderColor: '#D1D5DB', paddingHorizontal: 18, paddingVertical: 12 }}>
-              <Text style={{ color: '#94A3B8', fontWeight: '900' }}>{checkLabel} ({confirmedCount}/{total}) · 모두 확인 시 {requiredStage === 1 ? '배송중' : '배송완료'}</Text>
-            </View>
-          )}
-        </View>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ disabled: !canManage || isDone || !total || saving || checkingIds.size > 0, busy: checkingIds.size > 0 }}
+          disabled={!canManage || isDone || !total || saving || checkingIds.size > 0}
+          onPress={() => void advanceStage().catch(error => Alert.alert('단계 변경 실패', error.message))}
+          style={{ borderRadius: 12, borderWidth: 1, borderColor: phase.color, backgroundColor: phase.background, padding: 16, alignItems: 'center', gap: 5 }}
+        >
+          <Text style={{ color: phase.color, fontSize: 16, fontWeight: '900' }}>{phase.text}{!isDone ? ` (${confirmedCount}/${total})` : ''}</Text>
+          {!isDone && <Text style={{ color: phase.color, fontSize: 12 }}>{canManage ? `누르면 전체 확인 후 ${phase.next}으로 전환` : '담당자만 변경할 수 있습니다.'}</Text>}
+        </Pressable>
       </ScrollView>
     </View>
   )

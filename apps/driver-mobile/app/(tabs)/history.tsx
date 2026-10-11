@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { Alert, Pressable, RefreshControl, ScrollView, Text, View } from 'react-native'
-import { Card, Empty, Loading, Muted, Page, Pill, colors } from '../../components'
+import { Card, Empty, Loading, Muted, Page, colors } from '../../components'
 import { DateSelector } from '../../components/DateSelector'
 import { useDriverResource } from '../../hooks/useDriverResource'
 import { apiPost } from '../../lib/api'
@@ -48,14 +48,29 @@ export default function HistoryScreen() {
     const checked = state.checked
     const pending = checking.has(row.orderItemId)
     const disabled = pending || state.disabled || !row.canManage || !row.batchId || row.excluded
-    return <View key={row.orderItemId} style={{ paddingVertical: 10, borderTopWidth: 1, borderTopColor: colors.line, gap: 6 }}>
-      <Text style={{ color: colors.ink, fontWeight: '800' }}>{row.name} · {row.restaurantName || '업체 미확인'}</Text>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-        <Text style={{ flex: 1, color: colors.muted }}>{row.qty}{row.unit}{row.unitPrice > 0 ? ` · 단가 ${fmtWon(row.unitPrice)}` : ''}{row.excluded ? ' · 발주 제외' : ''}</Text>
-        <Pressable accessibilityRole="button" accessibilityState={{ checked, busy: pending, disabled: !!disabled }} disabled={!!disabled} onPress={() => void toggle(row, source)} style={{ minHeight: 44, justifyContent: 'center', paddingHorizontal: 12, borderRadius: 8, backgroundColor: checked ? '#DCFCE7' : colors.green, opacity: disabled && !pending ? 0.55 : 1 }}>
-          <Text style={{ fontWeight: '800', color: checked ? '#166534' : 'white' }}>{!row.canManage ? '조회 전용' : state.label}</Text>
-        </Pressable>
+    return <View key={row.orderItemId} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingLeft: 4, marginTop: 6 }}>
+      <Text style={{ flex: 1, color: '#6B7280', fontSize: 13 }}>{row.restaurantName || '업체 미확인'}{row.excluded ? ' · 발주 제외' : ''}</Text>
+      <Text style={{ color: '#6B7280', fontSize: 13 }}>{row.qty} {row.unit}</Text>
+      <Pressable accessibilityRole="button" accessibilityLabel={`${row.restaurantName} ${row.name} ${state.label}`} accessibilityState={{ checked, busy: pending, disabled: !!disabled }} disabled={!!disabled} onPress={() => void toggle(row, source)} style={{ minWidth: 64, minHeight: 44, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10, borderRadius: 8, backgroundColor: checked ? '#22C55E' : '#16A34A', opacity: disabled && !pending ? 0.55 : 1 }}>
+        <Text style={{ fontWeight: '700', fontSize: 13, color: 'white' }}>{!row.canManage ? '조회 전용' : row.excluded ? '제외' : state.label}</Text>
+      </Pressable>
+    </View>
+  }
+
+  function supplierCard(supplier: { supplierId: string; supplierName: string; lines: Array<{ key?: string; name: string; qtyText?: string; qty?: number; unit: string; rows: DispatchRow[] }> }, source: 'garak' | 'suppliers', badge: string) {
+    const garak = source === 'garak'
+    return <View key={supplier.supplierId} style={{ backgroundColor: 'white', borderRadius: 12, borderWidth: 1, borderColor: garak ? '#FDE68A' : '#E5E7EB', overflow: 'hidden', marginTop: 8 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 20, paddingVertical: 12, backgroundColor: garak ? '#FFFBEB' : '#EFF6FF', borderBottomWidth: 1, borderBottomColor: garak ? '#FEF3C7' : '#DBEAFE' }}>
+        <Text style={{ flex: 1, fontSize: 15, fontWeight: '700', color: garak ? '#92400E' : '#1E40AF' }}>{supplier.supplierName}</Text>
+        <View style={{ borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5, backgroundColor: garak ? '#FEF3C7' : '#DBEAFE' }}><Text style={{ fontSize: 12, fontWeight: '600', color: garak ? '#B45309' : '#1D4ED8' }}>{badge}</Text></View>
       </View>
+      {supplier.lines.map((line, index) => <View key={line.key || `${line.name}-${line.unit}-${index}`} style={{ paddingHorizontal: 20, paddingVertical: 10, borderTopWidth: index ? 1 : 0, borderTopColor: '#F3F4F6' }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 2 }}>
+          <Text style={{ flex: 1, fontSize: 15, fontWeight: '600', color: '#1F2937' }}>{line.name}</Text>
+          <Text style={{ fontSize: 15, color: '#4B5563' }}>{line.qtyText ?? `${Number((line.qty ?? 0).toFixed(2))} ${line.unit}`}</Text>
+        </View>
+        {line.rows.map(row => itemRow(row, source))}
+      </View>)}
     </View>
   }
 
@@ -73,16 +88,10 @@ export default function HistoryScreen() {
         {!data.totals.length ? <Empty message="이 날짜의 발주가 없습니다." /> : <Card>{data.totals.map(i => <View key={`${i.productId}-${i.unit}`} style={{ paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.line, gap: 4 }}><Text style={{ fontWeight: '800' }}>{i.name} · {i.qtyText}</Text><Muted>{fmtWon(i.amount)}</Muted></View>)}</Card>}
       </> : tab === 'garak' ? <>
         <Muted>가락 매입 (서울·일산) — 발주 문자 없음</Muted>
-        {!data.garakItems?.length ? <Empty message="가락 매입 품목이 없습니다." /> : groupGarakRows(data.garakItems).map(supplier => <Card key={supplier.supplierId}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}><Text style={{ flex: 1, fontWeight: '900', color: '#1E40AF' }}>{supplier.supplierName}</Text><Pill tone="gray">발주 문자 없음</Pill></View>
-          {supplier.lines.map(line => <View key={line.key} style={{ marginTop: 12 }}><Text style={{ fontWeight: '800' }}>{line.name} · {Number(line.qty.toFixed(2))} {line.unit}</Text>{line.rows.map(row => itemRow(row, 'garak'))}</View>)}
-        </Card>)}
+        {!data.garakItems?.length ? <Empty message="가락 매입 품목이 없습니다." /> : groupGarakRows(data.garakItems).map(supplier => supplierCard(supplier, 'garak', '발주 문자 없음'))}
       </> : <>
         <Muted>남촌 공급처별 발주 내역</Muted>
-        {!data.suppliers.length ? <Empty message="남촌 공급처 발주가 없습니다." /> : data.suppliers.map(supplier => <Card key={supplier.supplierId}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}><Text style={{ flex: 1, fontWeight: '900', color: '#1E40AF' }}>{supplier.supplierName}</Text><Pill tone={supplier.sent ? 'green' : 'gray'}>{supplier.autoDispatchExcluded ? '자동발송 제외' : supplier.sent ? '전송완료' : '전송대기'}</Pill></View>
-          {supplier.lines.map((line, i) => <View key={`${line.name}-${line.unit}-${i}`} style={{ marginTop: 12 }}><Text style={{ fontWeight: '800' }}>{line.name} · {line.qtyText}</Text>{line.rows.map(row => itemRow(row, 'suppliers'))}</View>)}
-        </Card>)}
+        {!data.suppliers.length ? <Empty message="남촌 공급처 발주가 없습니다." /> : data.suppliers.map(supplier => supplierCard(supplier, 'suppliers', supplier.autoDispatchExcluded ? '자동발송 제외' : supplier.sent ? '전송완료' : '전송대기'))}
       </>}
       {tab !== 'garak' && data.unmappedItems.length ? <Card><Text style={{ fontWeight: '800', color: '#C2410C' }}>공급처 미배정 품목</Text>{data.unmappedItems.map((i, index) => <Muted key={index}>{i.name} · {i.qtyText}</Muted>)}</Card> : null}
     </>}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { nextOrderCheckStage, orderCheckState } from '../../driver-mobile/lib/order-check'
+import { nextOrderCheckStage, orderCheckState, pendingOrderCheckIds, orderCheckPresentation } from '../../driver-mobile/lib/order-check'
 
 describe('driver order confirmation stages', () => {
   it('confirms loading first and starts delivery confirmation from zero', () => {
@@ -19,5 +19,26 @@ describe('driver order confirmation stages', () => {
       expect(orderCheckState(status)).toMatchObject({ done: true, requiredStage: 2 })
       expect(nextOrderCheckStage(status, 2)).toBeNull()
     }
+  })
+})
+
+describe('bulk confirmation and visible process state', () => {
+  it('completes only the current step without lowering checks already ahead', () => {
+    const items = [{ id: 'a', check_stage: 0 }, { id: 'b', check_stage: 1 }, { id: 'c', checkStage: 2 }]
+    expect(pendingOrderCheckIds('validated', items)).toEqual(['a'])
+    expect(pendingOrderCheckIds('ordered', items)).toEqual(['a', 'b'])
+    expect(pendingOrderCheckIds('dispatched', items)).toEqual([])
+    expect(pendingOrderCheckIds('completed', items)).toEqual([])
+    expect(pendingOrderCheckIds('validated', [])).toEqual([])
+  })
+  it('gives loading, delivery and completion distinct labels and colors', () => {
+    const loading = orderCheckPresentation('validated')
+    const delivery = orderCheckPresentation('ordered')
+    const done = orderCheckPresentation('dispatched')
+    expect(loading.next).toBe('배송중')
+    expect(delivery.text).toContain('상차 완료')
+    expect(delivery.next).toBe('배송완료')
+    expect(done.text).toBe('배송완료')
+    expect(new Set([loading.color, delivery.color, done.color]).size).toBe(3)
   })
 })
