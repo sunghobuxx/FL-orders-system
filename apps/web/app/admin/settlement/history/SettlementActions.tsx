@@ -35,6 +35,7 @@ export function PeriodForm() {
         >
           <option value="weekly">주정산</option>
           <option value="monthly">월정산</option>
+          <option value="semimonthly">반월정산</option>
         </select>
       </div>
       <div className="flex flex-col gap-1">

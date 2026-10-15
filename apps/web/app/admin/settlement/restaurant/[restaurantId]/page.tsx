@@ -14,10 +14,15 @@ function getPeriodLabel(period: { period_type: string; start_date: string } | nu
   if (!period) return '-'
   const [, monthStr, dayStr] = period.start_date.split('-')
   const month = Number(monthStr)
-  const week = Math.ceil(Number(dayStr) / 7)
-  return period.period_type === 'weekly'
-    ? `${month}월 ${week}주/${month}월`
-    : `${month}월`
+  const day = Number(dayStr)
+  if (period.period_type === 'weekly') {
+    const week = Math.ceil(day / 7)
+    return `${month}월 ${week}주/${month}월`
+  }
+  if (period.period_type === 'semimonthly') {
+    return `${month}월 ${day <= 15 ? '1~15일' : '16일~말일'}/${month}월`
+  }
+  return `${month}월`
 }
 
 export default async function AdminSettlementRestaurantPage({ params }: Props) {

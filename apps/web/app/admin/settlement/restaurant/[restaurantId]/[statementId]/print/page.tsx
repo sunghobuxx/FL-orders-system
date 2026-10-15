@@ -77,6 +77,8 @@ export default async function AdminStatementPrintPage({ params }: Props) {
   const endDay   = period ? Number(period.end_date.split('-')[2]) : 0
   const printTitle = period?.period_type === 'monthly'
     ? `${pMon}월 발주 정산서`
+    : period?.period_type === 'semimonthly'
+    ? `${pMon}월 ${pDay <= 15 ? '1~15일' : '16일~말일'} 발주 정산서`
     : `${pMon}월 ${weekNum}주 발주 정산서`
   const printDate = period ? `${pYear}.${pMon}.${endDay}` : ''
 

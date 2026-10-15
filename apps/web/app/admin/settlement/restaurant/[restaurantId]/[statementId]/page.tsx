@@ -79,7 +79,9 @@ export default async function AdminSettlementStatementPage({ params }: Props) {
   const pMon = period ? Number(period.start_date.split('-')[1]) : 0
   const pDay = period ? Number(period.start_date.split('-')[2]) : 0
   const weekNum = Math.ceil(pDay / 7)
-  const printTitle = period?.period_type === 'weekly' ? `${pMon}월 ${weekNum}주 발주 정산서` : `${pMon}월 발주 정산서`
+  const printTitle = period?.period_type === 'weekly' ? `${pMon}월 ${weekNum}주 발주 정산서`
+    : period?.period_type === 'semimonthly' ? `${pMon}월 ${pDay <= 15 ? '1~15일' : '16일~말일'} 발주 정산서`
+    : `${pMon}월 발주 정산서`
   const printDate = period ? `${pYear}.${pMon}.${Number(period.end_date.split('-')[2])}` : ''
 
   return (

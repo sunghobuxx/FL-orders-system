@@ -144,6 +144,9 @@ export default function ConfirmPanel({ rows, cycle, today, periods, selectedPeri
           <Link href="/admin/settlement/confirm?cycle=monthly" className={tabClass(cycle === 'monthly')}>
             월정산
           </Link>
+          <Link href="/admin/settlement/confirm?cycle=semimonthly" className={tabClass(cycle === 'semimonthly')}>
+            반월정산
+          </Link>
         </div>
         {periods.length === 0 ? (
           <p className="text-sm text-gray-400">마감된 기간이 없습니다</p>
@@ -216,7 +219,7 @@ export default function ConfirmPanel({ rows, cycle, today, periods, selectedPeri
 
       <div className="flex items-center justify-between">
         <div className="text-sm text-gray-500">
-          {cycle === 'weekly' ? '주정산' : '월정산'} {rows.length}곳 · 미확정 {pending.length}곳
+          {cycle === 'weekly' ? '주정산' : cycle === 'semimonthly' ? '반월정산' : '월정산'} {rows.length}곳 · 미확정 {pending.length}곳
         </div>
         <div className="flex items-center gap-2">
           {msg && <span className="text-sm text-gray-600">{msg}</span>}

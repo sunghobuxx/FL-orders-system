@@ -75,7 +75,7 @@ export default async function SettlementConfirmPage({ searchParams }: Props) {
 
   // 일정산은 여기 두지 않는다. 매일 보내면 월 30통이라 문자 대상이 아니고,
   // 목록에 섞이면 이번 주 넘길 것을 고르는 데 방해만 된다.
-  const cycle = cycleParam === 'monthly' ? 'monthly' : 'weekly'
+  const cycle = ['monthly', 'semimonthly'].includes(cycleParam ?? '') ? cycleParam! : 'weekly'
 
   // 마감된 기간 목록. 어느 주를 고를지는 여기서 정한다.
   const closedPeriods = await fetchAll<{ id: string; start_date: string; end_date: string }>(() => db
