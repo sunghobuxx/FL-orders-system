@@ -16,7 +16,7 @@
 import { isConfirmed } from '@/lib/settlement/confirm'
 import { selectSpecsForStatement } from '@/lib/settlement/spec-selection'
 
-export type Cycle = 'daily' | 'weekly' | 'monthly'
+export type Cycle = 'daily' | 'weekly' | 'monthly' | 'semimonthly'
 
 /**
  * 해당 영업일이 속한 정산 기간. weekly 는 일요일 시작(일~토).
@@ -24,6 +24,8 @@ export type Cycle = 'daily' | 'weekly' | 'monthly'
  * 예전에는 월~일 이었는데, 정산을 토요일에 하기 때문에 토요일에는 그 주가 아직
  * 끝나지 않아 정산할 수 없었다. 일요일 배송은 두 달간 3건뿐이라 토요일이 사실상
  * 마지막 영업일이다. 그래서 마감을 토요일로 옮긴다(2026-08-01 결정).
+ *
+ * semimonthly 는 반월정산 — 매달 1~15일, 16일~말일 두 구간(인계점, 2026-10-15 도입).
  */
 export function periodRangeFor(cycle: Cycle, businessDate: string): { start: string; end: string } {
   const d = new Date(`${businessDate}T00:00:00Z`)
@@ -37,6 +39,15 @@ export function periodRangeFor(cycle: Cycle, businessDate: string): { start: str
     const end = new Date(start)
     end.setUTCDate(start.getUTCDate() + 6)
     return { start: iso(start), end: iso(end) }
+  }
+  if (cycle === 'semimonthly') {
+    const day = d.getUTCDate()
+    const year = d.getUTCFullYear()
+    const month = d.getUTCMonth()
+    if (day <= 15) {
+      return { start: iso(new Date(Date.UTC(year, month, 1))), end: iso(new Date(Date.UTC(year, month, 15))) }
+    }
+    return { start: iso(new Date(Date.UTC(year, month, 16))), end: iso(new Date(Date.UTC(year, month + 1, 0))) }
   }
   const start = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1))
   const end = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0))

@@ -11,7 +11,7 @@ import { getCarryover } from '@/lib/settlement/carryover'
  * 그래서 템플릿 승인 전에는 문자로 나가다가 승인일에 ID 만 넣으면 알림톡이 된다.
  */
 
-export type Cycle = 'daily' | 'weekly' | 'monthly'
+export type Cycle = 'daily' | 'weekly' | 'monthly' | 'semimonthly'
 export type Channel = 'push' | 'kakao' | 'sms' | 'skip-daily' | 'no-contact'
 
 export interface NotifyTarget {
