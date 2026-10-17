@@ -81,15 +81,30 @@ export async function POST(req: NextRequest) {
   }
 
   if (productIds.length > 0) {
-    const { data: spRows } = await adminDb
+    const { data: rawSpRows } = await adminDb
       .from('supplier_products')
-      .select('id, product_id, updated_at')
+      .select('id, product_id, supplier_id, updated_at')
       .in('product_id', productIds)
       .eq('status', 'active')
       .order('updated_at', { ascending: false })
 
+    // 가락업체는 발주서의 "연결 공급처"로 쓰지 않는다. updated_at 만 보고 고르면
+    // 가락 쪽이 더 최근이라는 이유만으로 뽑혀서, 명세서 단가는 남촌으로 맞게 나가는데
+    // 발주서엔 가락업체·가락 단가가 붙어 있었다 (2026-10-17 역곡점 청양고추).
+    // 남촌 연결이 아예 없는 품목은 그대로 가락으로 둔다 — 미배정보다는 낫다.
+    const spSupplierIds = [...new Set((rawSpRows ?? []).map(r => r.supplier_id))]
+    const { data: spGroupRows } = spSupplierIds.length
+      ? await adminDb.from('suppliers').select('id, dispatch_group').in('id', spSupplierIds)
+      : { data: [] as { id: string; dispatch_group: string | null }[] }
+    const garakSupplierIds = new Set(
+      (spGroupRows ?? []).filter(g => g.dispatch_group === 'garak').map(g => g.id))
+
     const productToSp: Record<string, string> = {}
-    for (const sp of spRows ?? []) {
+    for (const sp of rawSpRows ?? []) {
+      if (garakSupplierIds.has(sp.supplier_id)) continue
+      if (!productToSp[sp.product_id]) productToSp[sp.product_id] = sp.id
+    }
+    for (const sp of rawSpRows ?? []) {
       if (!productToSp[sp.product_id]) productToSp[sp.product_id] = sp.id
     }
 
