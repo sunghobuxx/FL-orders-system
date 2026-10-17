@@ -13,6 +13,7 @@ function setup(opts: {
   salePrice?: number | null
   address?: string | null
   orgPrice?: number
+  excluded?: boolean
 }) {
   const { db, writes } = fakeDb({
     order_items: [{ id: 'oi-garak', product_id: P, qty: 1, unit: 'box' }],
@@ -25,6 +26,7 @@ function setup(opts: {
     garak_allocations: opts.allocated ? [{ id: 'a1', order_item_id: 'oi-garak', product_id: P }] : [],
     garak_purchases: [{ product_id: P, unit: opts.purchaseUnit ?? 'box', sale_price: opts.salePrice === undefined ? 25000 : opts.salePrice }],
     org_product_prices: opts.orgPrice !== undefined ? [{ organization_id: 'org1', product_id: P, unit_price: opts.orgPrice }] : [],
+    dispatch_job_items: opts.excluded ? [{ id: 'dji1', order_item_id: 'oi-garak', is_excluded: true }] : [],
   })
   return { db, writes }
 }
@@ -83,5 +85,33 @@ describe('syncSpecFromOrders — 배정 없어도 비서울 식당은 기존 단
     const { db, writes } = setup({ allocated: false, address: null })
     await run(db)
     expect(savedLines(writes)[0].unit_price).toBe(25000)
+  })
+})
+
+describe('syncSpecFromOrders — 발주 문자에서 뺀(「빠짐」) 줄도 가락 단가를 쓴다 (2026-10-17)', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('★ 남촌 단가가 있어도, 문자에서 뺀 줄이면 가락 단가(25,000)로 덮는다', async () => {
+    const { db, writes } = setup({
+      allocated: false, address: '경기 부천시 원미구', orgPrice: 12000, excluded: true,
+    })
+    await run(db)
+    // price_overridden 은 업체 고정단가(org_product_prices) 존재 여부를 따르는 별개 플래그다 —
+    // 여기서는 가락 단가(25,000)로 덮였는지만 본다.
+    expect(savedLines(writes)[0]).toMatchObject({ order_item_id: 'oi-garak', unit_price: 25000 })
+  })
+
+  it('서울 식당이라도 문자에서 뺀 줄이면 가락 단가를 쓴다', async () => {
+    const { db, writes } = setup({ allocated: false, address: '서울 송파구 가락동', excluded: true })
+    await run(db)
+    expect(savedLines(writes)[0].unit_price).toBe(25000)
+  })
+
+  it('빼지 않은 줄은 그대로 남촌 단가를 쓴다', async () => {
+    const { db, writes } = setup({
+      allocated: false, address: '경기 부천시 원미구', orgPrice: 12000, excluded: false,
+    })
+    await run(db)
+    expect(savedLines(writes)[0].unit_price).toBe(12000)
   })
 })

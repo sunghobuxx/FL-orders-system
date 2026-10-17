@@ -256,6 +256,18 @@ export async function syncSpecFromOrders(
     .from('garak_allocations').select('order_item_id')
     .eq('business_date', businessDate).in('product_id', productIds)
   const allocatedItemIds = new Set((allocRows ?? []).map((a: { order_item_id: string }) => a.order_item_id))
+
+  // 발주 문자에서 수량을 뺀(「빠짐」) 줄도 가락 단가를 쓴다. 남촌 공급처 문자에는 안 보내고
+  // 사장님이 가락에서 직접 사다 주는 경우라, 문자만 빼고 청구는 그대로 남촌 단가로 나가면
+  // 안 된다(2026-10-17). DispatchQtyEditor 에서 수량을 0 으로 넣으면
+  // dispatch_job_items.is_excluded 가 선다 — order_items 자체는 안 건드린다.
+  const itemIds = (items as Array<{ id: string }>).map(i => i.id)
+  const { data: excludedRows } = itemIds.length
+    ? await adminDb
+        .from('dispatch_job_items').select('order_item_id')
+        .in('order_item_id', itemIds).eq('is_excluded', true)
+    : { data: [] as { order_item_id: string }[] }
+  const excludedItemIds = new Set((excludedRows ?? []).map((r: { order_item_id: string }) => r.order_item_id))
   // 배정 여부와 상관없이 가져온다 — 비서울 식당이 기존 단가가 없을 때의 대체 단가로도 쓴다(아래).
   const { data: garakRows } = productIds.length
     ? await adminDb.from('garak_purchases').select('product_id, unit, sale_price')
@@ -314,11 +326,12 @@ export async function syncSpecFromOrders(
       if (kept) return keptSpecLine(kept, item, Boolean(taxable.get(item.product_id)))
       const enteredPrice = priceMap[item.product_id]
       const hasEnteredPrice = enteredPrice !== undefined
-      // 단가 우선순위: 가락 배정 줄(기존, 최우선) → 기존 업체 단가 → 비서울 식당이고 기존 단가가
-      // 전혀 없으면 가락 매입 단가(2026-10-09, 깻잎·상추처럼 기존 거래처엔 당일 단가가 없고
-      // 가락에만 있는 품목이 0원으로 나가던 것을 막는다). 서울·일산은 건드리지 않는다 —
-      // 거기는 가락 살 것 목록으로 따로 가서 이 함수가 매기는 단가를 쓰지 않는다.
-      const garakPrice = allocatedItemIds.has(item.id) || (nonSeoulRestaurant && !hasEnteredPrice)
+      // 단가 우선순위: 가락 배정 줄·발주 문자에서 뺀 줄(「빠짐」, 최우선) → 기존 업체 단가 →
+      // 비서울 식당이고 기존 단가가 전혀 없으면 가락 매입 단가(2026-10-09, 깻잎·상추처럼
+      // 기존 거래처엔 당일 단가가 없고 가락에만 있는 품목이 0원으로 나가던 것을 막는다).
+      // 서울·일산은 건드리지 않는다 — 거기는 가락 살 것 목록으로 따로 가서 이 함수가
+      // 매기는 단가를 쓰지 않는다.
+      const garakPrice = allocatedItemIds.has(item.id) || excludedItemIds.has(item.id) || (nonSeoulRestaurant && !hasEnteredPrice)
         ? pickGarakSalePrice(garakByProduct.get(item.product_id) ?? [], item.unit, normalizeUnit)
         : null
       const entered = enteredPrice ?? 0
