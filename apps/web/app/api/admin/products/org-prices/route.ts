@@ -38,6 +38,26 @@ export async function POST(req: NextRequest) {
 
   const restaurantIds = restaurants.map((r: { id: string }) => r.id)
 
+  // 발주서 자체(order_items)의 단가도 같이 맞춘다. 명세서만 고치면, 이미 넣어둔
+  // 발주의 미리보기 가격은 옛 가격에 멈춰 있다 — 방금 발주한 뒤 바로 고정단가를
+  // 등록하면 발주서엔 계속 옛 단가가 보였다(2026-10-17 월미당 주안 숙주).
+  const { data: batches } = await db
+    .from('order_batches').select('id')
+    .in('restaurant_id', restaurantIds)
+    .gte('business_date', today)
+  if (batches?.length) {
+    const { data: orders } = await db
+      .from('orders').select('id').in('batch_id', batches.map((b: { id: string }) => b.id))
+    const orderIds = (orders ?? []).map((o: { id: string }) => o.id)
+    if (orderIds.length) {
+      await db
+        .from('order_items')
+        .update({ unit_price_snapshot: unitPrice })
+        .in('order_id', orderIds)
+        .eq('product_id', productId)
+    }
+  }
+
   const { data: specs } = await db
     .from('daily_specs').select('id')
     .in('restaurant_id', restaurantIds)
