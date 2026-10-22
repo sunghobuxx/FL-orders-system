@@ -10,6 +10,10 @@ import MarketPriceSection from './MarketPriceSection'
 import AdminSettlementShell from '@/app/admin/settlement/AdminSettlementShell'
 import { getKstToday } from '@/lib/date-kst'
 
+// 실제 거래처가 아닌 데모/테스트용 계정. 매출·매입·미수금 통계에 섞이면 안 된다
+// (2026-08-19 "테스트식당" 미수금 1,962,500원이 대시보드 총액을 부풀린 전례가 있다).
+const TEST_RESTAURANT_IDS = ['7306bb64-4596-4a5e-92ab-6e9dd9395238']
+
 function getMonthBounds(month: string) {
   const [y, m] = month.split('-').map(Number)
   const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate()
@@ -59,12 +63,13 @@ async function getTotalPurchase(db: ReturnType<typeof createAdminClient>, from: 
   // id 목록을 실어 보낼 일이 없다.
   const lines = await fetchAll<{
     product_id: string; qty: number; amount: number; unit: string | null
-    daily_specs: { business_date: string } | null
+    daily_specs: { business_date: string; restaurant_id: string } | null
   }>(() => db
     .from('daily_spec_lines')
-    .select('product_id, qty, amount, unit, daily_specs!inner(business_date)')
+    .select('product_id, qty, amount, unit, daily_specs!inner(business_date, restaurant_id)')
     .gte('daily_specs.business_date', from)
-    .lte('daily_specs.business_date', to))
+    .lte('daily_specs.business_date', to)
+    .not('daily_specs.restaurant_id', 'in', `(${TEST_RESTAURANT_IDS.join(',')})`))
 
   if (!lines.length) {
     return { total: 0, matchedSales: 0, missingCostCount: 0, missingCostSales: 0 }
@@ -150,14 +155,18 @@ export default async function AdminSalesPage({ searchParams }: Props) {
     fetchAll(() => db.from('daily_specs')
       .select('id, business_date, total_amount, restaurants(organizations(name))')
       .gte('business_date', from)
-      .lte('business_date', to)),
+      .lte('business_date', to)
+      .not('restaurant_id', 'in', `(${TEST_RESTAURANT_IDS.join(',')})`)),
     getTotalPurchase(db, from, to),
     fetchAll<{ total_amount: number }>(() => db.from('daily_specs')
       .select('total_amount')
       .gte('business_date', prevFrom)
-      .lte('business_date', prevTo)),
+      .lte('business_date', prevTo)
+      .not('restaurant_id', 'in', `(${TEST_RESTAURANT_IDS.join(',')})`)),
     getTotalPurchase(db, prevFrom, prevTo),
-    fetchAll<{ balance: number }>(() => db.from('receivables').select('balance').in('status', ['unpaid', 'partial', 'overdue'])),
+    fetchAll<{ balance: number }>(() => db.from('receivables').select('balance')
+      .in('status', ['unpaid', 'partial', 'overdue'])
+      .not('restaurant_id', 'in', `(${TEST_RESTAURANT_IDS.join(',')})`)),
     fetchAll<{ balance: number }>(() => db.from('payables' as 'receivables').select('balance').in('status', ['unpaid', 'partial', 'overdue'])),
   ])
 
