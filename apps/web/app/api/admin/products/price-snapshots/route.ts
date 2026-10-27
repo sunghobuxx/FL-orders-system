@@ -32,27 +32,6 @@ export async function POST(req: Request) {
 
     const adminDb = createAdminClient()
 
-    // 가락업체 단가는 발주서·명세서에 자동으로 안 번진다.
-    //
-    // 명세서 단가는 남촌(기존) 공급처 것만 쓰고, 가락 단가는 배정(garak_allocations)·
-    // 문자에서 뺀 줄(dispatch_job_items.is_excluded)·비서울 식당의 남촌 단가 없음, 이
-    // 세 경우에만 쓴다 — 그것도 price_snapshots 가 아니라 garak_purchases 값을 쓴다
-    // (lib/specs/sync.ts). 그런데 이 라우트는 품목 ID만 보고 전부 덮어써서, 가락업체
-    // 단가를 등록하면 그 품목을 쓰는 모든 식당 명세서가 가락 단가로 밀려버렸다
-    // (2026-10-27 양파·양배추 — 서울 식당까지 가락 단가가 붙어 최대 6,000원 오청구).
-    // 가락업체 단가는 여기서 price_snapshots 에 기록만 하고, 발주서·명세서 자동 갱신은
-    // 건너뛴다. 이미 만들어진 가락 배정 줄을 바꾸려면 "단가 재계산"을 쓴다.
-    const { data: supplierRow } = await adminDb
-      .from('supplier_products')
-      .select('suppliers(dispatch_group)')
-      .eq('id', body.supplierProductId)
-      .maybeSingle()
-    const supplierGroup = (Array.isArray(supplierRow?.suppliers) ? supplierRow?.suppliers[0] : supplierRow?.suppliers)
-      ?.dispatch_group as string | undefined
-    if (supplierGroup === 'garak') {
-      return Response.json({ ok: true, skippedCascade: 'garak' })
-    }
-
     // 단위가 둘 이상인 품목은 **등록한 단위의 줄만** 고친다.
     // 품목만 보고 덮으면 양파 bag 단가가 kg 발주에 붙는다 (2026-09-07, 315,000원 과다).
     const { data: productRow } = await adminDb
