@@ -8,6 +8,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { AdminSpecPrintButton } from '@/app/admin/settlement/AdminPrintButtons'
 import AdminSettlementShell from '@/app/admin/settlement/AdminSettlementShell'
 import { RecalcButton, RegenFromOrderButton } from '@/app/admin/settlement/specs/RecalcButton'
+import { SendSmsButton } from '@/app/admin/settlement/specs/SendSmsButton'
 import SpecEditPanel from './SpecEditPanel'
 
 interface Props { params: Promise<{ specId: string }> }
@@ -20,7 +21,7 @@ export default async function AdminSpecDetailPage({ params }: Props) {
 
   const { data: spec } = await db
     .from('daily_specs')
-    .select('id, business_date, total_amount, vat_amount, restaurants(organizations(name))')
+    .select('id, business_date, total_amount, vat_amount, notified_at, restaurants(organizations(name))')
     .eq('id', specId)
     .single()
 
@@ -73,6 +74,7 @@ export default async function AdminSpecDetailPage({ params }: Props) {
             <RegenFromOrderButton businessDate={spec.business_date} />
           </div>
           <div className="flex items-center gap-3">
+            <SendSmsButton specId={specId} notifiedAt={spec.notified_at} />
             <AdminSpecPrintButton specId={specId} />
             <Link
               href="/admin/settlement/specs"
