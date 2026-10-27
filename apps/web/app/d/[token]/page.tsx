@@ -106,7 +106,8 @@ export default async function SharedSpecPage({ params }: Props) {
         <PrintButton />
 
         <p className="px-1 text-center text-xs text-gray-400 print:hidden">
-          이 링크는 발송일로부터 7일간 볼 수 있습니다.
+          이 링크는 발송일로부터 7일간 볼 수 있습니다. 이후에도 명세서가 필요하시면
+          010-8680-5475 로 연락 주세요 — 출력해서 보내드립니다.
         </p>
       </div>
     </main>
