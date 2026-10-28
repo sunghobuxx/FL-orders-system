@@ -11,6 +11,7 @@ interface Snapshot {
   purchase_price: number
   unit: string
   effective_from: string
+  created_at: string
 }
 
 export default function PriceSnapshotForm({
@@ -67,12 +68,19 @@ export default function PriceSnapshotForm({
     }
   }
 
-  // 단위별 현재 단가 — 적용일이 가장 늦은 것 하나씩.
+  // 단위별 현재 단가 — 적용일이 가장 늦은 것 하나씩, 같은 날이면 나중에 등록한 것.
   //
   // 단위가 둘인 품목은 단위마다 값이 달라야 하는데, 이력만 보면 어느 단위가 비어 있는지
   // 알 수 없었다. 양파는 bag 단가가 6/15 에 멈춰 있었고 kg 단가만 계속 갱신됐다.
+  //
+  // effective_from 만으로 정렬하면 같은 날 두 번 등록했을 때(잘못 입력 → 다시 입력)
+  // 어느 게 이기는지가 DB가 돌려주는 순서에 달려 있어, 고친 값이 화면에 반영 안 되는
+  // 것처럼 보일 수 있었다 (양상추 2026-10-28 사고).
   const currentByUnit = new Map<string, Snapshot>()
-  for (const s of [...snapshots].sort((a, b) => a.effective_from.localeCompare(b.effective_from))) {
+  for (const s of [...snapshots].sort((a, b) => {
+    const byDate = a.effective_from.localeCompare(b.effective_from)
+    return byDate !== 0 ? byDate : a.created_at.localeCompare(b.created_at)
+  })) {
     currentByUnit.set(s.unit, s)
   }
   const showUnitTable = productUnits.length > 1

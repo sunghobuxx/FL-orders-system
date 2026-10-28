@@ -63,9 +63,10 @@ export default async function AdminProductEditPage({ params }: Props) {
   const spIds = supplierProducts.map(sp => sp.id)
   const { data: allSnapshots } = spIds.length
     ? await db.from('price_snapshots')
-        .select('id, supplier_product_id, sale_price, purchase_price, unit, effective_from')
+        .select('id, supplier_product_id, sale_price, purchase_price, unit, effective_from, created_at')
         .in('supplier_product_id', spIds)
         .order('effective_from', { ascending: false })
+        .order('created_at', { ascending: false })
     : { data: [] }
 
   type OrgPriceRow = { organization_id: string; unit_price: number; organizations: { name: string } | null }
