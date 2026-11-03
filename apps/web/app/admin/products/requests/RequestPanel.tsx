@@ -72,7 +72,7 @@ export default function RequestPanel({ rows }: { rows: RequestRow[] }) {
       </div>
 
       <p className="px-1 text-xs text-gray-400">
-        단가가 없는 품목은 승인되지 않습니다. 품목 마스터에서 단가를 먼저 등록해 주세요.
+        단가가 없어도 승인됩니다. 명세서에 반영되려면 품목마스터에서 단가를 등록해 주세요.
       </p>
     </div>
   )

@@ -4,13 +4,13 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import { getAuthorizedAdminDb } from '@/lib/admin-member-user'
 import { getSessionUser } from '@/lib/supabase/server'
-import { buildPriceMapByProduct } from '@/lib/specs/sync'
 
 /**
  * 회원이 올린 품목 요청을 승인하거나 거절한다.
  *
- * **단가가 없으면 승인하지 않는다.** 단가 없이 열어 주면 발주가 그대로 들어와
- * 명세서가 0 원으로 나간다 (2026-08-09 일회용 손장갑).
+ * 단가 없이도 승인한다(2026-11-03, 사장님 요청) — 단가는 품목마스터에서 나중에
+ * 등록해도 된다. 단가 미등록 상태로 발주가 들어오면 명세서가 0원으로 나갈 수
+ * 있으니(2026-08-09 일회용 손장갑 사고), 승인 후 단가 등록을 챙겨야 한다.
  * 승인은 restaurant_products 에 added_by='member' 로 넣는다 — 회원이 원해서 열린
  * 품목이므로 회원이 뺄 수 있어야 한다.
  */
@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
 
     const { data: reqRow } = await db
       .from('product_requests')
-      .select('id, restaurant_id, product_id, status, restaurants(organization_id)')
+      .select('id, restaurant_id, product_id, status')
       .eq('id', requestId)
       .maybeSingle()
     if (!reqRow) return NextResponse.json({ error: '요청을 찾을 수 없습니다' }, { status: 404 })
@@ -39,17 +39,6 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === 'approve') {
-      const rest = Array.isArray(reqRow.restaurants) ? reqRow.restaurants[0] : reqRow.restaurants
-      const today = new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10)
-      const { priceMap } = await buildPriceMapByProduct(
-        db, [reqRow.product_id], today, rest?.organization_id ?? null)
-
-      if (Number(priceMap[reqRow.product_id] ?? 0) <= 0) {
-        return NextResponse.json(
-          { error: '단가가 없어 승인할 수 없습니다. 품목 단가를 먼저 등록해 주세요.' },
-          { status: 400 })
-      }
-
       // 이미 열려 있으면 그건 실패가 아니다. UNIQUE(restaurant_id, product_id) 로 죽지 않게 먼저 본다.
       const { data: already } = await db
         .from('restaurant_products').select('id')
