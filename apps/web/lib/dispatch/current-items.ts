@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-import { isGarakAddress } from '@/lib/region'
+import { isGarakRouted } from '@/lib/region'
 
 export interface DispatchOrderItem {
   id: string
@@ -140,7 +140,7 @@ export async function getCurrentDispatchGroups(
 
     const orgIds = [...new Set((rRows ?? []).map((r: { organization_id: string }) => r.organization_id).filter(Boolean) as string[])]
     const { data: orgRows } = orgIds.length
-      ? await adminDb.from('organizations').select('id, name, address').in('id', orgIds)
+      ? await adminDb.from('organizations').select('id, name, address, garak_direct_override').in('id', orgIds)
       : { data: [] }
 
     const orgNameMap: Record<string, string> = Object.fromEntries(
@@ -150,7 +150,8 @@ export async function getCurrentDispatchGroups(
     // (2026-10 가락시장 매입 시작, 사장님 기준: "서울 식당은 주소기준이야").
     // 가락시장 휴무일에는 이 구분을 통째로 끈다 — 전부 남촌(기존) 공급처 발주문자로 간다.
     const orgIsSeoulMap: Record<string, boolean> = Object.fromEntries(
-      (orgRows ?? []).map((o: { id: string; address: string | null }) => [o.id, garakOpenToday && isGarakAddress(o.address)])
+      (orgRows ?? []).map((o: { id: string; address: string | null; garak_direct_override: boolean | null }) =>
+        [o.id, garakOpenToday && isGarakRouted(o.address, o.garak_direct_override)])
     )
     const restaurantNameMap: Record<string, string> = Object.fromEntries(
       (rRows ?? []).map((r: { id: string; organization_id: string }) => [r.id, orgNameMap[r.organization_id] ?? ''])

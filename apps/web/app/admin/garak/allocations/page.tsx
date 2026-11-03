@@ -35,11 +35,11 @@ export default async function GarakAllocationsPage({ searchParams }: Props) {
     : { data: [] as { id: string; organization_id: string }[] }
   const orgIds = [...new Set((restaurants ?? []).map((r: { organization_id: string }) => r.organization_id))]
   const { data: orgs } = orgIds.length
-    ? await db.from('organizations').select('id, name, address').in('id', orgIds)
-    : { data: [] as { id: string; name: string; address: string | null }[] }
+    ? await db.from('organizations').select('id, name, address, garak_direct_override').in('id', orgIds)
+    : { data: [] as { id: string; name: string; address: string | null; garak_direct_override: boolean | null }[] }
 
   const orgOfRestaurant = Object.fromEntries((restaurants ?? []).map((r: { id: string; organization_id: string }) => [r.id, r.organization_id]))
-  const orgById = Object.fromEntries((orgs ?? []).map((o: { id: string; name: string; address: string | null }) => [o.id, o]))
+  const orgById = Object.fromEntries((orgs ?? []).map((o: { id: string; name: string; address: string | null; garak_direct_override: boolean | null }) => [o.id, o]))
   const restaurantOfBatch = Object.fromEntries((batches ?? []).map((b: { id: string; restaurant_id: string }) => [b.id, b.restaurant_id]))
 
   const { data: orders } = batchIds.length
@@ -63,7 +63,7 @@ export default async function GarakAllocationsPage({ searchParams }: Props) {
         const batchId = batchOfOrder[it.order_id]
         const restaurantId = restaurantOfBatch[batchId]
         const org = orgById[orgOfRestaurant[restaurantId]]
-        if (!org || !isEligibleAddress(org.address)) return []
+        if (!org || !isEligibleAddress(org.address, org.garak_direct_override)) return []
         return [{ orderItemId: it.id, restaurantName: org.name, qty: Number(it.qty), unit: it.unit }]
       })
     return {

@@ -23,7 +23,7 @@ import { keptSpecLine } from '@/lib/specs/kept-line'
 import { normalizeUnit } from '@/lib/units'
 import { pickGarakSalePrice } from '@/lib/garak/allocation'
 import { toPackQty, type PackSpec } from '@/lib/products/pack-size'
-import { isGarakAddress } from '@/lib/region'
+import { isGarakRouted } from '@/lib/region'
 
 /**
  * 단가 우선순위: 업체 고정단가 → 당일단가 → 고정단가 품목 → carry-forward
@@ -211,12 +211,14 @@ export async function syncSpecFromOrders(
   // 서울·일산 식당은 가락 목록으로 따로 가고(배정 대상에서도 빠진다), 그 외 지역만 아래
   // "기존 단가 없으면 가락 단가로 대체" 가 적용된다 — 가락 배정과 같은 지역 기준이다.
   let orgAddress: string | null = null
+  let orgGarakOverride = false
   if (organizationId) {
     const { data: org } = await adminDb
-      .from('organizations').select('address').eq('id', organizationId).maybeSingle()
+      .from('organizations').select('address, garak_direct_override').eq('id', organizationId).maybeSingle()
     orgAddress = org?.address ?? null
+    orgGarakOverride = Boolean(org?.garak_direct_override)
   }
-  const nonSeoulRestaurant = !isGarakAddress(orgAddress)
+  const nonSeoulRestaurant = !isGarakRouted(orgAddress, orgGarakOverride)
 
   const productIds = [...new Set(rawItems.map((i: { product_id: string }) => i.product_id))] as string[]
 

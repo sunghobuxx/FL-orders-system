@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isGarakAddress } from './region'
+import { isGarakAddress, isGarakRouted } from './region'
 
 describe('isGarakAddress', () => {
   it('서울 주소는 가락 구매 지역', () => {
@@ -26,5 +26,21 @@ describe('isGarakAddress', () => {
     expect(isGarakAddress(null)).toBe(false)
     expect(isGarakAddress(undefined)).toBe(false)
     expect(isGarakAddress('')).toBe(false)
+  })
+})
+
+describe('isGarakRouted', () => {
+  it('override 가 켜 있으면 주소와 무관하게 true', () => {
+    expect(isGarakRouted('경기도 파주시 심학산로 71', true)).toBe(true)
+  })
+
+  it('override 가 없으면 주소 기준을 따른다', () => {
+    expect(isGarakRouted('경기도 파주시 심학산로 71', false)).toBe(false)
+    expect(isGarakRouted('서울 송파구 가락동', false)).toBe(true)
+  })
+
+  it('override 가 null/undefined 면 주소 기준을 따른다', () => {
+    expect(isGarakRouted('경기도 파주시 심학산로 71', null)).toBe(false)
+    expect(isGarakRouted('경기도 파주시 심학산로 71', undefined)).toBe(false)
   })
 })

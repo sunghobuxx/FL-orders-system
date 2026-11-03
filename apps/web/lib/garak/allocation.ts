@@ -1,4 +1,4 @@
-import { isGarakAddress } from '@/lib/region'
+import { isGarakRouted } from '@/lib/region'
 
 export interface CandidateLine {
   orderItemId: string
@@ -7,9 +7,9 @@ export interface CandidateLine {
   unit: string
 }
 
-/** 배정 후보는 서울·일산이 아닌 업체의 발주 줄만 쓴다. 서울·일산은 가락 목록으로 이미 따로 간다. */
-export function isEligibleAddress(address: string | null | undefined): boolean {
-  return !isGarakAddress(address)
+/** 배정 후보는 서울·일산(및 가락 직접구매 예외)이 아닌 업체의 발주 줄만 쓴다. 그 업체는 가락 목록으로 이미 따로 간다. */
+export function isEligibleAddress(address: string | null | undefined, garakOverride?: boolean | null): boolean {
+  return !isGarakRouted(address, garakOverride)
 }
 
 /** 가락 매입 수량과 수량이 같은 줄을 먼저 보여 준다. 같은 수량끼리는 업체명순. */

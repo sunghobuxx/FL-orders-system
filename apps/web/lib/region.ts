@@ -6,3 +6,12 @@ export function isGarakAddress(address: string | null | undefined): boolean {
   const a = address?.trim() ?? ''
   return a.startsWith('서울') || /고양시 일산(동|서)구/.test(a)
 }
+
+/**
+ * 주소는 서울·일산이 아니지만, 사장님이 서울·일산과 같은 방식(가락 직접구매)으로
+ * 다루길 원하는 업체를 위한 예외. organizations.garak_direct_override 로 켠다
+ * (2026-11-01, 마이웨이·뽈마루 대구뽈찜 — 실제 주소는 파주지만 가락 목록으로 포함).
+ */
+export function isGarakRouted(address: string | null | undefined, override: boolean | null | undefined): boolean {
+  return Boolean(override) || isGarakAddress(address)
+}

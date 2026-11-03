@@ -8,6 +8,10 @@ describe('가락 배정', () => {
     expect(isEligibleAddress('경기 수원시 영통구')).toBe(true)
   })
 
+  it('가락 직접구매 override 가 켜진 업체도 배정 후보에서 뺀다', () => {
+    expect(isEligibleAddress('경기도 파주시 심학산로 71', true)).toBe(false)
+  })
+
   it('수량이 같은 줄을 먼저 보여 준다', () => {
     const sorted = sortCandidates([
       { orderItemId: 'a', restaurantName: '고강점', qty: 5, unit: 'kg' },
