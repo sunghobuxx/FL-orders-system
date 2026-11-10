@@ -36,9 +36,10 @@ export async function POST(req: Request) {
   // ListBankAccount 응답에는 내부 식별자가 없다(2026-09-29 실접속으로 확인 — accountID 는 거래 조회 결과에만 있다).
   // 계좌번호 원문은 우리 DB 에 저장하지 않으므로(마이그레이션 주석), 은행코드 + 계좌번호 끝 4자리를 account_ref 로 쓴다.
   const accounts = await listBankAccounts(client) as Array<{ bankCode: string; accountNumber: string; state: number }>
-  const active = accounts
-    .filter(a => a.state === 1)
-    .map(a => ({ ...a, accountRef: `${a.bankCode}-${a.accountNumber.slice(-4)}` }))
+  const withRef = (accounts ?? []).map(a => ({ ...a, accountRef: `${a.bankCode}-${a.accountNumber.slice(-4)}` }))
+  const active = withRef.filter(a => a.state === 1)
+  // 정상(state=1)이 아닌 계좌는 수집하지 않는다 — 왜 빠졌는지 응답에서 보이게 상태를 같이 싣는다.
+  const accountStates = withRef.map(a => ({ accountRef: a.accountRef, state: a.state }))
 
   const db = createAdminClient()
   const startDate = getKstDateOffset(-LOOKBACK_DAYS).replace(/-/g, '')
@@ -59,5 +60,5 @@ export async function POST(req: Request) {
 
   const autoMatch = await runAutoMatch(db, parseAutoMatchMode(process.env.PAYMENT_AUTO_MATCH_MODE))
 
-  return NextResponse.json({ success: true, results, autoMatch })
+  return NextResponse.json({ success: true, environment: config.environment, accounts: accountStates, results, autoMatch })
 }

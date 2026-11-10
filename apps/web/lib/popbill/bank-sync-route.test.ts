@@ -41,6 +41,8 @@ describe('POST /api/admin/bank-sync/collect', () => {
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({
       success: true,
+      environment: 'test',
+      accounts: [{ accountRef: '0011-0921', state: 1 }, { accountRef: '0011-2223', state: 0 }],
       results: [{ accountRef: '0011-0921', jobId: 'j1', fetched: 3, saved: 2, error: null }],
       autoMatch: { mode: 'off', evaluated: 0, autoMatched: 0, applied: 0, errors: [] },
     })
@@ -88,7 +90,8 @@ describe('POST /api/admin/bank-sync/collect', () => {
     m.listBankAccounts.mockResolvedValue([])
     const res = await post({ Authorization: 'Bearer cron-secret' })
     expect(await res.json()).toEqual({
-      success: true, results: [], autoMatch: { mode: 'off', evaluated: 0, autoMatched: 0, applied: 0, errors: [] },
+      success: true, environment: 'test', accounts: [], results: [],
+      autoMatch: { mode: 'off', evaluated: 0, autoMatched: 0, applied: 0, errors: [] },
     })
   })
 })
