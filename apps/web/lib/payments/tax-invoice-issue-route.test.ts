@@ -175,14 +175,15 @@ describe('POST /api/admin/finance/tax-invoices/issue', () => {
     expect(m.registerAndIssue.mock.calls[0][1]).toMatchObject({ taxType: '과세' })
   })
 
-  it('공급받는자 대표자성명이 없으면(2곳뿐, 아직 미입력) 빈 문자열로 발행한다', async () => {
+  it('공급받는자 대표자성명이 없으면 400 — 팝빌을 부르지 않는다(운영 팝빌은 500 으로 거절해 결과불명으로 잠김)', async () => {
     const f = fakeDb({
       tax_invoices: [], restaurants: [restaurantRow()], contacts: [],
       daily_specs: specRows, daily_spec_lines: [taxableLine(10000, 1000)], products: [TAXABLE],
     })
-    await post(f.db, { restaurantId: 'r1', month: '2026-09' })
-    const payload = m.registerAndIssue.mock.calls[0][1]
-    expect(payload).toMatchObject({ invoiceeCEOName: '' })
+    const res = await post(f.db, { restaurantId: 'r1', month: '2026-09' })
+    expect(res.status).toBe(400)
+    expect(m.registerAndIssue).not.toHaveBeenCalled()
+    expect(f.writes).toHaveLength(0)
   })
 
   it('팝빌이 거절하면(rejected) 400 이고 tax_invoices 에 rejected 로 남는다', async () => {

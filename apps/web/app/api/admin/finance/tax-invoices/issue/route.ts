@@ -73,6 +73,11 @@ export async function POST(req: Request) {
       .eq('organization_id', restaurant.organization_id)
       .eq('is_primary', true)
       .maybeSingle()
+    // 운영 팝빌은 대표자명이 비면 500 으로 거절한다 — 500 은 「결과 불명」으로 남아 재시도가 막히므로 먼저 막는다(2026-11-10 수원대점).
+    const ceoName = primaryContact?.name?.trim() ?? ''
+    if (!ceoName) {
+      return NextResponse.json({ error: '이 업체는 대표자명이 없습니다. 회원 정보에서 대표자를 먼저 입력해 주세요.' }, { status: 400 })
+    }
 
     // 같은 업체·같은 달·같은 과세구분은 한 번만 발행한다. 과세·면세는 따로 장이 나간다.
     const { data: existingRows } = await db
@@ -133,7 +138,7 @@ export async function POST(req: Request) {
         // 월합계세금계산서 작성일자는 그 달의 말일(한국 실무).
         writeDate: range.end.replace(/-/g, ''),
         invoicer: { corpNum: config.corpNum, ...INVOICER },
-        invoicee: { corpNum: bizNo, corpName: orgName, ceoName: primaryContact?.name ?? undefined },
+        invoicee: { corpNum: bizNo, corpName: orgName, ceoName },
         supplyCostTotal: group.supplyCostTotal,
         taxTotal: group.taxTotal,
         taxType: group.taxType,
