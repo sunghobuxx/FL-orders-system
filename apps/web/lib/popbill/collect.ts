@@ -83,9 +83,30 @@ export async function collectBankTransactions(
     }
   })
 
+  // 같은 거래인데 provider_tid 만 다른 경우를 거른다 — 팝빌 환경이 바뀌거나(테스트→운영, 2026-11-10)
+  // 계좌를 다시 등록하면 tid 앞부분이 바뀌어 unique(account_ref, provider_tid) 로는 못 거른다.
+  // 시각·입출금·금액·거래후잔액이 모두 같으면 같은 거래로 본다.
+  const times = payload.map(p => Date.parse(p.trdt))
+  const { data: existing, error: existErr } = await db
+    .from('bank_transactions')
+    .select('provider_tid, trdt, direction, amount, balance')
+    .eq('account_ref', args.accountRef)
+    .gte('trdt', new Date(Math.min(...times)).toISOString())
+    .lte('trdt', new Date(Math.max(...times)).toISOString())
+  if (existErr) throw existErr
+  const keyOf = (r: { trdt: string; direction: string; amount: unknown; balance: unknown }) =>
+    `${Date.parse(r.trdt)}|${r.direction}|${Number(r.amount)}|${r.balance == null ? '' : Number(r.balance)}`
+  const known = new Map<string, string>()
+  for (const r of existing ?? []) known.set(keyOf(r), r.provider_tid)
+  const fresh = payload.filter(p => {
+    const tid = known.get(keyOf(p))
+    return tid === undefined || tid === p.provider_tid
+  })
+  if (fresh.length === 0) return { jobId, fetched: rows.length, saved: 0 }
+
   const { data, error } = await db
     .from('bank_transactions')
-    .upsert(payload, { onConflict: 'account_ref,provider_tid', ignoreDuplicates: true })
+    .upsert(fresh, { onConflict: 'account_ref,provider_tid', ignoreDuplicates: true })
     .select('id')
   if (error) throw error
 

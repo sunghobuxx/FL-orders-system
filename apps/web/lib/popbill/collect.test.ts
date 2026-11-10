@@ -81,4 +81,24 @@ describe('collectBankTransactions — 수집 요청→상태 폴링→내역 저
     const w = f.writes.find(w => w.table === 'bank_transactions' && w.op === 'upsert')!
     expect((w.payload as any[])[0]).toMatchObject({ direction: 'out', amount: 4400, depositor_raw: null })
   })
+
+  it('★ tid 만 다르고 시각·입출금·금액·잔액이 같은 기존 거래는 다시 저장하지 않는다(팝빌 환경 전환)', async () => {
+    const f = fakeDb({ bank_transactions: [
+      { provider_tid: 'old-t1', trdt: '2026-09-29T06:01:57+00:00', direction: 'in', amount: '156000', balance: '2739711' },
+    ] })
+    const client = fakeClient({ pages: [[row({ tid: 'new-t1' }), row({ tid: 'new-t2', trdt: '20260929160000', accIn: '5000', balance: '2744711' })]] })
+    const r = await collectBankTransactions(f.db as never, client as never, args, { pollDelayMs: 0 })
+    expect(r.fetched).toBe(2)
+    const w = f.writes.find(w => w.table === 'bank_transactions' && w.op === 'upsert')!
+    expect((w.payload as any[]).map(p => p.provider_tid)).toEqual(['new-t2'])
+  })
+
+  it('같은 tid 로 다시 받은 거래는 그대로 upsert 에 넘긴다(DB unique 가 거른다)', async () => {
+    const f = fakeDb({ bank_transactions: [
+      { provider_tid: 't1', trdt: '2026-09-29T06:01:57+00:00', direction: 'in', amount: 156000, balance: 2739711 },
+    ] })
+    await collectBankTransactions(f.db as never, fakeClient() as never, args, { pollDelayMs: 0 })
+    const w = f.writes.find(w => w.table === 'bank_transactions' && w.op === 'upsert')!
+    expect((w.payload as any[]).map(p => p.provider_tid)).toEqual(['t1'])
+  })
 })

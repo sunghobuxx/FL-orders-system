@@ -18,9 +18,9 @@ vi.mock('@/lib/payments/auto-match', async (importOriginal) => {
 })
 
 const OLD_ENV = process.env
-async function post(headers: Record<string, string> = {}) {
+async function post(headers: Record<string, string> = {}, body?: unknown) {
   const { POST } = await import('../../app/api/admin/bank-sync/collect/route')
-  return POST(new Request('https://x.test', { method: 'POST', headers }) as never)
+  return POST(new Request('https://x.test', { method: 'POST', headers, body: body === undefined ? undefined : JSON.stringify(body) }) as never)
 }
 
 describe('POST /api/admin/bank-sync/collect', () => {
@@ -93,5 +93,16 @@ describe('POST /api/admin/bank-sync/collect', () => {
       success: true, environment: 'test', accounts: [], results: [],
       autoMatch: { mode: 'off', evaluated: 0, autoMatched: 0, applied: 0, errors: [] },
     })
+  })
+
+  it('본문에 기간을 주면 그 기간으로 수집한다(수집 공백 메우기)', async () => {
+    await post({ Authorization: 'Bearer cron-secret' }, { startDate: '2026-11-04', endDate: '20261106' })
+    expect(m.collect.mock.calls[0][2]).toMatchObject({ startDate: '20261104', endDate: '20261106' })
+  })
+
+  it('기간 형식이 틀리면 무시하고 기본 기간으로 수집한다', async () => {
+    await post({ Authorization: 'Bearer cron-secret' }, { startDate: 'abc', endDate: 1 })
+    expect(m.collect.mock.calls[0][2].startDate).toMatch(/^\d{8}$/)
+    expect(m.collect.mock.calls[0][2].startDate).not.toBe('abc')
   })
 })

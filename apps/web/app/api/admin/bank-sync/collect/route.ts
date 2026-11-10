@@ -42,8 +42,12 @@ export async function POST(req: Request) {
   const accountStates = withRef.map(a => ({ accountRef: a.accountRef, state: a.state }))
 
   const db = createAdminClient()
-  const startDate = getKstDateOffset(-LOOKBACK_DAYS).replace(/-/g, '')
-  const endDate = getKstToday().replace(/-/g, '')
+  // 기간을 직접 주면 그 기간을 다시 받는다(수집 공백 메우기용, 최대 1개월은 requestJob 이 검사).
+  // 크론은 빈 본문이라 기본(최근 LOOKBACK_DAYS 일)으로 돈다.
+  const body = await req.json().catch(() => ({})) as { startDate?: unknown; endDate?: unknown }
+  const ymd = (v: unknown) => (typeof v === 'string' && /^\d{4}-?\d{2}-?\d{2}$/.test(v) ? v.replace(/-/g, '') : null)
+  const startDate = ymd(body?.startDate) ?? getKstDateOffset(-LOOKBACK_DAYS).replace(/-/g, '')
+  const endDate = ymd(body?.endDate) ?? getKstToday().replace(/-/g, '')
 
   const results: Array<{ accountRef: string; jobId: string | null; fetched: number; saved: number; error: string | null }> = []
   for (const acc of active) {
