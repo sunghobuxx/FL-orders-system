@@ -249,11 +249,11 @@ jobs:
           # production 재시도 전에 EasyFinBank(계좌조회) 쪽도 운영 인증서·권한이 돼 있는지 먼저 확인해야 한다.
           # 2026-11-10 운영 전환: 팝빌 운영 승인 + 운영 사이트 계좌·인증서 등록·포인트 충전 완료.
           # 이 값이 배포마다 다시 써지므로, 대시보드/CLI 로만 바꾸면 다음 배포에 되돌아간다 — 여기서 바꿀 것.
-          # 세금계산서 발행은 운영에선 실제 국세청 신고라 사장님 확인 전까지 끈다.
+          # 세금계산서 발행: 2026-11-10 사장님 지시로 운영 발행 켬(10월분 기한 대응). 끄려면 'false'.
           printf 'production' | pnpm dlx wrangler pages secret put POPBILL_ENVIRONMENT --project-name fruitlife
           printf 'yes' | pnpm dlx wrangler pages secret put POPBILL_ALLOW_PRODUCTION --project-name fruitlife
           printf 'live' | pnpm dlx wrangler pages secret put PAYMENT_AUTO_MATCH_MODE --project-name fruitlife
-          printf 'false' | pnpm dlx wrangler pages secret put TAX_INVOICE_ISSUE_ENABLED --project-name fruitlife
+          printf 'true' | pnpm dlx wrangler pages secret put TAX_INVOICE_ISSUE_ENABLED --project-name fruitlife
 
       - name: Deploy to Cloudflare Pages
         working-directory: apps/web
