@@ -23,18 +23,29 @@ export async function POST(req: NextRequest) {
     const db = createAdminClient()
 
     if (isSupplier) {
+      // 공급처 연결은 지우지 않고 status 로 켜고 끈다. 지우면 발주·단가 기록이 걸려
+      // FK 로 실패하거나 기록이 사라진다. 다시 켜면 품목명·매입단위·단가가 그대로 돌아온다.
+      const { data: existing, error: findErr } = await db
+        .from('supplier_products').select('id')
+        .eq('supplier_id', entityId).eq('product_id', productId)
+        .maybeSingle()
+      if (findErr) throw findErr
       if (link) {
-        const { error } = await db.from('supplier_products').upsert(
-          { supplier_id: entityId, product_id: productId, purchase_unit: '', supplier_name: '' },
-          { onConflict: 'supplier_id,product_id' },
-        )
-        if (error) throw error
-      } else {
-        const { error } = await db
-          .from('supplier_products')
-          .delete()
-          .eq('supplier_id', entityId)
-          .eq('product_id', productId)
+        if (existing) {
+          const { error } = await db.from('supplier_products')
+            .update({ status: 'active', updated_at: new Date().toISOString() })
+            .eq('id', existing.id)
+          if (error) throw error
+        } else {
+          const { error } = await db.from('supplier_products').insert(
+            { supplier_id: entityId, product_id: productId, purchase_unit: '', supplier_name: '' },
+          )
+          if (error) throw error
+        }
+      } else if (existing) {
+        const { error } = await db.from('supplier_products')
+          .update({ status: 'inactive' })
+          .eq('id', existing.id)
         if (error) throw error
       }
     } else {

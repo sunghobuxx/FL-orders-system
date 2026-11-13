@@ -102,6 +102,7 @@ export default async function AdminDirectOrderPage({
         .from('supplier_products')
         .select('id, product_id, price_snapshots')
         .in('product_id', productIds)
+        .eq('status', 'active')
     : { data: [] }
 
   // 기존 배치/주문/품목 조회

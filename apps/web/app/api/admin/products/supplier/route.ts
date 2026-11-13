@@ -5,7 +5,9 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getAdminSession } from '@/lib/admin-member-user'
 
-// 공급처 추가
+// 공급처 추가 (해제됐던 연결이면 다시 살린다).
+// updated_at 을 지금으로 찍는다 — 발주 배정은 활성 연결 중 updated_at 최신이 우선이라,
+// 새로 붙이거나 다시 붙인 공급처가 바로 발주를 받게 된다.
 export async function POST(req: Request) {
   try {
     const body = await req.json() as {
@@ -14,12 +16,15 @@ export async function POST(req: Request) {
     // 로그인만 보면 회원 계정으로도 통과한다. 관리자 권한까지 확인한다.
     const session = await getAdminSession()
     if (!session) return NextResponse.json({ error: '권한이 없습니다' }, { status: 403 })
-    const { user } = session
     // 데이터 작업은 service role 로 한다. 세션(RLS)으로 쓰면 막혀도 에러가 안 나
     // 조용히 실패하거나 조회가 null 이 되어 엉뚱한 404 가 난다.
     const db = createAdminClient()
     const { error } = await db.from('supplier_products').upsert(
-      { supplier_id: body.supplierId, product_id: body.productId, supplier_name: body.supplierName, purchase_unit: body.purchaseUnit },
+      {
+        supplier_id: body.supplierId, product_id: body.productId,
+        supplier_name: body.supplierName, purchase_unit: body.purchaseUnit,
+        status: 'active', updated_at: new Date().toISOString(),
+      },
       { onConflict: 'supplier_id,product_id' }
     )
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
@@ -29,64 +34,52 @@ export async function POST(req: Request) {
   }
 }
 
-// 공급처 삭제.
+// 해제한 공급처 다시 연결. 품목명·매입단위·단가 기록은 해제 전 그대로 돌아온다.
+export async function PATCH(req: Request) {
+  try {
+    const { supplierProductId } = await req.json() as { supplierProductId: string }
+    if (!supplierProductId) return NextResponse.json({ error: 'supplierProductId 누락' }, { status: 400 })
+    const session = await getAdminSession()
+    if (!session) return NextResponse.json({ error: '권한이 없습니다' }, { status: 403 })
+    const db = createAdminClient()
+    const { data, error } = await db.from('supplier_products')
+      .update({ status: 'active', updated_at: new Date().toISOString() })
+      .eq('id', supplierProductId)
+      .select('id')
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (!data?.length) return NextResponse.json({ error: '연결을 찾을 수 없습니다' }, { status: 404 })
+    return NextResponse.json({ success: true })
+  } catch (e) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : '오류' }, { status: 500 })
+  }
+}
+
+// 공급처 연결 해제.
 //
-// price_snapshots 와 order_items 가 이 행을 가리킨다. 예전에는 단가만 지우고
-// supplier_products 를 지워서, 발주 이력이 있으면 FK 위반으로 실패했다
-// (order_items_supplier_product_id_fkey). 발주는 지울 수 없는 기록이므로
-// **연결만 끊는다** — order_items.supplier_product_id 는 null 을 허용한다.
+// 행을 지우지 않고 status 만 'inactive' 로 바꾼다. 예전에는 단가 기록(price_snapshots)을
+// 지우고 발주(order_items)의 연결을 끊은 뒤 행을 삭제해서, 업체별 발주·단가 이력이
+// 사라지고 다시 연결해도 되살릴 수 없었다 (2026-11-13 인숙이네 양배추: 발주 257건·단가 110건).
 //
-// 지우기 전에 몇 건이 걸려 있는지 알려 준다. force 없이 부르면 세어서 돌려주고 멈춘다.
+// 발주 배정·명세서 단가·매입원가·발주 문자는 모두 status='active' 연결만 보므로
+// 비활성으로 돌리는 것만으로 이 공급처는 더 이상 발주를 받지 않는다.
+// PATCH 로 다시 연결하면 기록이 그대로 돌아온다.
 export async function DELETE(req: Request) {
   try {
-    const { supplierProductId, force } = await req.json() as {
-      supplierProductId: string; force?: boolean
-    }
+    const { supplierProductId } = await req.json() as { supplierProductId: string }
+    if (!supplierProductId) return NextResponse.json({ error: 'supplierProductId 누락' }, { status: 400 })
     // 로그인만 보면 회원 계정으로도 통과한다. 관리자 권한까지 확인한다.
     const session = await getAdminSession()
     if (!session) return NextResponse.json({ error: '권한이 없습니다' }, { status: 403 })
-    const { user } = session
-    // 데이터 작업은 service role 로 한다. 세션(RLS)으로 쓰면 막혀도 에러가 안 나
-    // 조용히 실패하거나 조회가 null 이 되어 엉뚱한 404 가 난다.
     const db = createAdminClient()
 
-    // 1. 무엇이 걸려 있는지 센다
-    const [{ count: orderCount }, { count: snapCount }] = await Promise.all([
-      db.from('order_items').select('id', { count: 'exact', head: true })
-        .eq('supplier_product_id', supplierProductId),
-      db.from('price_snapshots').select('id', { count: 'exact', head: true })
-        .eq('supplier_product_id', supplierProductId),
-    ])
-
-    // 2. 확인 전이면 세어서 돌려주고 멈춘다
-    if (!force) {
-      return NextResponse.json({
-        needsConfirm: true,
-        orderItemCount: orderCount ?? 0,
-        priceSnapshotCount: snapCount ?? 0,
-      })
-    }
-
-    // 3. 발주 이력의 연결만 끊는다. 발주 자체는 지우지 않는다.
-    if ((orderCount ?? 0) > 0) {
-      const { error: oiErr } = await db.from('order_items')
-        .update({ supplier_product_id: null }).eq('supplier_product_id', supplierProductId)
-      if (oiErr) return NextResponse.json({ error: oiErr.message }, { status: 500 })
-    }
-
-    // 4. 단가 이력 삭제
-    const { error: snapErr } = await db.from('price_snapshots').delete().eq('supplier_product_id', supplierProductId)
-    if (snapErr) return NextResponse.json({ error: snapErr.message }, { status: 500 })
-
-    // 5. 공급처 연결 삭제
-    const { error } = await db.from('supplier_products').delete().eq('id', supplierProductId)
+    const { data, error } = await db.from('supplier_products')
+      .update({ status: 'inactive' })
+      .eq('id', supplierProductId)
+      .select('id')
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (!data?.length) return NextResponse.json({ error: '연결을 찾을 수 없습니다' }, { status: 404 })
 
-    return NextResponse.json({
-      success: true,
-      unlinkedOrderItems: orderCount ?? 0,
-      deletedPriceSnapshots: snapCount ?? 0,
-    })
+    return NextResponse.json({ success: true })
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : '오류' }, { status: 500 })
   }

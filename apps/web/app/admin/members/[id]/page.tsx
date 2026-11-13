@@ -53,6 +53,7 @@ export default async function MemberDetailPage({ params, searchParams }: Props) 
       .from('supplier_products')
       .select('product_id')
       .eq('supplier_id', supplier.id)
+      .eq('status', 'active')
     supplierLinkedIds = new Set((spLinks ?? []).map((s: { product_id: string }) => s.product_id))
   }
 

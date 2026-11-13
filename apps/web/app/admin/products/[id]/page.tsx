@@ -8,6 +8,7 @@ import StatusToggleButton from '../../StatusToggleButton'
 import DeleteProductButton from './DeleteProductButton'
 import AddSupplierProductForm from './AddSupplierProductForm'
 import DeleteSupplierProductButton from './DeleteSupplierProductButton'
+import ReconnectSupplierProductButton from './ReconnectSupplierProductButton'
 import PriceSnapshotForm from './PriceSnapshotForm'
 import OrgPriceSection from './OrgPriceSection'
 
@@ -57,10 +58,13 @@ export default async function AdminProductEditPage({ params }: Props) {
     status: string
     suppliers: { organizations: { name: string } | null } | null
   }
-  const supplierProducts = (supplierProductsRaw ?? []) as unknown as SpRow[]
+  const allSupplierProducts = (supplierProductsRaw ?? []) as unknown as SpRow[]
+  // 해제(inactive)된 연결은 지우지 않고 남겨 둔다 — 아래에 따로 보여 주고 다시 연결할 수 있다.
+  const supplierProducts = allSupplierProducts.filter(sp => sp.status !== 'inactive')
+  const releasedSupplierProducts = allSupplierProducts.filter(sp => sp.status === 'inactive')
 
   // price_snapshots for each supplier_product
-  const spIds = supplierProducts.map(sp => sp.id)
+  const spIds = allSupplierProducts.map(sp => sp.id)
   const { data: allSnapshots } = spIds.length
     ? await db.from('price_snapshots')
         .select('id, supplier_product_id, sale_price, purchase_price, unit, effective_from, created_at')
@@ -87,7 +91,8 @@ export default async function AdminProductEditPage({ params }: Props) {
     name: s.organizations?.name ?? '(이름 없음)',
   }))
 
-  const linkedSupplierIds = new Set(supplierProducts.map(sp => sp.supplier_id))
+  // 해제된 공급처도 목록에서 뺀다 — 그쪽은 「다시 연결」로 살린다(기록이 이어진다).
+  const linkedSupplierIds = new Set(allSupplierProducts.map(sp => sp.supplier_id))
   const availableSuppliers = suppliersForSelect.filter(s => !linkedSupplierIds.has(s.id))
 
   return (
@@ -160,6 +165,27 @@ export default async function AdminProductEditPage({ params }: Props) {
                       ...(product.allowed_units ?? []),
                     ])].filter(Boolean) as string[]}
                   />
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+        {releasedSupplierProducts.length > 0 && (
+          <div className="pt-2 border-t border-gray-100 space-y-2">
+            <p className="text-xs font-semibold text-gray-500">해제된 공급처 (발주·단가 기록 보관 중)</p>
+            {releasedSupplierProducts.map(sp => {
+              const snapCount = (allSnapshots ?? []).filter(s => s.supplier_product_id === sp.id).length
+              const orgName = sp.suppliers?.organizations?.name ?? '알 수 없음'
+              return (
+                <div key={sp.id} className="flex items-center justify-between rounded-lg bg-gray-50 px-3 py-2">
+                  <div className="text-xs text-gray-500">
+                    <span className="font-medium text-gray-700">{orgName}</span>
+                    {sp.supplier_name && <span className="ml-1">({sp.supplier_name})</span>}
+                    <span className="ml-2">{sp.purchase_unit}</span>
+                    <span className="ml-2 text-gray-400">단가 기록 {snapCount}건</span>
+                  </div>
+                  <ReconnectSupplierProductButton supplierProductId={sp.id} />
                 </div>
               )
             })}
