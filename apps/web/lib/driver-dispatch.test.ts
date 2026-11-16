@@ -176,3 +176,36 @@ describe('PC와 같은 기존/수정 수량 표시', () => {
     [{ qty: 2 }, { current: 2, original: 2, changed: false, omitted: false }],
   ])('수량 %o', (row, expected) => expect(dispatchQuantity(row)).toEqual(expected))
 })
+
+describe('업체보다 주문 품목의 공급처 구분을 우선한다', () => {
+  it.each(['existing', 'garak'])('남촌·가락 업체 모두 품목 공급처 %s 기준으로 표시', async market => {
+    const local = { ...item('regular', 2), supplier_product_id: 'selected' }
+    const seoul = { ...item('garak', 3), supplier_product_id: 'selected', routed_supplier_id: 'garak-supplier' }
+    mocks.groups.mockResolvedValue({ allItems: [local], garakItems: [seoul], grouped: { supplier: [local], 'garak-supplier': [seoul] }, inactiveGrouped: {}, unmappedItems: [] })
+    const supplierId = market === 'existing' ? 'supplier' : 'garak-supplier'
+    tables.supplier_products = [
+      { id: 'other', product_id: 'onion', supplier_id: market === 'existing' ? 'garak-supplier' : 'supplier', status: 'active', suppliers: { dispatch_group: market === 'existing' ? 'garak' : 'existing' } },
+      { id: 'selected', product_id: 'onion', supplier_id: supplierId, status: 'active', suppliers: { dispatch_group: market } },
+    ]
+    tables.suppliers.push({ id: 'garak-supplier', organizations: { name: '가락농산' } })
+    const result = await loadDriverDispatch(dbFor(tables), '2026-11-16', ['mine'])
+    if (market === 'garak') {
+      expect(result.garakItems.map(r => r.orderItemId).sort()).toEqual(['garak', 'regular'])
+      expect(result.suppliers).toEqual([])
+    } else {
+      expect(result.garakItems).toEqual([])
+      expect(result.suppliers[0].supplierId).toBe('supplier')
+      expect(result.suppliers[0].lines[0].rows.map(r => r.orderItemId).sort()).toEqual(['garak', 'regular'])
+    }
+    expect(result.totalAmount).toBe(500)
+  })
+  it('공급처가 미선택이고 양쪽 연결이 있으면 가락 연결만으로 남촌 행을 옮기지 않는다', async () => {
+    tables.supplier_products = [
+      { id: 'g', product_id: 'onion', supplier_id: 'garak-supplier', status: 'active', suppliers: { dispatch_group: 'garak' } },
+      { id: 'n', product_id: 'onion', supplier_id: 'supplier', status: 'active', suppliers: { dispatch_group: 'existing' } },
+    ]
+    const result = await loadDriverDispatch(dbFor(tables), '2026-11-16', null)
+    expect(result.suppliers[0].lines[0].rows[0].orderItemId).toBe('regular')
+    expect(result.garakItems.map(r => r.orderItemId)).not.toContain('regular')
+  })
+})

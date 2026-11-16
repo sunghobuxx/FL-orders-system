@@ -3,39 +3,54 @@ import type { createAdminClient } from './supabase/admin'
 
 export async function loadDriverDispatch(db: ReturnType<typeof createAdminClient>, businessDate: string, assignedIds: string[] | null) {
   const { allItems, garakItems: routedGarakItems, grouped, inactiveGrouped, unmappedItems } = await getCurrentDispatchGroups(db, businessDate)
-  // Driver purchase checklist also includes Garak products ordered by Namchon
-  // restaurants. Keep this display rule separate from web/SMS dispatch routing.
-  const productIds = [...new Set(allItems.map(item => item.product_id))]
-  const { data: garakLinks, error: garakLinksError } = productIds.length
+  // The order's selected supplier product is authoritative. Another Garak link
+  // for the same catalog product must never steal a Namchon order row.
+  const current = [...new Map([...allItems, ...routedGarakItems].map(item => [item.id, item])).values()]
+  const productIds = [...new Set(current.map(item => item.product_id))]
+  const { data: links, error: linksError } = productIds.length
     ? await db.from('supplier_products')
-      .select('product_id, supplier_id, suppliers!inner(dispatch_group)')
+      .select('id, product_id, supplier_id, suppliers!inner(dispatch_group)')
       .in('product_id', productIds).eq('status', 'active')
-      .eq('suppliers.dispatch_group', 'garak')
       .order('updated_at', { ascending: false }).order('id', { ascending: true })
     : { data: [], error: null }
-  if (garakLinksError) throw garakLinksError
-  const supplierByProduct = new Map<string, string>()
-  for (const link of garakLinks ?? []) {
-    if (!supplierByProduct.has(link.product_id)) supplierByProduct.set(link.product_id, link.supplier_id)
+  if (linksError) throw linksError
+  const byId = new Map((links ?? []).map(link => [link.id, link]))
+  const byProduct = new Map<string, typeof links>()
+  for (const link of links ?? []) byProduct.set(link.product_id, [...(byProduct.get(link.product_id) ?? []), link])
+  const groupOf = (link: NonNullable<typeof links>[number]) => {
+    const supplier = Array.isArray(link.suppliers) ? link.suppliers[0] : link.suppliers
+    return supplier?.dispatch_group ?? 'existing'
   }
   const garakById = new Map(routedGarakItems.map(item => [item.id, item]))
-  for (const item of allItems) {
-    const supplierId = supplierByProduct.get(item.product_id)
-    if (supplierId && !garakById.has(item.id)) garakById.set(item.id, { ...item, routed_supplier_id: supplierId })
+  const namchonSupplierByItem = new Map<string, string>()
+  for (const item of current) {
+    const selected = item.supplier_product_id ? byId.get(item.supplier_product_id) : undefined
+    const candidates = byProduct.get(item.product_id) ?? []
+    // Without a selected link, only an unambiguous market overrides web routing.
+    const markets = new Set(candidates.map(groupOf))
+    const link = selected?.product_id === item.product_id ? selected : markets.size === 1 ? candidates[0] : undefined
+    if (!link || groupOf(link) === 'common') continue
+    if (groupOf(link) === 'garak') {
+      garakById.set(item.id, { ...item, routed_supplier_id: link.supplier_id })
+    } else {
+      garakById.delete(item.id)
+      namchonSupplierByItem.set(item.id, link.supplier_id)
+    }
   }
   const garakItems = [...garakById.values()]
-  const current = [...new Map([...allItems, ...garakItems].map(item => [item.id, item])).values()]
-  // Shared web routing can include a Garak row in a common supplier's message.
-  // Mobile tabs represent purchase sources, so display that order row only in Garak.
   const garakIds = new Set(garakItems.map(item => item.id))
-  const supplierGroups = Object.fromEntries(Object.entries({ ...grouped, ...inactiveGrouped })
-    .map(([id, items]) => [id, items.filter(item => !garakIds.has(item.id))] as const)
+  const supplierGroups: Record<string, DispatchOrderItem[]> = Object.fromEntries(Object.entries({ ...grouped, ...inactiveGrouped })
+    .map(([id, items]) => [id, items.filter(item => !garakIds.has(item.id) && !namchonSupplierByItem.has(item.id))] as const)
     .filter(([, items]) => items.length))
+  for (const item of current) {
+    const supplierId = namchonSupplierByItem.get(item.id)
+    if (supplierId) (supplierGroups[supplierId] ??= []).push(item)
+  }
   const supplierIds = Object.keys(supplierGroups)
   const lookupSupplierIds = [...new Set([...supplierIds, ...garakItems.map(item => item.routed_supplier_id).filter((id): id is string => !!id)])]
   const [jobsRes, suppliersRes, itemsRes] = await Promise.all([
     supplierIds.length ? db.from('dispatch_jobs').select('id, supplier_id, status').eq('business_date', businessDate).in('supplier_id', supplierIds) : { data: [], error: null },
-    lookupSupplierIds.length ? db.from('suppliers').select('id, organizations(name)').in('id', lookupSupplierIds) : { data: [], error: null },
+    lookupSupplierIds.length ? db.from('suppliers').select('id, status, organizations(name)').in('id', lookupSupplierIds) : { data: [], error: null },
     current.length ? db.from('order_items').select('id, unit_price_snapshot, orders(batch_id, order_batches(status, restaurant_id))').in('id', current.map(i => i.id)) : { data: [], error: null },
   ])
   for (const result of [jobsRes, suppliersRes, itemsRes]) if (result.error) throw result.error
@@ -72,7 +87,7 @@ export async function loadDriverDispatch(db: ReturnType<typeof createAdminClient
       id: i.orderItemId, orderItemId: i.orderItemId, productId: supplierGroups[supplierId].find(x => x.id === i.orderItemId)!.product_id,
       productName: i.name, restaurantName: i.restaurantName, qty: i.qty, orderQty: i.qty, unit: i.unit, checkStage: i.checkStage, excluded: false, overridden: false,
     })))
-    const inactive = supplierId in inactiveGrouped
+    const inactive = supplier?.status === 'inactive' || supplierId in inactiveGrouped
     return {
       supplierId, supplierName: one(supplier?.organizations)?.name ?? '알 수 없음', status: job?.status ?? 'pending', sent: job?.status === 'sent', autoDispatchExcluded: inactive,
       lines: groups.map(g => ({
