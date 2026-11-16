@@ -2,7 +2,7 @@
   "expo": {
     "name": "FruitLife Delivery",
     "slug": "fruitlife-delivery",
-    "version": "1.0.12",
+    "version": "1.0.13",
     "orientation": "portrait",
     "scheme": "fruitlife-delivery",
     "userInterfaceStyle": "light",
@@ -15,14 +15,14 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.fruitlife.delivery",
-      "buildNumber": "11",
+      "buildNumber": "12",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
       "package": "com.fruitlife.delivery",
-      "versionCode": 14,
+      "versionCode": 15,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"

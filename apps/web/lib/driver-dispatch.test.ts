@@ -4,7 +4,7 @@ vi.mock('./dispatch/current-items', async importOriginal => ({ ...await importOr
 vi.mock('./driver-api', () => ({ requireDriverUser: mocks.auth, requireBatchAccess: mocks.access }))
 vi.mock('./orders/check-stage', () => ({ applyCheckStage: mocks.apply }))
 import { loadDriverDispatch } from './driver-dispatch'
-import { defaultDispatchDate, dispatchCheckState, updateDispatchCheck, type DispatchRow } from '../../driver-mobile/lib/dispatch'
+import { defaultDispatchDate, dispatchQuantity, dispatchCheckState, updateDispatchCheck, type DispatchRow } from '../../driver-mobile/lib/dispatch'
 import { POST } from '../app/api/driver/orders/check-items/route'
 
 function dbFor(tables: Record<string, any[]>) {
@@ -83,7 +83,7 @@ describe('배송앱 발주 날짜와 세 구분', () => {
     mocks.saved.mockResolvedValue([{ id: 'saved', orderItemId: 'regular', productId: 'onion', productName: '양파', restaurantName: '식당', qty: 9, orderQty: 2, unit: 'kg', checkStage: 1, overridden: true, excluded: true }])
     const result = await loadDriverDispatch(dbFor(tables), '2026-10-05', null)
     expect(result.suppliers[0].sent).toBe(true)
-    expect(result.suppliers[0].lines[0]).toMatchObject({ qty: 0, rows: [{ qty: 0, excluded: true }] })
+    expect(result.suppliers[0].lines[0]).toMatchObject({ qty: 0, rows: [{ qty: 0, orderQty: 2, overridden: true, excluded: true }] })
     expect(result.totals[0].qty).toBe(5)
     mocks.saved.mockResolvedValue([{ id: 'saved', orderItemId: 'regular', productId: 'onion', productName: '양파', restaurantName: '식당', qty: 9, orderQty: 2, unit: 'kg', checkStage: 1, overridden: true, excluded: false }])
     expect((await loadDriverDispatch(dbFor(tables), '2026-10-05', null)).suppliers[0].lines[0].qty).toBe(9)
@@ -165,4 +165,14 @@ describe('가락 품목은 식당 구분과 무관하게 배송앱 가락 탭에
     expect(result.suppliers[0].lines[0].rows[0].orderItemId).toBe('regular')
     expect(result.garakItems.map(row => row.orderItemId)).not.toContain('regular')
   })
+})
+
+
+describe('PC와 같은 기존/수정 수량 표시', () => {
+  it.each([
+    [{ qty: 0, orderQty: 10, excluded: true }, { current: 0, original: 10, changed: true, omitted: true }],
+    [{ qty: 3.5, orderQty: 2 }, { current: 3.5, original: 2, changed: true, omitted: false }],
+    [{ qty: 4, orderQty: 4 }, { current: 4, original: 4, changed: false, omitted: false }],
+    [{ qty: 2 }, { current: 2, original: 2, changed: false, omitted: false }],
+  ])('수량 %o', (row, expected) => expect(dispatchQuantity(row)).toEqual(expected))
 })

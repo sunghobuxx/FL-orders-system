@@ -5,6 +5,7 @@ export function defaultDispatchDate(now = new Date()) {
 }
 
 export type DispatchRow = {
+  orderQty?: number; overridden?: boolean
   productId?: string; supplierId?: string; supplierName?: string
   orderItemId: string; name: string; restaurantName: string; qty: number; unit: string
   checkStage: number; batchId: string; batchStatus: string; canManage: boolean; unitPrice: number; excluded?: boolean
@@ -54,4 +55,11 @@ export function groupGarakRows(rows: DispatchRow[]) {
     suppliers.set(supplierId, supplier)
   }
   return [...suppliers.values()].map(supplier => ({ ...supplier, lines: [...supplier.lines.values()] }))
+}
+
+/** Same quantity comparison as the PC DispatchQtyEditor; flags alone do not imply a change. */
+export function dispatchQuantity(row: Pick<DispatchRow, 'qty' | 'orderQty' | 'excluded'>) {
+  const current = row.excluded ? 0 : row.qty
+  const original = row.orderQty ?? current
+  return { current, original, changed: current !== original, omitted: current === 0 }
 }

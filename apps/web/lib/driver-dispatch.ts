@@ -79,7 +79,7 @@ export async function loadDriverDispatch(db: ReturnType<typeof createAdminClient
         name: g.name, qty: g.qty, unit: g.unit, qtyText: fmt(g.qty, g.unit),
         rows: g.rows.map(i => ({
           orderItemId: i.orderItemId, name: g.name, restaurantName: i.restaurantName, qty: i.excluded ? 0 : i.qty, unit: i.unit, checkStage: i.checkStage,
-          batchId: '', batchStatus: '', canManage: false, unitPrice: 0, ...meta.get(i.orderItemId), excluded: i.excluded,
+          batchId: '', batchStatus: '', canManage: false, unitPrice: 0, ...meta.get(i.orderItemId), excluded: i.excluded, orderQty: i.orderQty, overridden: i.overridden,
         })),
       })),
     }
