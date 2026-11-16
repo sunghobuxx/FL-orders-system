@@ -3,8 +3,8 @@ import type { createAdminClient } from './supabase/admin'
 
 export async function loadDriverDispatch(db: ReturnType<typeof createAdminClient>, businessDate: string, assignedIds: string[] | null) {
   const { allItems, garakItems: routedGarakItems, grouped, inactiveGrouped, unmappedItems } = await getCurrentDispatchGroups(db, businessDate)
-  // The order's selected supplier product is authoritative. Another Garak link
-  // for the same catalog product must never steal a Namchon order row.
+  // supplier_product_id may be auto-filled rather than the real purchase source.
+  // Dual-market products retain restaurant routing; single-market products override it.
   const current = [...new Map([...allItems, ...routedGarakItems].map(item => [item.id, item])).values()]
   const productIds = [...new Set(current.map(item => item.product_id))]
   const { data: links, error: linksError } = productIds.length
@@ -26,9 +26,11 @@ export async function loadDriverDispatch(db: ReturnType<typeof createAdminClient
   for (const item of current) {
     const selected = item.supplier_product_id ? byId.get(item.supplier_product_id) : undefined
     const candidates = byProduct.get(item.product_id) ?? []
-    // Without a selected link, only an unambiguous market overrides web routing.
+    // Both markets (or common suppliers) follow the shared restaurant routing.
     const markets = new Set(candidates.map(groupOf))
-    const link = selected?.product_id === item.product_id ? selected : markets.size === 1 ? candidates[0] : undefined
+    const link = markets.size === 1
+      ? selected?.product_id === item.product_id ? selected : candidates[0]
+      : undefined
     if (!link || groupOf(link) === 'common') continue
     if (groupOf(link) === 'garak') {
       garakById.set(item.id, { ...item, routed_supplier_id: link.supplier_id })

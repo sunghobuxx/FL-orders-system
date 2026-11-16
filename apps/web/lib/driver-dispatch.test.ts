@@ -177,14 +177,13 @@ describe('PC와 같은 기존/수정 수량 표시', () => {
   ])('수량 %o', (row, expected) => expect(dispatchQuantity(row)).toEqual(expected))
 })
 
-describe('업체보다 주문 품목의 공급처 구분을 우선한다', () => {
+describe('단일 시장 품목은 품목 기준, 양쪽 연결 품목은 업체 기준', () => {
   it.each(['existing', 'garak'])('남촌·가락 업체 모두 품목 공급처 %s 기준으로 표시', async market => {
     const local = { ...item('regular', 2), supplier_product_id: 'selected' }
     const seoul = { ...item('garak', 3), supplier_product_id: 'selected', routed_supplier_id: 'garak-supplier' }
     mocks.groups.mockResolvedValue({ allItems: [local], garakItems: [seoul], grouped: { supplier: [local], 'garak-supplier': [seoul] }, inactiveGrouped: {}, unmappedItems: [] })
     const supplierId = market === 'existing' ? 'supplier' : 'garak-supplier'
     tables.supplier_products = [
-      { id: 'other', product_id: 'onion', supplier_id: market === 'existing' ? 'garak-supplier' : 'supplier', status: 'active', suppliers: { dispatch_group: market === 'existing' ? 'garak' : 'existing' } },
       { id: 'selected', product_id: 'onion', supplier_id: supplierId, status: 'active', suppliers: { dispatch_group: market } },
     ]
     tables.suppliers.push({ id: 'garak-supplier', organizations: { name: '가락농산' } })
@@ -208,4 +207,16 @@ describe('업체보다 주문 품목의 공급처 구분을 우선한다', () =>
     expect(result.suppliers[0].lines[0].rows[0].orderItemId).toBe('regular')
     expect(result.garakItems.map(r => r.orderItemId)).not.toContain('regular')
   })
+})
+
+
+it.each(['existing', 'garak'])('양쪽 연결 품목에 자동 선택된 %s 공급처가 업체 기준을 덮어쓰지 않는다', async selectedMarket => {
+  const local = { ...item('regular', 2), supplier_product_id: selectedMarket }
+  const seoul = { ...item('garak', 3), supplier_product_id: selectedMarket, routed_supplier_id: 'garak-supplier' }
+  mocks.groups.mockResolvedValue({ allItems: [local], garakItems: [seoul], grouped: { supplier: [local], 'garak-supplier': [seoul] }, inactiveGrouped: {}, unmappedItems: [] })
+  tables.supplier_products = ['garak', 'existing'].map(market => ({ id: market, product_id: 'onion', supplier_id: market === 'garak' ? 'garak-supplier' : 'supplier', status: 'active', suppliers: { dispatch_group: market } }))
+  const result = await loadDriverDispatch(dbFor(tables), '2026-11-16', ['mine'])
+  expect(result.garakItems.map(row => row.orderItemId)).toEqual(['garak'])
+  expect(result.suppliers[0].lines[0].rows.map(row => row.orderItemId)).toEqual(['regular'])
+  expect(result.totalAmount).toBe(500)
 })
