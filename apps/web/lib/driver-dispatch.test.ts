@@ -12,7 +12,8 @@ function dbFor(tables: Record<string, any[]>) {
     const filters: Array<(row: any) => boolean> = []
     const q: any = {
       select: () => q,
-      eq: (key: string, value: unknown) => { filters.push(r => r[key] === value); return q },
+      order: () => q,
+      eq: (key: string, value: unknown) => { filters.push(r => key.split('.').reduce((v, k) => v?.[k], r) === value); return q },
       in: (key: string, values: unknown[]) => { filters.push(r => values.includes(r[key])); return q },
       then: (resolve: any, reject: any) => Promise.resolve({ data: (tables[table] ?? []).filter(r => filters.every(f => f(r))), error: null }).then(resolve, reject),
     }
@@ -132,5 +133,36 @@ describe('웹과 같은 확인 버튼 및 즉시 반영', () => {
     const older = updateDispatchCheck(updated, 'garak', 2, { batchId: 'batch-regular', batchStatus: 'ordered' })
     expect(older.suppliers[0].lines[0].rows[0].batchStatus).toBe('dispatched')
     expect(older.garakItems[0].checkStage).toBe(2)
+  })
+})
+
+
+describe('가락 품목은 식당 구분과 무관하게 배송앱 가락 탭에 표시', () => {
+  it('남촌 업체가 주문한 가락 품목도 가락 공급처로 묶고 남촌 중복과 합계 중복을 막는다', async () => {
+    const local = item('regular', 2)
+    mocks.groups.mockResolvedValue({ allItems: [local], garakItems: [], grouped: { supplier: [local] }, inactiveGrouped: {}, unmappedItems: [] })
+    tables.supplier_products = [{ id: 'link', product_id: 'onion', supplier_id: 'garak-supplier', status: 'active', suppliers: { dispatch_group: 'garak' } }]
+    tables.suppliers.push({ id: 'garak-supplier', organizations: { name: '가락농산' } })
+    const result = await loadDriverDispatch(dbFor(tables), '2026-11-16', ['mine'])
+    expect(result.garakItems).toMatchObject([{ orderItemId: 'regular', supplierId: 'garak-supplier', supplierName: '가락농산', canManage: true, qty: 2 }])
+    expect(result.suppliers).toEqual([])
+    expect(result.totalAmount).toBe(200)
+    expect(result.totals[0].qty).toBe(2)
+  })
+  it('기존 가락 행은 한 번만 표시하고 조회 권한을 유지한다', async () => {
+    tables.supplier_products = [{ product_id: 'onion', supplier_id: 'garak-supplier', status: 'active', suppliers: { dispatch_group: 'garak' } }]
+    const result = await loadDriverDispatch(dbFor(tables), '2026-11-16', [])
+    expect(result.garakItems.map(row => row.orderItemId).sort()).toEqual(['bag', 'garak', 'regular'])
+    expect(result.garakItems.every(row => !row.canManage)).toBe(true)
+    expect(result.totalAmount).toBe(600)
+  })
+  it('공통·남촌 연결이나 해제된 가락 연결만 있으면 남촌 품목을 옮기지 않는다', async () => {
+    tables.supplier_products = [
+      { product_id: 'onion', supplier_id: 'common', status: 'active', suppliers: { dispatch_group: 'common' } },
+      { product_id: 'onion', supplier_id: 'old-garak', status: 'inactive', suppliers: { dispatch_group: 'garak' } },
+    ]
+    const result = await loadDriverDispatch(dbFor(tables), '2026-11-16', ['mine'])
+    expect(result.suppliers[0].lines[0].rows[0].orderItemId).toBe('regular')
+    expect(result.garakItems.map(row => row.orderItemId)).not.toContain('regular')
   })
 })

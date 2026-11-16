@@ -2,7 +2,28 @@ import { getCurrentDispatchGroups, getDispatchJobItemRows, groupEditableRows, ty
 import type { createAdminClient } from './supabase/admin'
 
 export async function loadDriverDispatch(db: ReturnType<typeof createAdminClient>, businessDate: string, assignedIds: string[] | null) {
-  const { allItems, garakItems, grouped, inactiveGrouped, unmappedItems } = await getCurrentDispatchGroups(db, businessDate)
+  const { allItems, garakItems: routedGarakItems, grouped, inactiveGrouped, unmappedItems } = await getCurrentDispatchGroups(db, businessDate)
+  // Driver purchase checklist also includes Garak products ordered by Namchon
+  // restaurants. Keep this display rule separate from web/SMS dispatch routing.
+  const productIds = [...new Set(allItems.map(item => item.product_id))]
+  const { data: garakLinks, error: garakLinksError } = productIds.length
+    ? await db.from('supplier_products')
+      .select('product_id, supplier_id, suppliers!inner(dispatch_group)')
+      .in('product_id', productIds).eq('status', 'active')
+      .eq('suppliers.dispatch_group', 'garak')
+      .order('updated_at', { ascending: false }).order('id', { ascending: true })
+    : { data: [], error: null }
+  if (garakLinksError) throw garakLinksError
+  const supplierByProduct = new Map<string, string>()
+  for (const link of garakLinks ?? []) {
+    if (!supplierByProduct.has(link.product_id)) supplierByProduct.set(link.product_id, link.supplier_id)
+  }
+  const garakById = new Map(routedGarakItems.map(item => [item.id, item]))
+  for (const item of allItems) {
+    const supplierId = supplierByProduct.get(item.product_id)
+    if (supplierId && !garakById.has(item.id)) garakById.set(item.id, { ...item, routed_supplier_id: supplierId })
+  }
+  const garakItems = [...garakById.values()]
   const current = [...new Map([...allItems, ...garakItems].map(item => [item.id, item])).values()]
   // Shared web routing can include a Garak row in a common supplier's message.
   // Mobile tabs represent purchase sources, so display that order row only in Garak.
