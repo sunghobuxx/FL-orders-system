@@ -12,7 +12,7 @@ import { getKstToday } from '@/lib/date-kst'
 
 // 실제 거래처가 아닌 데모/테스트용 계정. 매출·매입·미수금 통계에 섞이면 안 된다
 // (2026-08-19 "테스트식당" 미수금 1,962,500원이 대시보드 총액을 부풀린 전례가 있다).
-const TEST_RESTAURANT_IDS = ['7306bb64-4596-4a5e-92ab-6e9dd9395238']
+import { TEST_RESTAURANT_IDS } from '@/lib/test-restaurants'
 
 function getMonthBounds(month: string) {
   const [y, m] = month.split('-').map(Number)

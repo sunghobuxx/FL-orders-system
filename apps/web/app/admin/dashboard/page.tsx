@@ -10,6 +10,7 @@ import { getSessionUser } from '@/lib/supabase/server'
 import { normalizeUnit } from '@/lib/units'
 import { PRICE_STATUS_FROM, priceWarnings, warningDates, type PriceWarning } from '@/lib/pricing/price-status'
 import { loadDateStatuses } from '@/lib/pricing/price-status-loader'
+import { TEST_RESTAURANT_IDS } from '@/lib/test-restaurants'
 
 export default async function AdminDashboardPage() {
   const db = createAdminClient()
@@ -93,12 +94,14 @@ export default async function AdminDashboardPage() {
       .in('business_date', dispatchDates),
 
     // 위 dispatch_jobs 가 아직 안 만들어졌을 때(자동발송 전)의 대체 집계용 — 같은 기준일(dispatchDates)
-    db.from('order_batches').select(BATCH_SELECT).in('business_date', dispatchDates),
+    db.from('order_batches').select(BATCH_SELECT).in('business_date', dispatchDates)
+      .not('restaurant_id', 'in', `(${TEST_RESTAURANT_IDS.join(',')})`),
 
     // 결제정보 (전체 미수금)
     fetchAll(() => db.from('receivables')
       .select('balance, restaurants(organizations(name))')
       .in('status', ['unpaid', 'partial', 'overdue'])
+      .not('restaurant_id', 'in', `(${TEST_RESTAURANT_IDS.join(',')})`)
       .order('due_date')).then(data => ({ data })),
 
     // 공지사항

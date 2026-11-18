@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { isGarakRouted } from '@/lib/region'
+import { TEST_RESTAURANT_IDS } from '@/lib/test-restaurants'
 
 export interface DispatchOrderItem {
   id: string
@@ -99,6 +100,8 @@ export async function getCurrentDispatchGroups(
     .from('order_batches')
     .select('id, business_date, restaurant_id, status')
     .eq('business_date', businessDate)
+    // 테스트 식당(외부인 체험 계정 포함) 발주는 실제 공급처 문자·가락 목록·배송앱에 넣지 않는다.
+    .not('restaurant_id', 'in', `(${TEST_RESTAURANT_IDS.join(',')})`)
 
   if (options.batchStatuses?.length) {
     batchQuery = batchQuery.in('status', options.batchStatuses)
