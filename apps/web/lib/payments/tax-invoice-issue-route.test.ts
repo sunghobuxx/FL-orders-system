@@ -133,6 +133,16 @@ describe('POST /api/admin/finance/tax-invoices/issue', () => {
     })
   })
 
+  it('업체에 계산서 이메일이 있으면 팝빌 invoiceeEmail1 로 넘긴다', async () => {
+    const f = fakeDb({
+      tax_invoices: [], restaurants: [restaurantRow({ tax_invoice_email: ' tax@shop.com ' })], contacts: [contactRow],
+      daily_specs: specRows, daily_spec_lines: [exemptLine(562000)], products: [EXEMPT],
+    })
+    const res = await post(f.db, { restaurantId: 'r1', month: '2026-10' })
+    expect(res.status).toBe(200)
+    expect(m.registerAndIssue.mock.calls[0][1]).toMatchObject({ taxType: '면세', invoiceeEmail1: 'tax@shop.com' })
+  })
+
   it('★ 즉시발행 응답에 승인번호가 비어 있으면 조회(getInfo)로 한 번 더 받는다(2026-10-07 바닷가아구찜에서 확인)', async () => {
     const f = fakeDb({
       tax_invoices: [], restaurants: [restaurantRow()], contacts: [contactRow],

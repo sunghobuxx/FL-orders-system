@@ -57,7 +57,7 @@ export async function POST(req: Request) {
 
     const { data: restaurant } = await db
       .from('restaurants')
-      .select('id, biz_no, organization_id, organizations(name)')
+      .select('id, biz_no, tax_invoice_email, organization_id, organizations(name)')
       .eq('id', restaurantId)
       .maybeSingle()
     if (!restaurant) return NextResponse.json({ error: '업체를 찾을 수 없습니다.' }, { status: 404 })
@@ -121,8 +121,9 @@ export async function POST(req: Request) {
     }
 
     const config = loadPopbillConfig(process.env as Record<string, string | undefined>)
-    type RestRow = { organizations: { name: string } | null }
+    type RestRow = { organizations: { name: string } | null; tax_invoice_email: string | null }
     const orgName = (restaurant as unknown as RestRow).organizations?.name ?? '알 수 없음'
+    const invoiceeEmail = (restaurant as unknown as RestRow).tax_invoice_email?.trim() || undefined
 
     const results: Array<{ taxType: string; status: string; ntsConfirmNum: string | null }> = []
     for (const group of groups) {
@@ -138,7 +139,7 @@ export async function POST(req: Request) {
         // 월합계세금계산서 작성일자는 그 달의 말일(한국 실무).
         writeDate: range.end.replace(/-/g, ''),
         invoicer: { corpNum: config.corpNum, ...INVOICER },
-        invoicee: { corpNum: bizNo, corpName: orgName, ceoName },
+        invoicee: { corpNum: bizNo, corpName: orgName, ceoName, email: invoiceeEmail },
         supplyCostTotal: group.supplyCostTotal,
         taxTotal: group.taxTotal,
         taxType: group.taxType,
