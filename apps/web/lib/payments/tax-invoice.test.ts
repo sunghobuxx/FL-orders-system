@@ -67,6 +67,12 @@ describe('buildTaxinvoicePayload', () => {
     expect(payload.invoiceeCEOName).toBe('')
   })
 
+  it('계산서 이메일이 있으면 invoiceeEmail1 로 넘기고, 없으면 키 자체를 빼둔다', () => {
+    const withEmail = buildTaxinvoicePayload({ ...base, invoicee: { ...base.invoicee, email: 'a@b.com' } })
+    expect(withEmail.invoiceeEmail1).toBe('a@b.com')
+    expect(buildTaxinvoicePayload(base)).not.toHaveProperty('invoiceeEmail1')
+  })
+
   it('음수·NaN 금액은 거절한다', () => {
     expect(() => buildTaxinvoicePayload({ ...base, supplyCostTotal: -1 })).toThrow()
     expect(() => buildTaxinvoicePayload({ ...base, taxTotal: NaN })).toThrow()

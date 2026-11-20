@@ -11,16 +11,18 @@ export default function IssueTaxInvoiceButton({ restaurantId, month, disabled }:
   const router = useRouter()
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
+  const [writeDate, setWriteDate] = useState('')
 
   async function handleClick() {
-    if (!confirm(`${month} 월합계 세금계산서를 발행합니다. 계속할까요?`)) return
+    const dateLabel = writeDate || '말일'
+    if (!confirm(`${month} 월합계 세금계산서를 발행합니다(작성일자: ${dateLabel}). 계속할까요?`)) return
     setBusy(true)
     setMsg(null)
     try {
       const res = await fetch('/api/admin/finance/tax-invoices/issue', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ restaurantId, month }),
+        body: JSON.stringify({ restaurantId, month, writeDate: writeDate || undefined }),
       })
       const data = await res.json() as { error?: string; alreadyIssued?: boolean }
       if (!res.ok) {
@@ -38,6 +40,14 @@ export default function IssueTaxInvoiceButton({ restaurantId, month, disabled }:
 
   return (
     <div className="inline-flex items-center gap-2">
+      <input
+        type="date"
+        value={writeDate}
+        onChange={e => setWriteDate(e.target.value)}
+        disabled={busy || disabled}
+        title="작성일자 (비우면 그 달 말일)"
+        className="text-xs px-2 py-1 rounded border border-gray-300 text-gray-600 disabled:opacity-50"
+      />
       <button
         onClick={handleClick}
         disabled={busy || disabled}

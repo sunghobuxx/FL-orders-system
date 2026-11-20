@@ -11,7 +11,7 @@ interface Props {
   isSupplier: boolean
   org: { name: string; address?: string | null; biz_license_path?: string | null }
   contacts: { name: string | null; phone: string | null } | null
-  rest: { id?: string | null; biz_no: string | null; settlement_cycle?: string | null; waiting_enabled?: boolean | null } | null
+  rest: { id?: string | null; biz_no: string | null; tax_invoice_email?: string | null; settlement_cycle?: string | null; waiting_enabled?: boolean | null } | null
   memberEmail?: string | null
 }
 
@@ -66,6 +66,7 @@ export default function MemberFormClient({ orgId, isEdit, isSupplier, org, conta
           contact_name: formData.get('contact_name'),
           phone: formData.get('phone'),
           biz_no: formData.get('biz_no'),
+          tax_invoice_email: rest ? formData.get('tax_invoice_email') : undefined,
           biz_license_path: formData.get('biz_license_path'),
           settlement_cycle: formData.get('settlement_cycle'),
           waiting_enabled: !isSupplier ? waitingEnabled : undefined,
@@ -156,7 +157,9 @@ export default function MemberFormClient({ orgId, isEdit, isSupplier, org, conta
 
         <div className="flex items-center gap-2 px-5 py-4 border-b border-gray-100">
           <span className="text-sm text-gray-500 shrink-0">계산서 이메일:</span>
-          <span className="flex-1 bg-gray-100 px-3 py-1.5 rounded text-sm text-gray-400">-</span>
+          {isEdit && rest
+            ? <I name="tax_invoice_email" type="email" defaultValue={rest.tax_invoice_email ?? ''} disabled={isLoading} />
+            : <F>{rest?.tax_invoice_email ?? ''}</F>}
         </div>
 
         {/* 정산 주기 */}

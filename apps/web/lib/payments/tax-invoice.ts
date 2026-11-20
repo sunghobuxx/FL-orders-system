@@ -31,6 +31,8 @@ export interface InvoiceeInfo {
    * 61곳 중 2곳은 아직 안 채워져 있다(2026-09-29) — 없으면 빈 문자열로 보내고,
    * 실제로 필수인지는 팝빌 응답으로 확인한다. */
   ceoName?: string
+  /** 계산서를 받을 이메일(restaurants.tax_invoice_email). 있으면 팝빌이 발행 알림 메일을 보낸다. */
+  email?: string
 }
 
 export interface BuildTaxinvoiceInput {
@@ -81,5 +83,6 @@ export function buildTaxinvoicePayload(input: BuildTaxinvoiceInput): Record<stri
     invoiceeCorpNum: input.invoicee.corpNum,
     invoiceeCorpName: input.invoicee.corpName,
     invoiceeCEOName: input.invoicee.ceoName ?? '',
+    ...(input.invoicee.email ? { invoiceeEmail1: input.invoicee.email } : {}),
   }
 }

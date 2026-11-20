@@ -133,6 +133,40 @@ describe('POST /api/admin/finance/tax-invoices/issue', () => {
     })
   })
 
+  it('작성일자를 주면 말일 대신 그 날짜로 발행한다', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-11-20T03:00:00Z'))
+    try {
+      const f = fakeDb({
+        tax_invoices: [], restaurants: [restaurantRow()], contacts: [contactRow],
+        daily_specs: specRows, daily_spec_lines: [exemptLine(562000)], products: [EXEMPT],
+      })
+      const res = await post(f.db, { restaurantId: 'r1', month: '2026-10', writeDate: '2026-11-20' })
+      expect(res.status).toBe(200)
+      expect(m.registerAndIssue.mock.calls[0][1]).toMatchObject({ writeDate: '20261120' })
+    } finally { vi.useRealTimers() }
+  })
+
+  it('작성일자가 그 달 1일보다 이르거나 오늘보다 늦으면 400 — 팝빌을 부르지 않는다', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-11-20T03:00:00Z'))
+    try {
+      const f = fakeDb({ tax_invoices: [], restaurants: [restaurantRow()], contacts: [contactRow] })
+      expect((await post(f.db, { restaurantId: 'r1', month: '2026-10', writeDate: '2026-09-30' })).status).toBe(400)
+      expect((await post(f.db, { restaurantId: 'r1', month: '2026-10', writeDate: '2026-11-21' })).status).toBe(400)
+      expect((await post(f.db, { restaurantId: 'r1', month: '2026-10', writeDate: '2026/11/20' })).status).toBe(400)
+      expect(m.registerAndIssue).not.toHaveBeenCalled()
+    } finally { vi.useRealTimers() }
+  })
+
+  it('업체에 계산서 이메일이 있으면 팝빌 invoiceeEmail1 로 넘긴다', async () => {
+    const f = fakeDb({
+      tax_invoices: [], restaurants: [restaurantRow({ tax_invoice_email: ' tax@shop.com ' })], contacts: [contactRow],
+      daily_specs: specRows, daily_spec_lines: [exemptLine(562000)], products: [EXEMPT],
+    })
+    const res = await post(f.db, { restaurantId: 'r1', month: '2026-10' })
+    expect(res.status).toBe(200)
+    expect(m.registerAndIssue.mock.calls[0][1]).toMatchObject({ taxType: '면세', invoiceeEmail1: 'tax@shop.com' })
+  })
+
   it('★ 즉시발행 응답에 승인번호가 비어 있으면 조회(getInfo)로 한 번 더 받는다(2026-10-07 바닷가아구찜에서 확인)', async () => {
     const f = fakeDb({
       tax_invoices: [], restaurants: [restaurantRow()], contacts: [contactRow],

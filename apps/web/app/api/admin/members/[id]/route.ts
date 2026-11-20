@@ -14,6 +14,7 @@ export async function PUT(req: NextRequest, context: { params: Promise<{ id: str
       contact_name?: string
       phone?: string
       biz_no?: string
+      tax_invoice_email?: string | null
       biz_license_path?: string
       settlement_cycle?: string
       waiting_enabled?: boolean
@@ -57,6 +58,13 @@ export async function PUT(req: NextRequest, context: { params: Promise<{ id: str
 
     const restUpdate: Record<string, unknown> = {}
     if (body.biz_no !== undefined) restUpdate.biz_no = body.biz_no
+    if (body.tax_invoice_email !== undefined) {
+      const email = (body.tax_invoice_email ?? '').trim()
+      if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return NextResponse.json({ error: '계산서 이메일 형식이 올바르지 않습니다.' }, { status: 400 })
+      }
+      restUpdate.tax_invoice_email = email || null
+    }
     if (body.settlement_cycle !== undefined) restUpdate.settlement_cycle = body.settlement_cycle
     if (body.waiting_enabled !== undefined) restUpdate.waiting_enabled = body.waiting_enabled
 

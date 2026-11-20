@@ -36,7 +36,7 @@ const INVOICER = {
 
 export async function POST(req: Request) {
   try {
-    const { restaurantId, month } = await req.json() as { restaurantId?: string; month?: string }
+    const { restaurantId, month, writeDate } = await req.json() as { restaurantId?: string; month?: string; writeDate?: string }
     if (!restaurantId || !month) {
       return NextResponse.json({ error: '필수 값이 없습니다.' }, { status: 400 })
     }
@@ -46,6 +46,14 @@ export async function POST(req: Request) {
     } catch {
       return NextResponse.json({ error: 'month 형식이 올바르지 않습니다(YYYY-MM).' }, { status: 400 })
     }
+    // 작성일자는 기본 말일(월합계 실무). 늦게 발행하는 건은 관리자가 날짜를 직접 줄 수 있다.
+    const todayKst = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10)
+    if (writeDate !== undefined && writeDate !== '') {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(writeDate) || writeDate < range.start || writeDate > todayKst) {
+        return NextResponse.json({ error: '작성일자는 그 달 1일부터 오늘 사이여야 합니다.' }, { status: 400 })
+      }
+    }
+    const invoiceWriteDate = (writeDate || range.end).replace(/-/g, '')
 
     if (process.env.TAX_INVOICE_ISSUE_ENABLED !== 'true') {
       return NextResponse.json({ error: '세금계산서 발행 기능이 꺼져 있습니다.' }, { status: 403 })
@@ -57,7 +65,7 @@ export async function POST(req: Request) {
 
     const { data: restaurant } = await db
       .from('restaurants')
-      .select('id, biz_no, organization_id, organizations(name)')
+      .select('id, biz_no, tax_invoice_email, organization_id, organizations(name)')
       .eq('id', restaurantId)
       .maybeSingle()
     if (!restaurant) return NextResponse.json({ error: '업체를 찾을 수 없습니다.' }, { status: 404 })
@@ -121,8 +129,9 @@ export async function POST(req: Request) {
     }
 
     const config = loadPopbillConfig(process.env as Record<string, string | undefined>)
-    type RestRow = { organizations: { name: string } | null }
+    type RestRow = { organizations: { name: string } | null; tax_invoice_email: string | null }
     const orgName = (restaurant as unknown as RestRow).organizations?.name ?? '알 수 없음'
+    const invoiceeEmail = (restaurant as unknown as RestRow).tax_invoice_email?.trim() || undefined
 
     const results: Array<{ taxType: string; status: string; ntsConfirmNum: string | null }> = []
     for (const group of groups) {
@@ -136,9 +145,9 @@ export async function POST(req: Request) {
       const payload = buildTaxinvoicePayload({
         mgtKey,
         // 월합계세금계산서 작성일자는 그 달의 말일(한국 실무).
-        writeDate: range.end.replace(/-/g, ''),
+        writeDate: invoiceWriteDate,
         invoicer: { corpNum: config.corpNum, ...INVOICER },
-        invoicee: { corpNum: bizNo, corpName: orgName, ceoName },
+        invoicee: { corpNum: bizNo, corpName: orgName, ceoName, email: invoiceeEmail },
         supplyCostTotal: group.supplyCostTotal,
         taxTotal: group.taxTotal,
         taxType: group.taxType,
